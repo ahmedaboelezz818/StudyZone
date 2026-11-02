@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0C4137" />
+    <meta name="description" content="StudyFlow — Your Study Life, Organized." />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Study Zone" />
+    <title>StudyFlow — Your Study Life, Organized</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&family=Tajawal:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./supabase-config.js"></script>
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <div class="scroll-progress" id="scroll-progress" aria-hidden="true"></div>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <a class="brand" href="#dashboard" aria-label="StudyFlow dashboard">
+          <span class="brand-mark"><span></span><span></span><span></span></span>
+          <span><strong dir="ltr">StudyFlow</strong><small>YOUR STUDY LIFE, ORGANIZED</small></span>
+        </a>
+        <div class="nav-caption">WORKSPACE</div>
+        <nav class="main-nav" aria-label="Main navigation">
+          <a class="nav-link active" href="#dashboard" data-page="dashboard"><span class="nav-icon">⌂</span>Dashboard</a>
+          <a class="nav-link" href="#planner" data-page="planner"><span class="nav-icon">▦</span>Study planner</a>
+          <a class="nav-link" href="#tasks" data-page="tasks"><span class="nav-icon">☷</span>Tasks <span class="nav-count" id="task-count">0</span></a>
+          <a class="nav-link" href="#deadlines" data-page="deadlines"><span class="nav-icon">◷</span>Deadlines <span class="nav-count" id="deadline-count">0</span></a>
+          <a class="nav-link" href="#subjects" data-page="subjects"><span class="nav-icon">◈</span>Subjects</a>
+          <a class="nav-link" href="#files" data-page="files"><span class="nav-icon">▤</span>Study files</a>
+          <a class="nav-link" href="#notes" data-page="notes"><span class="nav-icon">✎</span>Notes</a>
+          <a class="nav-link" href="#focus" data-page="focus"><span class="nav-icon">◷</span>Focus timer</a>
+        </nav>
+        <div class="nav-caption nav-caption-spaced">YOUR PROGRESS</div>
+        <nav class="main-nav" aria-label="Progress navigation">
+          <a class="nav-link" href="#analytics" data-page="analytics"><span class="nav-icon">▥</span>Analytics</a>
+          <a class="nav-link" href="#goals" data-page="goals"><span class="nav-icon">◎</span>Goals</a>
+          <a class="nav-link" href="#exams" data-page="exams"><span class="nav-icon">⌑</span>Exams & results</a>
+          <a class="nav-link" href="#achievements" data-page="achievements"><span class="nav-icon">✧</span>Achievements</a>
+          <a class="nav-link" href="#notifications" data-page="notifications"><span class="nav-icon">♧</span>Notifications<span class="unread-dot"></span></a>
+        </nav>
+        <div class="sidebar-bottom">
+          <a class="nav-link" href="#profile" data-page="profile"><span class="nav-icon">◉</span>Profile</a>
+          <a class="nav-link" href="#settings" data-page="settings"><span class="nav-icon">⚙</span>Settings</a>
+          <a class="nav-link" id="admin-navigation" href="#admin" data-page="admin" hidden><span class="nav-icon">⬡</span>Admin</a>
+          <div class="streak-card">
+            <div class="streak-icon">✦</div>
+            <div><small>STUDY STREAK</small><strong id="study-streak-value">—</strong></div>
+            <span class="streak-arrow">↗</span>
+          </div>
+          <button class="user-mini" id="open-auth">
+            <span class="avatar" dir="ltr">AM</span><span class="user-meta"><strong id="user-name" dir="auto">Alex Morgan</strong><small id="user-email" dir="ltr">Student account</small></span><span class="user-menu">···</span>
+          </button>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <header class="topbar">
+          <button class="icon-button mobile-menu" id="mobile-menu" aria-label="Open navigation">☰</button>
+          <div class="breadcrumb"><span>Workspace</span><span class="crumb-slash">/</span><strong id="page-crumb">Dashboard</strong></div>
+          <div class="topbar-actions">
+            <div class="today-date"><span class="date-icon">▦</span><span id="today-date">Today</span></div>
+            <button class="button button-secondary install-button" id="pwa-install" type="button" aria-label="Install Study Zone">Install app</button>
+            <button class="icon-button notification-button" data-navigate="notifications" aria-label="Notifications">♧<i></i></button>
+            <button class="avatar avatar-top" id="top-profile" aria-label="Open profile">AM</button>
+          </div>
+        </header>
+        <div class="content" id="page-content"></div>
+        <footer class="footer"><span>StudyFlow <span id="footer-year"></span></span><span>Small steps. Meaningful progress.</span><span class="connection-state" id="connection-state"><i></i>Demo workspace</span></footer>
+      </main>
+    </div>
+
+    <div class="modal-backdrop" id="task-modal" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="task-modal-title">
+        <button class="modal-close" data-close-modal aria-label="Close">×</button>
+        <p class="eyebrow">STAY ON TRACK</p><h2 id="task-modal-title">Add a task</h2>
+        <form id="task-form" class="form-stack">
+          <label>Task name<input name="title" dir="auto" required maxlength="120" placeholder="e.g. Review chapter 4" /></label>
+          <div class="form-row">
+            <label>Subject<select name="subject_id" id="task-subject"></select></label>
+            <label>Priority<select name="priority"><option value="medium">Medium</option><option value="low">Low</option><option value="high">High</option><option value="urgent">Urgent</option></select></label>
+          </div>
+          <div class="form-row">
+            <label>Due date<input name="due_at" type="datetime-local" /></label>
+            <label>Estimated minutes<input name="estimated_minutes" type="number" min="5" max="1440" value="45" /></label>
+          </div>
+          <div class="form-error" id="task-error" role="alert"></div>
+          <button class="button button-primary full-button" type="submit">Save task <span>→</span></button>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="deadline-modal" hidden>
+      <section class="modal deadline-modal" role="dialog" aria-modal="true" aria-labelledby="deadline-modal-title">
+        <button class="modal-close" data-close-modal aria-label="Close">×</button>
+        <p class="eyebrow">KEEP IT MOVING</p><h2 id="deadline-modal-title">Add deadline</h2>
+        <p class="modal-subtitle" id="deadline-modal-help">Keep the important details and due time together.</p>
+        <form id="deadline-form" class="form-stack">
+          <label>Deadline title<input name="title" dir="auto" required maxlength="160" placeholder="e.g. Submit research summary" /></label>
+          <label>Description <span class="optional-label">Optional</span><textarea name="description" dir="auto" rows="3" maxlength="2000" placeholder="Add helpful details"></textarea></label>
+          <div class="form-row">
+            <label>Subject<select name="subject_id" id="deadline-subject"></select></label>
+            <label>Priority<select name="priority"><option value="medium">Medium</option><option value="low">Low</option><option value="high">High</option><option value="urgent">Urgent</option></select></label>
+          </div>
+          <div class="form-row">
+            <label>Due date<input name="due_date" type="date" required /></label>
+            <label>Due time <span class="optional-label">Optional</span><input name="due_time" type="time" /></label>
+          </div>
+          <label>Reminder<select name="reminder_before_minutes"><option value="0">No reminder</option><option value="15">15 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option></select></label>
+          <div class="form-error" id="deadline-error" role="alert"></div>
+          <div class="modal-actions"><button class="button button-secondary" type="button" data-close-modal>Cancel</button><button class="button button-primary" type="submit" id="deadline-submit">Save deadline <span>→</span></button></div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="auth-modal" hidden>
+      <section class="modal auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+        <button class="modal-close" data-close-modal aria-label="Close">×</button>
+        <div class="auth-mark"><span class="brand-mark"><span></span><span></span><span></span></span></div>
+        <p class="eyebrow">YOUR STUDY LIFE, ORGANIZED</p><h2 id="auth-title">Welcome to StudyFlow</h2>
+        <p class="modal-subtitle" id="auth-help">Connect Supabase to create an account or sign in.</p>
+        <div class="auth-tabs"><button class="auth-tab selected" type="button" data-auth-mode="signin">Sign in</button><button class="auth-tab" type="button" data-auth-mode="signup">Create account</button></div>
+        <form id="auth-form" class="form-stack">
+          <label class="signup-only" hidden>Your name<input name="name" autocomplete="name" placeholder="Your name" /></label>
+          <label>Email address<input name="email" type="email" dir="ltr" required autocomplete="email" placeholder="you@example.com" /></label>
+          <label>Password<input name="password" type="password" required minlength="6" autocomplete="current-password" placeholder="At least 6 characters" /></label>
+          <div class="form-error" id="auth-error" role="alert"></div>
+          <button class="button button-primary full-button" id="auth-submit" type="submit">Sign in <span>→</span></button>
+        </form>
+        <button class="text-button" id="sign-out" hidden>Sign out</button>
+        <p class="safe-note"><span>◈</span> Your password is handled securely by Supabase Auth.</p>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="pwa-install-modal" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="pwa-install-title">
+        <button class="modal-close" data-close-modal aria-label="Close">×</button>
+        <p class="eyebrow">STUDY ZONE</p>
+        <h2 id="pwa-install-title">Install Study Zone</h2>
+        <p class="modal-subtitle" id="pwa-install-instructions"></p>
+        <div class="modal-actions"><button class="button button-primary" type="button" data-close-modal>Done</button></div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop celebration-backdrop" id="celebration-modal" hidden>
+      <section class="modal celebration-modal" role="dialog" aria-modal="true" aria-labelledby="celebration-title" aria-describedby="celebration-description">
+        <button class="modal-close" data-close-modal aria-label="Close">×</button>
+        <div class="celebration-emblem" aria-hidden="true">✦</div>
+        <p class="eyebrow" id="celebration-kicker">STUDY ZONE</p>
+        <h2 id="celebration-title"></h2>
+        <p class="modal-subtitle" id="celebration-description"></p>
+        <div class="celebration-xp" id="celebration-xp" hidden></div>
+        <div class="modal-actions"><button class="button button-primary" type="button" data-close-modal>Done</button></div>
+      </section>
+    </div>
+
+    <div class="toast-region" id="toast-region" aria-live="polite"></div>
+  </body>
+</html>
