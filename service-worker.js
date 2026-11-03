@@ -1,12 +1,14 @@
-const CACHE_NAME = "studyflow-shell-v3";
+const CACHE_NAME = "studyzone-shell-v9";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
-  "./supabase-config.js",
   "./manifest.webmanifest",
   "./icon.svg",
+  "./favicon.svg",
+  "./favicon.ico",
+  "./apple-touch-icon.png",
   "./icons/icon-192.png",
   "./icons/icon-192-maskable.png",
   "./icons/icon-512.png",
@@ -26,7 +28,9 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) => Promise.all(
       keys
-        .filter((key) => key === "studyflow-static-v1" || (key.startsWith("studyflow-shell-") && key !== CACHE_NAME))
+        .filter((key) => key === "studyflow-static-v1"
+          || key.startsWith("studyflow-shell-")
+          || (key.startsWith("studyzone-shell-") && key !== CACHE_NAME))
         .map((key) => caches.delete(key)),
     )),
   );
@@ -35,6 +39,42 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data?.json() || {};
+  } catch {
+    payload = { body: event.data?.text() || "" };
+  }
+  const title = typeof payload.title === "string" && payload.title.trim()
+    ? payload.title.slice(0, 140)
+    : "Study Zone";
+  const options = {
+    body: typeof payload.body === "string" ? payload.body.slice(0, 500) : "",
+    icon: new URL("./icons/icon-192.png", self.registration.scope).href,
+    badge: new URL("./icons/icon-192.png", self.registration.scope).href,
+    tag: typeof payload.tag === "string" ? payload.tag.slice(0, 120) : "study-zone-reminder",
+    data: { url: typeof payload.url === "string" ? payload.url : "./#tasks" },
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const targetUrl = new URL(event.notification.data?.url || "./#tasks", self.registration.scope);
+    if (targetUrl.origin !== self.location.origin) return;
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const client of windows) {
+      if (client.url.startsWith(self.registration.scope) && "focus" in client) {
+        await client.navigate(targetUrl.href);
+        return client.focus();
+      }
+    }
+    return self.clients.openWindow(targetUrl.href);
+  })());
 });
 
 self.addEventListener("fetch", (event) => {

@@ -18,48 +18,60 @@
     { id: "demo-task-3", title: "History essay outline", subject_id: "subject-history", subject: "History", due_at: dayAtOffset(2, 16), priority: "urgent", status: "in_progress", estimated_minutes: 105 },
     { id: "demo-task-4", title: "Calculus revision quiz", subject_id: "subject-calculus", subject: "Calculus II", due_at: dayAtOffset(3, 20), priority: "low", status: "completed", estimated_minutes: 45 },
   ];
-  const activity = [
+  let activity = [
     { day: "Mon", hours: 2.8 }, { day: "Tue", hours: 3.4 }, { day: "Wed", hours: 2.5 },
     { day: "Thu", hours: 4.1 }, { day: "Fri", hours: 3.7 }, { day: "Sat", hours: 5.2 }, { day: "Sun", hours: 2.1 },
   ];
-  const goals = [
+  let goals = [
     { title: "Finish revision pack", progress: 78, due: "5 days", detail: "Review key topics before the assessment" },
     { title: "Keep weekly study rhythm", progress: 86, due: "2 days", detail: "Reach 12 focused hours this week" },
     { title: "Submit essay draft", progress: 64, due: "1 week", detail: "Complete the outline and first draft" },
   ];
-  const schedule = [
+  let schedule = [
     { day: "Monday", time: "08:00", title: "Limits and derivatives", subject: "Calculus II", length: "90 min" },
     { day: "Tuesday", time: "17:00", title: "Graphs + shortest path", subject: "Algorithms", length: "105 min" },
     { day: "Wednesday", time: "19:00", title: "Cell structure review", subject: "Biology", length: "75 min" },
     { day: "Thursday", time: "15:30", title: "Essay drafting sprint", subject: "History", length: "90 min" },
   ];
   const achievementCatalog = [
-    { code: "first-task", name: "First Task", description: "Complete your first task.", symbol: "✓" },
-    { code: "focus-starter", name: "Focus Starter", description: "Complete your first verified focus session.", symbol: "◷" },
-    { code: "focus-master", name: "Focus Master", description: "Complete 10 verified focus sessions.", symbol: "✦" },
-    { code: "deadline-hero", name: "Deadline Hero", description: "Complete 10 tasks with deadlines.", symbol: "◇" },
-    { code: "study-streak", name: "Study Streak", description: "Build a 7-day activity streak.", symbol: "↗" },
-    { code: "consistency-champion", name: "Consistency Champion", description: "Build a 30-day activity streak.", symbol: "✧" },
+    { code: "first-task", name: "First Task", description: "Complete your first task.", symbol: "✓", reward: 10 },
+    { code: "focus-starter", name: "Focus Starter", description: "Complete your first verified focus session.", symbol: "◷", reward: 15 },
+    { code: "focus-master", name: "Focus Master", description: "Complete 10 verified focus sessions.", symbol: "✦", reward: 50 },
+    { code: "deadline-hero", name: "Deadline Hero", description: "Complete 10 tasks with deadlines.", symbol: "◇", reward: 50 },
+    { code: "study-streak", name: "Study Streak", description: "Build a 7-day activity streak.", symbol: "↗", reward: 40 },
+    { code: "consistency-champion", name: "Consistency Champion", description: "Build a 30-day activity streak.", symbol: "✧", reward: 150 },
+    { code: "level-5", name: "Rising Scholar", description: "Reach level 5.", symbol: "★", reward: 50 },
+    { code: "level-10", name: "Study Champion", description: "Reach level 10.", symbol: "♛", reward: 100 },
+    { code: "level-20", name: "Master Strategist", description: "Reach level 20.", symbol: "✪", reward: 200 },
+    { code: "level-50", name: "Study Legend", description: "Reach level 50.", symbol: "♜", reward: 500 },
   ];
-  const examResults = [
+  let examResults = [
     { subject: "Algorithms", score: 88 }, { subject: "Calculus II", score: 92 },
     { subject: "Biology", score: 84 }, { subject: "History", score: 78 },
   ];
-  const sampleFiles = [
+  let sampleFiles = [
     { name: "calculus-derivatives.pdf", type: "PDF", subject: "Calculus II" },
     { name: "algo-graphs-notes.md", type: "Notes", subject: "Algorithms" },
     { name: "biology-diagrams.png", type: "Image", subject: "Biology" },
   ];
-  const sampleNotes = [
+  let sampleNotes = [
     { title: "Core theorem summary", subject: "Algorithms", updated: "2 hours ago" },
     { title: "Cell structure recall", subject: "Biology", updated: "Today" },
     { title: "Essay thesis points", subject: "History", updated: "Yesterday" },
   ];
+  const previewSchedule = schedule;
+  const previewActivity = activity;
+  const previewGoals = goals;
+  const previewExamResults = examResults;
+  const previewFiles = sampleFiles;
+  const previewNotes = sampleNotes;
   const storageKey = "studyflow.tasks.v1";
+  const authPromptStorageKey = "studyzone.auth-prompt-seen";
   let tasks = readLocalTasks();
   let currentPage = "dashboard";
   let authMode = "signin";
   let deferredInstallPrompt = null;
+  let pwaInstalled = false;
   let pwaUpdateWorker = null;
   let pwaUpdateReload = false;
   const defaultFocusSettings = Object.freeze({
@@ -96,6 +108,7 @@
   let distractionFree = false;
   let focusDataError = "";
   let focusSaving = false;
+  const focusRecordSavesInFlight = new Set();
   const focusText = {
     en: {
       eyebrow: "MAKE TIME FOR WHAT MATTERS", title: "Focus", subtitle: "A quieter space for your next study session.",
@@ -118,7 +131,7 @@
       invalidSettings: "Enter valid session lengths between 1 and 180 minutes and an interval between 2 and 12.",
       notificationsUnsupported: "Browser notifications are not supported here.",
       notificationsDenied: "Notification permission was denied. You can enable it in your browser settings.",
-      notificationReady: "Browser notifications enabled while StudyFlow is open.",
+      notificationReady: "Browser notifications enabled while Study Zone is open.",
       focusCompleted: "Focus session complete. Take a short break.",
       focusCompletedTitle: "Focus session complete!",
       cycleCompletedTitle: "Pomodoro cycle complete!",
@@ -152,7 +165,7 @@
       invalidSettings: "أدخل مددًا صحيحة بين دقيقة و١٨٠ دقيقة، وفاصلًا بين جلستين و١٢ جلسة.",
       notificationsUnsupported: "إشعارات المتصفح غير مدعومة هنا.",
       notificationsDenied: "تم رفض إذن الإشعارات. يمكنك تفعيله من إعدادات المتصفح.",
-      notificationReady: "إشعارات المتصفح مفعلة أثناء فتح StudyFlow.",
+      notificationReady: "إشعارات المتصفح مفعلة أثناء فتح Study Zone.",
       focusCompleted: "اكتملت جلسة التركيز. حان وقت استراحة قصيرة.",
       focusCompletedTitle: "اكتملت جلسة التركيز!",
       cycleCompletedTitle: "اكتملت دورة بومودورو!",
@@ -167,13 +180,27 @@
     },
   };
   let session = null;
+  let accountProfile = null;
   let adminAuthorization = { status: "unknown", userId: null };
   let adminVerificationRequest = 0;
+  let adminUsers = [];
+  let adminUsersLoading = false;
+  let adminUsersError = "";
+  let adminUsersTotal = 0;
+  let adminUsersPage = 0;
+  let adminUsersSearch = "";
+  let adminUsersRequest = 0;
+  const adminUsersPageSize = 25;
   let userNotifications = [];
+  let dailyReminderPreference = { enabled: false, local_time: "09:00", timezone: "UTC" };
   let rewardSummary = null;
   let earnedAchievements = [];
   const rewardCounterValues = new Map();
-  let animationsEnabled = localStorage.getItem("studyflow.animations") !== "off";
+  const savedMotionLevel = localStorage.getItem("studyflow.motion");
+  let motionLevel = ["full", "reduced", "off"].includes(savedMotionLevel)
+    ? savedMotionLevel
+    : localStorage.getItem("studyflow.animations") === "off" ? "off" : "full";
+  let animationsEnabled = motionLevel !== "off";
   let searchTerm = "";
   let statusFilter = "all";
   let deadlineSearch = "";
@@ -247,6 +274,16 @@
     ? savedLanguage
     : navigator.language?.toLowerCase().startsWith("ar") ? "ar" : "en";
 
+  function shouldAnimate() {
+    return animationsEnabled
+      && document.visibilityState === "visible"
+      && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+
+  function shouldUseFullMotion() {
+    return shouldAnimate() && motionLevel === "full";
+  }
+
   const interfaceText = {
     "YOUR STUDY LIFE, ORGANIZED": "حياتك الدراسية، منظمة",
     WORKSPACE: "مساحة العمل",
@@ -270,6 +307,27 @@
     Settings: "الإعدادات",
     Admin: "الإدارة",
     "Admin dashboard": "لوحة إدارة النظام",
+    "Registered users": "المستخدمون المسجلون",
+    "Review registered accounts and their sign-in status.": "راجع الحسابات المسجلة وحالة تسجيل الدخول.",
+    "This private list is visible only to authorized administrators.": "هذه القائمة خاصة بالمديرين المصرح لهم فقط.",
+    "Search by name or email": "ابحث بالاسم أو البريد الإلكتروني",
+    Search: "بحث",
+    Refresh: "تحديث",
+    "Loading users…": "جارٍ تحميل المستخدمين…",
+    "Could not load users.": "تعذر تحميل المستخدمين.",
+    "No users found.": "لم يتم العثور على مستخدمين.",
+    User: "المستخدم",
+    Role: "الدور",
+    Joined: "تاريخ الانضمام",
+    "Last sign-in": "آخر تسجيل دخول",
+    "Email status": "حالة البريد",
+    Confirmed: "مؤكد",
+    "Pending confirmation": "بانتظار التأكيد",
+    of: "من",
+    Previous: "السابق",
+    Next: "التالي",
+    student: "طالب",
+    admin: "مدير",
     "STUDY STREAK": "أيام الدراسة المتتالية",
     "12 days": "١٢ يومًا",
     "Student account": "حساب طالب",
@@ -278,7 +336,7 @@
     "Supabase connected": "تم الاتصال بـSupabase",
     "Open navigation": "فتح قائمة التنقل",
     "Open profile": "فتح الملف الشخصي",
-    "StudyFlow dashboard": "لوحة تحكم StudyFlow",
+    "Study Zone dashboard": "لوحة تحكم Study Zone",
     Workspace: "مساحة العمل",
     Today: "اليوم",
     Close: "إغلاق",
@@ -297,7 +355,24 @@
     high: "عالية",
     urgent: "عاجلة",
     "Due date": "تاريخ الاستحقاق",
+    "Starts on": "يبدأ في",
     "Estimated minutes": "المدة المقدرة بالدقائق",
+    Repeat: "التكرار",
+    "Does not repeat": "بدون تكرار",
+    "Every day": "يوميًا",
+    "Every week": "أسبوعيًا",
+    "Every month": "شهريًا",
+    "Choose weekdays": "اختيار أيام الأسبوع",
+    "Repeat on": "التكرار في",
+    "Repeat until": "تكرار حتى",
+    "Choose an end date within the next year. Each occurrence is saved as its own task.": "اختر تاريخ انتهاء خلال السنة القادمة. يُحفظ كل موعد كمهمة مستقلة.",
+    "Mon": "الإثنين",
+    "Tue": "الثلاثاء",
+    "Wed": "الأربعاء",
+    "Thu": "الخميس",
+    "Fri": "الجمعة",
+    "Sat": "السبت",
+    "Sun": "الأحد",
     "Save task": "حفظ المهمة",
     "KEEP IT MOVING": "واصل التقدم",
     "Add deadline": "إضافة موعد نهائي",
@@ -316,7 +391,7 @@
     Cancel: "إلغاء",
     "Save deadline": "حفظ الموعد",
     "YOUR STUDY LIFE, ORGANIZED": "حياتك الدراسية، منظمة",
-    "Welcome to StudyFlow": "مرحبًا بك في StudyFlow",
+    "Welcome to Study Zone": "مرحبًا بك في Study Zone",
     "Connect Supabase to create an account or sign in.": "اربط Supabase لإنشاء حساب أو تسجيل الدخول.",
     "Sign in": "تسجيل الدخول",
     "Create account": "إنشاء حساب",
@@ -329,7 +404,15 @@
     "Choose language": "اختر اللغة",
     "Toggle light theme": "تبديل السمة الفاتحة",
     "Motion & celebrations": "الحركة والاحتفالات",
-    "Use subtle animations and completion celebrations": "استخدم حركات واحتفالات بسيطة عند الإنجاز",
+    "Choose how much motion Study Zone uses.": "اختر مستوى الحركة في Study Zone.",
+    "Full Motion": "حركة كاملة",
+    "Layered transitions and celebrations": "انتقالات واحتفالات متكاملة",
+    "Reduced Motion": "حركة مخففة",
+    "Short, gentle transitions": "انتقالات قصيرة وهادئة",
+    "Motion Off": "إيقاف الحركة",
+    "Disable nonessential animation": "إيقاف الحركات غير الضرورية",
+    "Animation level": "مستوى الحركة",
+    "You’re offline. Network-backed data and sync are unavailable; changes may not be saved.": "أنت غير متصل بالإنترنت. البيانات والمزامنة عبر الشبكة غير متاحة؛ قد لا تُحفظ التغييرات.",
     "Settings saved.": "تم حفظ الإعدادات.",
     "Language changed.": "تم تغيير اللغة.",
     "Unlocked": "تم الفتح",
@@ -542,12 +625,12 @@
     Timezone: "المنطقة الزمنية",
     "Edit profile": "تعديل الملف الشخصي",
     "MAKE IT YOURS": "خصص تجربتك",
-    "Tune StudyFlow to the way you like to work.": "اضبط StudyFlow بما يناسب أسلوب عملك.",
+    "Tune Study Zone to the way you like to work.": "اضبط Study Zone بما يناسب أسلوب عملك.",
     Appearance: "المظهر",
     "Dark theme": "السمة الداكنة",
     "Designed for focus, day or night": "مصممة للتركيز ليلًا ونهارًا",
     "Emerald accents": "لمسات الزمرد",
-    "Official StudyFlow color palette": "لوحة ألوان StudyFlow الرسمية",
+    "Official Study Zone color palette": "لوحة ألوان Study Zone الرسمية",
     Language: "اللغة",
     "Display language": "لغة العرض",
     "Deadlines appear in the selected language.": "تُعرض المواعيد باللغة المحددة.",
@@ -556,6 +639,31 @@
     "Upcoming deadlines": "المواعيد القادمة",
     "Study nudges": "تذكيرات الدراسة",
     "Gentle focus reminders": "تذكيرات لطيفة للتركيز",
+    "Daily study check-in": "تذكير يومي بالدراسة",
+    "Review your open tasks once a day, even when Study Zone is closed.": "راجع مهامك المفتوحة مرة يوميًا، حتى عند إغلاق Study Zone.",
+    "Enable push reminders": "تفعيل الإشعارات الفورية",
+    "Reminder time": "وقت التذكير",
+    "Uses this device’s timezone.": "يستخدم المنطقة الزمنية لهذا الجهاز.",
+    "Save reminder": "حفظ التذكير",
+    "Get a daily task check-in plus deadline and achievement notifications, even when Study Zone is closed.": "احصل على تذكير يومي بالمهام وإشعارات المواعيد والإنجازات حتى عند إغلاق Study Zone.",
+    "Push reminders need notification permission and the server setup described in README.md.": "تتطلب الإشعارات الفورية إذن الإشعارات وإعداد الخادم الموضح في README.md.",
+    "Sign in to configure daily reminders.": "سجّل الدخول لإعداد التذكيرات اليومية.",
+    "Choose a profile photo from your device": "اختر صورة الملف الشخصي من جهازك",
+    "PNG, JPEG, or WebP · up to 2 MB": "PNG أو JPEG أو WebP · حتى ٢ ميجابايت",
+    "Could not save your reminder.": "تعذّر حفظ التذكير.",
+    "Notification permission is required to enable daily push reminders.": "يلزم السماح بالإشعارات لتفعيل التذكير اليومي.",
+    "Daily push is not configured yet. Ask your administrator to finish the VAPID setup.": "لم يتم إعداد الإشعارات اليومية بعد. اطلب من المسؤول إكمال إعداد VAPID.",
+    "Reminder saved.": "تم حفظ التذكير.",
+    "Profile photo uploaded.": "تم رفع صورة الملف الشخصي.",
+    "Reach level 5.": "وصل إلى المستوى ٥.",
+    "Reach level 10.": "وصل إلى المستوى ١٠.",
+    "Reach level 20.": "وصل إلى المستوى ٢٠.",
+    "Reach level 50.": "وصل إلى المستوى ٥٠.",
+    "Rising Scholar": "طالب صاعد",
+    "Study Champion": "بطل الدراسة",
+    "Master Strategist": "استراتيجي متمكن",
+    "Study Legend": "أسطورة الدراسة",
+    "Reward": "المكافأة",
     "Data & privacy": "البيانات والخصوصية",
     "Account data": "بيانات الحساب",
     "Stored in your private Supabase account when configured": "تُحفظ في حساب Supabase الخاص بك بعد الإعداد",
@@ -625,14 +733,13 @@
     "Sign in to sync your private study workspace.": "سجّل الدخول لمزامنة مساحة دراستك الخاصة.",
     "Your password is handled securely by Supabase Auth.": "تُدار كلمة مرورك بأمان عبر خدمة Supabase Auth.",
     "Add your Supabase URL and public anon key in supabase-config.js and allow the SDK to load": "أضف رابط Supabase ومفتاح anon العام إلى supabase-config.js وتأكد من تحميل مكتبة SDK.",
-    "Study-block editing is ready to connect to the schedules table.": "تعديل جلسات الدراسة جاهز للربط بجدول المواعيد.",
-    "Subject creation will be connected to the subjects table.": "ستُربط إضافة المواد بجدول المواد الدراسية.",
-    "Upload files after configuring the private StudyFlow storage bucket.": "ارفع الملفات بعد إعداد مساحة التخزين الخاصة في StudyFlow.",
-    "Note editor will be connected to the private notes table.": "سيُربط محرر الملاحظات بجدول الملاحظات الخاص.",
-    "Goal creation will be connected to the goals table.": "سيُربط إنشاء الأهداف بجدول الأهداف.",
-    "Exam tracking will be connected to your exams table.": "ستُربط متابعة الاختبارات بجدول اختباراتك.",
+    "Study planning is a preview; scheduling is not implemented, so nothing was saved.": "مخطط الدراسة للمعاينة؛ إنشاء الجلسات غير منفذ، ولم يُحفظ أي شيء.",
+    "Subject management is not implemented yet; no subject was created.": "إدارة المواد غير منفذة حاليًا؛ لم تُضف أي مادة.",
+    "File uploads are unavailable; storage upload is not implemented, so no file was uploaded.": "رفع الملفات غير متاح؛ آلية الرفع غير منفذة، ولم يُرفع أي ملف.",
+    "Notes are a preview; note editing is not implemented, so nothing was saved.": "الملاحظات للمعاينة؛ تحرير الملاحظات غير منفذ، ولم يُحفظ أي شيء.",
+    "Goals are a preview; goal creation is not implemented, so no goal was saved.": "الأهداف للمعاينة؛ إنشاء الأهداف غير منفذ، ولم يُحفظ أي هدف.",
+    "Exam tracking is not implemented yet; no exam or result was saved.": "متابعة الاختبارات غير منفذة حاليًا؛ لم يُحفظ أي اختبار أو نتيجة.",
     "Notification read state will sync after connecting your account.": "ستُزامن حالة قراءة الإشعارات بعد ربط حسابك.",
-    "Profile editing is ready to connect to your Supabase profile.": "تعديل الملف الشخصي جاهز للربط بملفك في Supabase.",
     "No subjects yet": "لا توجد مواد بعد",
     "Independent study": "دراسة مستقلة",
     "Calculus II": "التفاضل والتكامل ٢",
@@ -805,9 +912,9 @@
   function translateInterface() {
     document.documentElement.lang = appLanguage;
     document.documentElement.dir = appLanguage === "ar" ? "rtl" : "ltr";
-    document.title = appLanguage === "ar" ? "StudyFlow — حياتك الدراسية، منظمة" : "StudyFlow — Your Study Life, Organized";
+    document.title = appLanguage === "ar" ? "Study Zone — حياتك الدراسية، منظمة" : "Study Zone — Your Study Life, Organized";
     const description = document.querySelector('meta[name="description"]');
-    if (description) description.content = appLanguage === "ar" ? "StudyFlow — حياتك الدراسية، منظمة." : "StudyFlow — Your Study Life, Organized.";
+    if (description) description.content = appLanguage === "ar" ? "Study Zone — حياتك الدراسية، منظمة." : "Study Zone — Your Study Life, Organized.";
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     let node;
     while ((node = walker.nextNode())) {
@@ -858,7 +965,12 @@
 
   function updatePwaInstallButton() {
     const button = document.getElementById("pwa-install");
-    if (button) button.hidden = isPwaInstalled();
+    if (button) button.hidden = pwaInstalled || isPwaInstalled();
+  }
+
+  function updateOfflineStatus() {
+    const status = document.getElementById("offline-status");
+    if (status) status.hidden = navigator.onLine;
   }
 
   function refreshPwaInstructions() {
@@ -1002,9 +1114,9 @@
     toast.append(label, points);
     region.append(toast);
     window.setTimeout(() => toast.remove(), 4200);
-    if (animationsEnabled) toast.animate(
+    if (shouldAnimate()) toast.animate(
       [{ opacity: 0, transform: "translateY(8px) scale(.98)" }, { opacity: 1, transform: "translateY(0) scale(1)" }],
-      { duration: 260, easing: "cubic-bezier(.2,.7,.2,1)" },
+      { duration: motionLevel === "reduced" ? 150 : 260, easing: "cubic-bezier(.2,.7,.2,1)" },
     );
   }
 
@@ -1019,12 +1131,14 @@
       ? `+${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(amount)} XP`
       : "";
     modal.hidden = false;
-    if (animationsEnabled) {
+    if (shouldAnimate()) {
+      const offset = motionLevel === "reduced" ? 4 : 14;
+      const scale = motionLevel === "reduced" ? .99 : .96;
       modal.querySelector(".celebration-modal").animate(
-        [{ opacity: 0, transform: "translateY(14px) scale(.96)" }, { opacity: 1, transform: "translateY(0) scale(1)" }],
-        { duration: 320, easing: "cubic-bezier(.2,.7,.2,1)" },
+        [{ opacity: 0, transform: `translateY(${offset}px) scale(${scale})` }, { opacity: 1, transform: "translateY(0) scale(1)" }],
+        { duration: motionLevel === "reduced" ? 160 : 320, easing: "cubic-bezier(.2,.7,.2,1)" },
       );
-      launchConfetti();
+      if (shouldUseFullMotion()) launchConfetti();
     }
   }
 
@@ -1040,13 +1154,14 @@
       const target = Number(counter.dataset.counterValue);
       const previous = rewardCounterValues.get(key);
       rewardCounterValues.set(key, target);
-      if (!Number.isFinite(target) || previous === undefined || previous === target || !animationsEnabled || reduceMotion) return;
+      if (!Number.isFinite(target) || previous === target || !shouldAnimate() || reduceMotion) return;
+      const startValue = previous ?? 0;
       const start = performance.now();
-      const duration = 420;
+      const duration = motionLevel === "reduced" ? 180 : 420;
       const update = (now) => {
         const progress = Math.min(1, (now - start) / duration);
         const eased = 1 - (1 - progress) ** 3;
-        const value = Math.round(previous + (target - previous) * eased);
+        const value = Math.round(startValue + (target - startValue) * eased);
         counter.textContent = new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(value);
         if (progress < 1) requestAnimationFrame(update);
       };
@@ -1055,7 +1170,7 @@
   }
 
   function launchConfetti() {
-    if (!animationsEnabled || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!shouldUseFullMotion()) return;
     const layer = document.createElement("div");
     layer.className = "celebration-particles";
     layer.setAttribute("aria-hidden", "true");
@@ -1121,7 +1236,7 @@
   }
 
   async function animateCompletionCard(card) {
-    if (!card || !animationsEnabled || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!card || !shouldAnimate()) return;
     card.classList.add("is-completing");
     await new Promise((resolve) => window.setTimeout(resolve, 220));
   }
@@ -1138,7 +1253,7 @@
       ? count === 1 ? "يوم" : count === 2 ? "يومان" : "أيام"
       : count === 1 ? "day" : "days";
     element.textContent = `${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(count)} ${dayLabel}`;
-    if (animate && animationsEnabled && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (animate && shouldAnimate()) {
       element.animate(
         [{ transform: "scale(.86)", color: "var(--secondary)" }, { transform: "scale(1.12)", color: "var(--accent)" }, { transform: "scale(1)", color: "var(--polar)" }],
         { duration: 360, easing: "cubic-bezier(.2,.7,.2,1)" },
@@ -1158,19 +1273,19 @@
     return `<article class="stat-card"><div class="stat-top"><span class="stat-label">${label}</span><span class="stat-icon">${symbol}</span></div><div class="stat-value">${value}</div><div class="stat-foot"><span class="positive">${positive}</span>${note}</div></article>`;
   }
 
-  function lineChart() {
+  function lineChart(chartActivity = activity) {
     const width = 620;
     const height = 190;
     const left = 25;
     const right = 12;
     const top = 14;
     const bottom = 25;
-    const max = 6;
+    const max = Math.max(6, Math.ceil(Math.max(0, ...chartActivity.map((item) => item.hours)) / 2) * 2);
     const plotWidth = width - left - right;
     const plotHeight = height - top - bottom;
     const localizedActivity = appLanguage === "ar"
-      ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => activity.find((item) => item.day === day))
-      : activity;
+      ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => chartActivity.find((item) => item.day === day))
+      : chartActivity;
     const points = localizedActivity.filter(Boolean).map((item, index) => ({
       x: appLanguage === "ar"
         ? width - right - (plotWidth * index) / (localizedActivity.length - 1)
@@ -1191,32 +1306,36 @@
       return `<circle class="chart-dot" cx="${point.x}" cy="${point.y}" r="3.5"><title>${day}: ${hours} ${appLanguage === "ar" ? "ساعة" : "hours"}</title></circle>`;
     }).join("");
     const labels = points.map((point) => `<text class="chart-label" text-anchor="middle" x="${point.x}" y="${height - 4}">${appLanguage === "ar" ? interfaceText[point.day] : point.day}</text>`).join("");
-    const ariaLabel = appLanguage === "ar" ? "ساعات الدراسة خلال الأيام السبعة الماضية" : "Sample study hours over the last seven days";
-    return `<div class="chart-area"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel}"><defs><linearGradient id="chart-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#06D6A0" stop-opacity=".21"/><stop offset="100%" stop-color="#06D6A0" stop-opacity="0"/></linearGradient></defs>${yLines}<path class="chart-area-fill" d="${areaPath}"/><path class="chart-line" d="${line}"/>${dots}${labels}</svg></div>`;
+    const ariaLabel = appLanguage === "ar" ? "ساعات الدراسة خلال الأيام السبعة الماضية" : session ? "Verified focus time over the last seven days" : "Sample study hours over the last seven days";
+    return `<div class="chart-area"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel}"><defs><linearGradient id="chart-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#06D6A0" stop-opacity=".21"/><stop offset="100%" stop-color="#06D6A0" stop-opacity="0"/></linearGradient></defs>${yLines}<path class="chart-area-fill" d="${areaPath}"/><path class="chart-line" pathLength="1" d="${line}"/>${dots}${labels}</svg></div>`;
   }
 
   function dashboardPage() {
     const openTasks = tasks.filter((task) => task.status !== "completed").length;
     const completeTasks = tasks.length - openTasks;
     const weekHours = activity.reduce((sum, item) => sum + item.hours, 0).toFixed(1);
-    const firstName = (session?.user?.user_metadata?.full_name || "Alex").trim().split(/\s+/)[0];
+    const firstName = (accountProfile?.display_name || session?.user?.user_metadata?.full_name || "Alex").trim().split(/\s+/)[0];
     const dayLabelText = new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { weekday: "long", month: "long", day: "numeric" }).format(new Date());
     const dayLabel = appLanguage === "ar" ? dayLabelText : dayLabelText.toUpperCase();
     const formattedNumber = (value) => new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(value);
-    const statGrid = `<div class="grid stats-grid">${statCard("STUDY THIS WEEK", `${weekHours}<small>h</small>`, " across the last 7 days", "◷", "+ 8% ")}${statCard("TASKS COMPLETED", session ? `${formattedNumber(completeTasks)}/${formattedNumber(tasks.length)}` : "—", " tasks finished", "✓", session ? `${formattedNumber(openTasks)} left · ` : "")}${statCard("CURRENT LEVEL", rewardSummary ? rewardCounterMarkup("level", rewardSummary.level) : "—", rewardSummary ? ` · ${rewardCounterMarkup("xp", rewardSummary.total_xp)} XP` : " Connect your account for real rewards", "✧")}${statCard("STUDY STREAK", rewardSummary ? `${rewardCounterMarkup("streak", rewardSummary.current_streak)} days` : "—", rewardSummary ? ` · best ${formattedNumber(Number(rewardSummary.best_streak))} days` : " Based on verified activity", "↗")}</div>`;
+    const statGrid = `<div class="grid stats-grid">${statCard("STUDY THIS WEEK", session ? `${weekHours}<small>h</small>` : "—", session ? " across the last 7 days" : " Based on verified focus sessions", "◷")}${statCard("TASKS COMPLETED", session ? `${formattedNumber(completeTasks)}/${formattedNumber(tasks.length)}` : "—", " tasks finished", "✓", session ? `${formattedNumber(openTasks)} left · ` : "")}${statCard("CURRENT LEVEL", rewardSummary ? rewardCounterMarkup("level", rewardSummary.level) : "—", rewardSummary ? ` · ${rewardCounterMarkup("xp", rewardSummary.total_xp)} XP` : " Connect your account for real rewards", "✧")}${statCard("STUDY STREAK", rewardSummary ? `${rewardCounterMarkup("streak", rewardSummary.current_streak)} days` : "—", rewardSummary ? ` · best ${formattedNumber(Number(rewardSummary.best_streak))} days` : " Based on verified activity", "↗")}</div>`;
     const subjectRows = subjects.map((subject) => `<div class="subject-row"><span class="subject-row-name">${escapeHtml(subject.name)}</span><div class="progress-track"><div class="progress-fill" style="width:${subject.progress ?? 0}%"></div></div><span class="subject-row-value">${subject.progress === null ? "—" : `${subject.progress}%`}</span></div>`).join("") || `<div class="empty-state">Add a subject to start tracking course progress.</div>`;
-    const scheduleRows = schedule.slice(0, 3).map((block) => `<div class="schedule-item"><time class="schedule-time">${block.day.slice(0, 3)}<br>${block.time}</time><span class="schedule-bar"></span><div><div class="schedule-name">${block.title}</div><div class="schedule-subject">${block.subject}</div></div><span class="schedule-duration">${block.length}</span></div>`).join("");
+    const now = Date.now();
+    const upcomingSchedule = schedule.filter((block) => !block.starts_at
+      || new Date(block.ends_at) > now
+      || block.recurrence !== "none").slice(0, 3);
+    const scheduleRows = upcomingSchedule.map((block) => `<div class="schedule-item"><time class="schedule-time">${escapeHtml((block.day || new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(new Date(block.starts_at))).slice(0, 3))}<br>${escapeHtml(block.time || new Intl.DateTimeFormat(appLanguage, { hour: "2-digit", minute: "2-digit" }).format(new Date(block.starts_at)))}</time><span class="schedule-bar"></span><div><div class="schedule-name">${escapeHtml(block.title)}</div><div class="schedule-subject">${escapeHtml(block.subject || subjectName(block.subject_id))}</div></div><span class="schedule-duration">${escapeHtml(block.length || `${Math.round((new Date(block.ends_at) - new Date(block.starts_at)) / 60000)} min`)}</span></div>`).join("") || `<div class="empty-state">No study blocks planned yet.</div>`;
     const badges = earnedAchievements.slice(0, 3).map((item) => {
       const achievement = Array.isArray(item.achievements) ? item.achievements[0] : item.achievements;
       const catalog = achievementCatalog.find((entry) => entry.code === achievement?.code);
       if (!achievement) return "";
       return `<div class="achievement-row"><span class="achievement-icon">${catalog?.symbol || "✦"}</span><div><strong>${translateUiText(achievement.name || catalog?.name || "Achievement unlocked!")}</strong><small>${translateUiText(achievement.description || catalog?.description || "")}</small></div></div>`;
     }).join("") || `<div class="empty-state">${session ? "No achievements unlocked yet." : "Sign in to earn secure rewards."}</div>`;
-    const goalRows = goals.map((goal) => `<div><div class="goal-topline"><strong>${goal.title}</strong><span>${goal.due}</span></div><div class="progress-track"><div class="progress-fill" style="width:${goal.progress}%"></div></div><div class="goal-bottomline"><span>${goal.detail}</span><span>${goal.progress}%</span></div></div>`).join("");
+    const goalRows = goals.map((goal) => `<div><div class="goal-topline"><strong>${escapeHtml(goal.title)}</strong><span>${escapeHtml(goal.due || "")}</span></div><div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, Math.max(0, goal.progress || 0))}%"></div></div><div class="goal-bottomline"><span>${escapeHtml(goal.detail || goal.details || "")}</span><span>${Math.round(goal.progress || 0)}%</span></div></div>`).join("");
     return `${pageHeading(dayLabel, `Good evening, ${escapeHtml(firstName)}.`, "A clear plan makes room for your best work.", `<button class="button button-primary" data-action="new-task"><span class="button-icon">＋</span> Add a task</button>`)}
       ${statGrid}
       <div class="grid dashboard-grid">
-        <section class="panel">${panelHeading("Study rhythm", "Sample hours from the past week", `<button class="panel-link" data-navigate="analytics">View analytics →</button>`)}${lineChart()}</section>
+        <section class="panel">${panelHeading("Study rhythm", session ? "Verified focus time from the past week" : "Sample hours from the past week", `<button class="panel-link" data-navigate="analytics">View analytics →</button>`)}${lineChart()}</section>
         <section class="panel">${panelHeading("Subject progress", "Current mastery estimates")}<div class="subject-rows">${subjectRows}</div></section>
       </div>
       <div class="grid dashboard-grid bottom-grid">
@@ -1226,7 +1345,7 @@
       <div class="grid dashboard-grid bottom-grid">
         <section class="panel">${panelHeading("Goal progress", "Small steps add up")}<div class="goal-list">${goalRows}</div></section>
         <section class="panel">${panelHeading("Quick start")}<div class="activity-list"><div class="activity-item"><span class="activity-event"><i class="activity-bullet"></i>Pick up where you left off</span><button class="panel-link" data-navigate="focus">Focus →</button></div><div class="activity-item"><span class="activity-event"><i class="activity-bullet"></i>Review your upcoming tasks</span><button class="panel-link" data-navigate="tasks">Tasks →</button></div><div class="activity-item"><span class="activity-event"><i class="activity-bullet"></i>Explore your study materials</span><button class="panel-link" data-navigate="files">Files →</button></div></div></section>
-      </div><p class="data-caption">${session ? "Rewards and task totals are from your account. Other dashboard previews are sample data." : "Connect an account to see real XP, levels, streaks, and achievements. Other dashboard previews are sample data."}</p>`;
+      </div><p class="data-caption">${session ? "Study time, tasks, subjects, schedules, goals, and rewards reflect your account data." : "Sample content is shown in preview mode. Sign in to load your private study data."}</p>`;
   }
 
   function taskPage() {
@@ -1350,39 +1469,72 @@
     return result;
   }
 
+  function deadlineDateRange(deadline) {
+    const due = new Date(deadline.due_at);
+    const start = deadline.starts_at ? new Date(deadline.starts_at) : due;
+    const first = Number.isNaN(start.getTime()) || start > due ? due : start;
+    return { start: dateKey(first), end: dateKey(due) };
+  }
+
   function calendarView(deadlines) {
     const t = deadlineText[appLanguage];
     const year = deadlineMonth.getFullYear();
     const month = deadlineMonth.getMonth();
     const firstDay = new Date(year, month, 1);
     const startOffset = firstDay.getDay();
-    const daysCount = new Date(year, month + 1, 0).getDate();
-    const previousCount = new Date(year, month, 0).getDate();
     const today = dateKey(new Date());
-    const deadlineDates = new Set(deadlines.map((deadline) => dateKey(new Date(deadline.due_at))));
-    const cells = Array.from({ length: 42 }, (_, index) => {
-      const dayNumber = index - startOffset + 1;
-      const date = dayNumber < 1
-        ? new Date(year, month - 1, previousCount + dayNumber)
-        : dayNumber > daysCount
-          ? new Date(year, month + 1, dayNumber - daysCount)
-          : new Date(year, month, dayNumber);
-      const key = dateKey(date);
-      const classes = ["calendar-day"];
-      if (date.getMonth() !== month) classes.push("outside-month");
-      if (key === today) classes.push("today");
-      if (key === selectedDeadlineDate) classes.push("selected");
-      if (deadlineDates.has(key)) classes.push("has-deadlines");
-      return `<button class="${classes.join(" ")}" data-action="calendar-select" data-date="${key}" aria-label="${escapeHtml(new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "full" }).format(date))}" aria-pressed="${key === selectedDeadlineDate}">${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(date.getDate())}</button>`;
-    }).join("");
     const weekdayLabels = t.daysShort.map((day) => `<span class="calendar-weekday">${day}</span>`).join("");
+    const startOfGrid = new Date(year, month, 1 - startOffset);
+    const weeks = Array.from({ length: 6 }, (_, weekIndex) => {
+      const weekStart = new Date(startOfGrid);
+      weekStart.setDate(startOfGrid.getDate() + weekIndex * 7);
+      const dayDates = Array.from({ length: 7 }, (_, dayIndex) => {
+        const date = new Date(weekStart);
+        date.setDate(weekStart.getDate() + dayIndex);
+        const key = dateKey(date);
+        const hasDeadlines = deadlines.some((deadline) => {
+          const range = deadlineDateRange(deadline);
+          return key >= range.start && key <= range.end;
+        });
+        const classes = ["calendar-day"];
+        if (date.getMonth() !== month) classes.push("outside-month");
+        if (key === today) classes.push("today");
+        if (key === selectedDeadlineDate) classes.push("selected");
+        if (hasDeadlines) classes.push("has-deadlines");
+        return { date, key, button: `<button class="${classes.join(" ")}" data-action="calendar-select" data-date="${key}" aria-label="${escapeHtml(new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "full" }).format(date))}" aria-pressed="${key === selectedDeadlineDate}">${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(date.getDate())}</button>` };
+      });
+
+      const weekStartKey = dayDates[0].key;
+      const weekEndKey = dayDates[6].key;
+      const laneEnds = [];
+      const bars = deadlines.map((deadline) => {
+        const range = deadlineDateRange(deadline);
+        if (range.start > weekEndKey || range.end < weekStartKey) return null;
+        const startColumn = Math.max(0, Math.round((new Date(`${range.start}T00:00:00`) - weekStart) / 86400000));
+        const endColumn = Math.min(6, Math.round((new Date(`${range.end}T00:00:00`) - weekStart) / 86400000));
+        let lane = laneEnds.findIndex((lastColumn) => lastColumn < startColumn);
+        if (lane < 0) lane = laneEnds.length;
+        laneEnds[lane] = endColumn;
+        const status = getDeadlineStatus(deadline);
+        const classNames = ["calendar-span-bar"];
+        if (status === "overdue") classNames.push("overdue");
+        if (status === "completed") classNames.push("completed");
+        if (startColumn === endColumn) classNames.push("single-day");
+        const label = range.start >= weekStartKey ? deadline.title : "";
+        return `<span class="${classNames.join(" ")}" style="grid-column:${startColumn + 1}/${endColumn + 2};grid-row:${lane + 1}" title="${escapeHtml(deadline.title)}" aria-label="${escapeHtml(deadline.title)}">${escapeHtml(label)}</span>`;
+      }).filter(Boolean).join("");
+      return `<div class="calendar-week"><div class="calendar-week-days">${dayDates.map((item) => item.button).join("")}</div><div class="calendar-week-bars" style="grid-template-rows:repeat(${Math.max(1, laneEnds.length)},18px)">${bars}</div></div>`;
+    }).join("");
     const monthLabel = new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { month: "long", year: "numeric" }).format(deadlineMonth);
-    const selected = deadlines.filter((deadline) => dateKey(new Date(deadline.due_at)) === selectedDeadlineDate);
+    const selected = deadlines.filter((deadline) => {
+      const range = deadlineDateRange(deadline);
+      return selectedDeadlineDate >= range.start && selectedDeadlineDate <= range.end;
+    });
     const selectedLabel = selectedDeadlineDate
       ? new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "full" }).format(new Date(`${selectedDeadlineDate}T12:00:00`))
       : t.noDate;
     return `<div class="calendar-header"><h2 class="calendar-month" id="calendar-month">${escapeHtml(monthLabel)}</h2><div class="calendar-nav"><button class="button button-secondary button-small" data-action="calendar-today">${t.currentMonth}</button><button class="icon-button" data-action="calendar-prev" aria-label="${t.previous}">‹</button><button class="icon-button" data-action="calendar-next" aria-label="${t.next}">›</button></div></div>
-      <div class="calendar-grid" role="grid" aria-labelledby="calendar-month">${weekdayLabels}${cells}</div>
+      <div class="calendar-grid" role="grid" aria-labelledby="calendar-month"><div class="calendar-weekdays">${weekdayLabels}</div>${weeks}</div>
       <div class="calendar-selection">${panelHeading(escapeHtml(selectedLabel), `${selected.length} ${selected.length === 1 ? t.deadline : t.deadlines}`)}<div class="deadline-list">${selected.map(deadlineCard).join("") || `<div class="empty-state">${t.noDateItems}</div>`}</div></div>`;
   }
 
@@ -1414,26 +1566,453 @@
     const dayLabels = appLanguage === "ar"
       ? ["الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"]
       : days;
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 7);
     const dayCards = days.map((day) => {
-      const blocks = schedule.filter((item) => item.day === day);
+      const blocks = schedule.filter((item) => {
+        if (!item.starts_at) return item.day === day;
+        const startsAt = new Date(item.starts_at);
+        const weekdayMatches = new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(startsAt) === day;
+        if (item.recurrence === "daily") return true;
+        if (item.recurrence === "weekly") return weekdayMatches;
+        return startsAt >= weekStart && startsAt < weekEnd && weekdayMatches;
+      });
       const label = dayLabels[days.indexOf(day)];
-      return `<article class="planner-day ${day === todayName ? "today" : ""}"><div class="planner-day-head">${label}<small>${blocks.length ? `${blocks.length} block` : "Open day"}</small></div>${blocks.length ? blocks.map((block) => `<div class="planner-block"><time>${block.time} · ${block.length}</time><strong>${block.title}</strong><span>${block.subject}</span></div>`).join("") : `<p class="empty-day">No study blocks planned.</p>`}</article>`;
+      return `<article class="planner-day ${day === todayName ? "today" : ""}"><div class="planner-day-head">${label}<small>${blocks.length ? `${blocks.length} block` : "Open day"}</small></div>${blocks.length ? blocks.map((block) => `<div class="planner-block"><time>${escapeHtml(block.time || new Intl.DateTimeFormat(appLanguage, { hour: "2-digit", minute: "2-digit" }).format(new Date(block.starts_at)))} · ${escapeHtml(block.length || `${Math.round((new Date(block.ends_at) - new Date(block.starts_at)) / 60000)} min`)}</time><strong>${escapeHtml(block.title)}</strong><span>${escapeHtml(block.subject || subjectName(block.subject_id))}</span>${block.id ? `<div class="card-actions"><button class="text-button" data-action="schedule-edit" data-id="${escapeHtml(block.id)}">${featureText("edit")}</button><button class="text-button" data-action="schedule-delete" data-id="${escapeHtml(block.id)}">${featureText("delete")}</button></div>` : ""}</div>`).join("") : `<p class="empty-day">No study blocks planned.</p>`}</article>`;
     }).join("");
-    return `${pageHeading("WEEK AT A GLANCE", "Study planner", "Make a realistic plan, then give yourself room to adapt.", `<button class="button button-primary" data-action="planner-hint">＋ Plan a block</button>`)}<section class="panel">${panelHeading("This week", "Planned sessions · preview")}<div class="grid planner-grid">${dayCards}</div></section><div class="grid dashboard-grid section-spacer"><section class="panel">${panelHeading("Planned vs. actual", "Compare time blocks with completed focus sessions")}<div class="metric-large">7.5h <span class="metric-caption">planned this week</span></div><div class="progress-track"><div class="progress-fill" style="width:68%"></div></div><p class="page-subtitle">5.1 hours logged in this sample week</p></section><section class="panel">${panelHeading("Planning tip")}<p class="panel-copy">Leave a little breathing room between study blocks. A flexible plan is easier to keep than a perfect one.</p></section></div>`;
+    const plannedMinutes = schedule.reduce((sum, block) => sum + (block.starts_at && block.ends_at
+      ? Math.max(0, (new Date(block.ends_at) - new Date(block.starts_at)) / 60000)
+      : Number.parseInt(block.length, 10) || 0), 0);
+    return `${pageHeading("WEEK AT A GLANCE", "Study planner", "Make a realistic plan, then give yourself room to adapt.", `<button class="button button-primary" data-action="schedule-add">＋ Plan a block</button>`)}<section class="panel">${panelHeading("This week", session ? "Your planned study sessions" : "Planned sessions · preview")}<div class="grid planner-grid">${dayCards}</div></section><div class="grid dashboard-grid section-spacer"><section class="panel">${panelHeading("Planned study time", "Based on the blocks shown above")}<div class="metric-large">${(plannedMinutes / 60).toFixed(1)}h <span class="metric-caption">planned</span></div></section><section class="panel">${panelHeading("Planning tip")}<p class="panel-copy">Leave a little breathing room between study blocks. A flexible plan is easier to keep than a perfect one.</p></section></div><p class="data-caption">${session ? "Study blocks are saved to your private account." : "Sample blocks are shown in preview mode. Sign in to create and sync your own schedule."}</p>`;
   }
 
   function subjectsPage() {
-    return `${pageHeading("YOUR COURSES", "Subjects", "A quick view of your courses, credits, and learning progress.", `<button class="button button-primary" data-action="subject-hint">＋ Add subject</button>`)}<div class="grid subject-grid">${subjects.map((subject) => `<article class="subject-card"><div class="subject-card-top"><span class="subject-color" style="background:${subject.color}"></span><span class="task-meta">${subject.credits} credits</span></div><h3>${escapeHtml(subject.name)}</h3><p>Keep your notes, tasks, and study sessions connected to this course.</p><div class="progress-track"><div class="progress-fill" style="width:${subject.progress ?? 0}%"></div></div><div class="subject-card-foot"><span>Learning progress</span><span>${subject.progress === null ? "—" : `${subject.progress}%`}</span></div></article>`).join("") || `<div class="empty-state"><strong>No subjects yet</strong>Add your first course to start organizing your study workspace.</div>`}</div><p class="data-caption">${session ? "Subject details loaded from your account. Course progress appears as you log study sessions." : "Preview content. Subject management will be backed by your Supabase database."}</p>`;
+    return `${pageHeading("YOUR COURSES", "Subjects", "A quick view of your courses, credits, and learning progress.", `<button class="button button-primary" data-action="subject-add">＋ Add subject</button>`)}<div class="grid subject-grid">${subjects.map((subject) => `<article class="subject-card"><div class="subject-card-top"><span class="subject-color" style="background:${escapeHtml(subject.color)}"></span><span class="task-meta">${Number(subject.credit_hours ?? subject.credits ?? 0)} credits</span></div><h3>${escapeHtml(subject.name)}</h3><p>${escapeHtml(subject.description || "Keep your notes, tasks, and study sessions connected to this course.")}</p><div class="progress-track"><div class="progress-fill" style="width:${subject.progress ?? 0}%"></div></div><div class="subject-card-foot"><span>Learning progress</span><span>${subject.progress == null ? "—" : `${subject.progress}%`}</span></div>${subject.id && session ? `<div class="card-actions"><button class="text-button" data-action="subject-edit" data-id="${escapeHtml(subject.id)}">${featureText("edit")}</button><button class="text-button" data-action="subject-delete" data-id="${escapeHtml(subject.id)}">${featureText("delete")}</button></div>` : ""}</article>`).join("") || `<div class="empty-state"><strong>No subjects yet</strong>Add your first course to start organizing your study workspace.</div>`}</div><p class="data-caption">${session ? "Subject details are loaded from your private account." : "Preview content. Sign in to create and sync your own subjects."}</p>`;
   }
 
   function plannerBlocksPage() { return schedule; }
 
   function filesPage() {
-    return `${pageHeading("STUDY MATERIALS", "Your files", "A tidy home for resources from every course.", `<button class="button button-primary" data-action="files-hint">↑ Upload file</button>`)}<div class="grid resource-grid">${sampleFiles.map((file) => `<article class="item-card"><span class="stat-icon">▤</span><h3 dir="auto">${file.name}</h3><p dir="auto">${file.subject} · ${file.type}</p></article>`).join("")}<article class="item-card"><span class="stat-icon">▧</span><h3>Course resources</h3><p>Organize future uploads by subject and folder.</p></article></div><p class="data-caption">Sample file cards are for layout preview. Storage uploads require a private Supabase bucket.</p>`;
+    return `${pageHeading("STUDY MATERIALS", "Your files", "A tidy home for resources from every course.", `<button class="button button-primary" data-action="file-add">↑ Upload file</button>`)}<div class="grid resource-grid">${sampleFiles.map((file) => `<article class="item-card"><span class="stat-icon">▤</span><h3 dir="auto">${escapeHtml(file.name)}</h3><p dir="auto">${escapeHtml(file.subject || subjectName(file.subject_id))} · ${escapeHtml(file.type || file.mime_type || "File")}</p>${session && file.id ? `<div class="card-actions"><button class="text-button" data-action="file-download" data-id="${escapeHtml(file.id)}">${featureText("download")}</button><button class="text-button" data-action="file-delete" data-id="${escapeHtml(file.id)}">${featureText("delete")}</button></div>` : ""}</article>`).join("")}${session && !sampleFiles.length ? `<div class="empty-state"><strong>No files uploaded yet</strong>Upload a file to keep your study materials in your private workspace.</div>` : ""}</div><p class="data-caption">${session ? "Files are stored in a private account-owned bucket; downloads use short-lived signed links." : "Sample file cards are shown in preview. Sign in to upload files to private storage."}</p>`;
   }
 
   function notesPage() {
-    return `${pageHeading("YOUR KNOWLEDGE VAULT", "Notes", "Capture what matters and find it when you need it.", `<button class="button button-primary" data-action="notes-hint">＋ New note</button>`)}<div class="grid resource-grid">${sampleNotes.map((note) => `<article class="item-card"><span class="task-meta">${note.subject}</span><h3>${note.title}</h3><p>Updated ${note.updated}</p><div class="note-preview">A place for your key ideas, examples, and questions to revisit later.</div></article>`).join("")}</div><p class="data-caption">Sample content only. Notes can be stored in your private Supabase workspace.</p>`;
+    return `${pageHeading("YOUR KNOWLEDGE VAULT", "Notes", "Capture what matters and find it when you need it.", `<button class="button button-primary" data-action="note-add">＋ New note</button>`)}<div class="grid resource-grid">${sampleNotes.map((note) => `<article class="item-card"><span class="task-meta">${escapeHtml(note.subject || subjectName(note.subject_id))}</span><h3>${escapeHtml(note.title)}</h3><p>Updated ${escapeHtml(note.updated || new Intl.DateTimeFormat(appLanguage, { dateStyle: "medium" }).format(new Date(note.updated_at || Date.now())))}</p><div class="note-preview">${escapeHtml(note.content || "A place for your key ideas, examples, and questions to revisit later.")}</div>${session && note.id ? `<div class="card-actions"><button class="text-button" data-action="note-edit" data-id="${escapeHtml(note.id)}">Edit</button><button class="text-button" data-action="note-delete" data-id="${escapeHtml(note.id)}">Delete</button></div>` : ""}</article>`).join("")}${session && !sampleNotes.length ? `<div class="empty-state"><strong>No notes yet</strong>Create a private note to capture your study ideas.</div>` : ""}</div><p class="data-caption">${session ? "Your notes are private and synchronized to your account." : "Sample content is shown in preview. Sign in to create and sync notes."}</p>`;
+  }
+
+  const featureFormText = {
+    en: {
+      save: "Save", cancel: "Cancel", loading: "Saving…", error: "Could not save your changes.",
+      signIn: "Sign in to manage your private study data.", subject: "Subject", noSubject: "No subject",
+      editSubject: "Edit subject", addSubject: "Add subject", editSchedule: "Edit study block", addSchedule: "Plan a study block",
+      uploadFile: "Upload a study file", editNote: "Edit note", addNote: "Create a note", editGoal: "Edit goal",
+      addGoal: "Create a goal", goalProgress: "Add goal progress", editExam: "Edit exam", addExam: "Add exam",
+      examResult: "Record exam result", editProfile: "Edit profile", edit: "Edit", delete: "Delete",
+      download: "Download", recordResult: "Record result", editResult: "Edit result", addProgress: "Add progress",
+      title: "Title", description: "Description", color: "Color", credits: "Credit hours", details: "Details",
+      startsAt: "Starts", endsAt: "Ends", recurrence: "Repeat", none: "Does not repeat", daily: "Daily", weekly: "Weekly",
+      file: "Choose file", content: "Note", period: "Goal period", target: "Target", current: "Current progress",
+      unit: "Unit", dueAt: "Due date", examAt: "Exam date", maximumMarks: "Maximum marks", result: "Result",
+      notes: "Notes", displayName: "Display name", timezone: "Timezone (IANA)", language: "Language",
+      avatar: "Avatar URL (optional)", progress: "Progress to add", fileLimit: "Choose a supported file no larger than 20 MB.",
+      resultRange: "Result must be between zero and maximum marks.",
+    },
+    ar: {
+      save: "حفظ", cancel: "إلغاء", loading: "جارٍ الحفظ…", error: "تعذر حفظ التغييرات.",
+      signIn: "سجّل الدخول لإدارة بياناتك الدراسية الخاصة.", subject: "المادة", noSubject: "بلا مادة",
+      editSubject: "تعديل المادة", addSubject: "إضافة مادة", editSchedule: "تعديل الجلسة", addSchedule: "تخطيط جلسة دراسية",
+      uploadFile: "رفع ملف دراسي", editNote: "تعديل الملاحظة", addNote: "إنشاء ملاحظة", editGoal: "تعديل الهدف",
+      addGoal: "إنشاء هدف", goalProgress: "إضافة تقدم للهدف", editExam: "تعديل الاختبار", addExam: "إضافة اختبار",
+      examResult: "تسجيل نتيجة الاختبار", editProfile: "تعديل الملف الشخصي", edit: "تعديل", delete: "حذف",
+      download: "تنزيل", recordResult: "تسجيل النتيجة", editResult: "تعديل النتيجة", addProgress: "إضافة تقدم",
+      title: "العنوان", description: "الوصف", color: "اللون", credits: "الساعات المعتمدة", details: "التفاصيل",
+      startsAt: "يبدأ", endsAt: "ينتهي", recurrence: "التكرار", none: "بدون تكرار", daily: "يوميًا", weekly: "أسبوعيًا",
+      file: "اختر ملفًا", content: "الملاحظة", period: "فترة الهدف", target: "المستهدف", current: "التقدم الحالي",
+      unit: "الوحدة", dueAt: "تاريخ الاستحقاق", examAt: "موعد الاختبار", maximumMarks: "الدرجة النهائية", result: "النتيجة",
+      notes: "ملاحظات", displayName: "اسم العرض", timezone: "المنطقة الزمنية (IANA)", language: "اللغة",
+      avatar: "رابط الصورة (اختياري)", progress: "مقدار التقدم المضاف", fileLimit: "اختر ملفًا مدعومًا لا يتجاوز حجمه 20 ميغابايت.",
+      resultRange: "يجب أن تكون النتيجة بين صفر والدرجة النهائية.",
+    },
+  };
+
+  function featureText(key) {
+    return featureFormText[appLanguage][key] || key;
+  }
+
+  function localDateTimeValue(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  }
+
+  function featureSubjectOptions(selectedId = "") {
+    return `<option value="">${featureText("noSubject")}</option>${subjects.map((item) => `<option value="${escapeHtml(item.id)}" ${String(item.id) === String(selectedId) ? "selected" : ""}>${escapeHtml(item.name)}</option>`).join("")}`;
+  }
+
+  function featureField(name, label, type = "text", value = "", attributes = "") {
+    const valueAttr = type === "file" ? "" : ` value="${escapeHtml(value ?? "")}"`;
+    const field = type === "textarea"
+      ? `<textarea name="${name}" dir="auto" ${attributes}>${escapeHtml(value ?? "")}</textarea>`
+      : `<input name="${name}" type="${type}"${valueAttr} ${attributes}>`;
+    return `<label>${featureText(label)}${field}</label>`;
+  }
+
+  function openFeatureForm(type, id = null) {
+    if (!supabase || !session) {
+      showToast(featureText("signIn"));
+      document.getElementById("auth-modal").hidden = false;
+      return;
+    }
+
+    const collections = {
+      subject: subjects, schedule, file: sampleFiles, note: sampleNotes, goal: goals,
+      exam: examResults, profile: accountProfile ? [accountProfile] : [],
+      "exam-result": examResults, "goal-progress": goals,
+    };
+    const record = id ? collections[type]?.find((item) => String(item.id) === String(id)) : null;
+    if (id && !record && type !== "profile") {
+      showToast("The selected record could not be found. Refresh the page and try again.");
+      return;
+    }
+    const titles = {
+      subject: record ? "editSubject" : "addSubject",
+      schedule: record ? "editSchedule" : "addSchedule",
+      file: "uploadFile",
+      note: record ? "editNote" : "addNote",
+      goal: record ? "editGoal" : "addGoal",
+      "goal-progress": "goalProgress",
+      exam: record ? "editExam" : "addExam",
+      "exam-result": "examResult",
+      profile: "editProfile",
+    };
+    let fields = "";
+
+    if (type === "subject") {
+      fields = `${featureField("name", "title", "text", record?.name, "required maxlength=\"100\"")}${featureField("description", "description", "textarea", record?.description, "rows=\"3\" maxlength=\"2000\"")}<div class="form-row">${featureField("color", "color", "color", record?.color || "#06D6A0", "required")}${featureField("credit_hours", "credits", "number", record?.credit_hours ?? record?.credits ?? 0, "min=\"0\" max=\"30\" required")}</div>`;
+    } else if (type === "schedule") {
+      fields = `${featureField("title", "title", "text", record?.title, "required maxlength=\"120\"")}${featureField("details", "details", "textarea", record?.details, "rows=\"2\" maxlength=\"2000\"")}<label>${featureText("subject")}<select name="subject_id">${featureSubjectOptions(record?.subject_id)}</select></label><div class="form-row">${featureField("starts_at", "startsAt", "datetime-local", localDateTimeValue(record?.starts_at), "required")}${featureField("ends_at", "endsAt", "datetime-local", localDateTimeValue(record?.ends_at), "required")}</div><label>${featureText("recurrence")}<select name="recurrence"><option value="none">Does not repeat</option><option value="daily" ${record?.recurrence === "daily" ? "selected" : ""}>Daily</option><option value="weekly" ${record?.recurrence === "weekly" ? "selected" : ""}>Weekly</option></select></label>`;
+    } else if (type === "file") {
+      fields = `${featureField("file", "file", "file", "", "required accept=\".pdf,.jpg,.jpeg,.png,.webp,.txt,.md,.doc,.docx,.ppt,.pptx\"")}<label>${featureText("subject")}<select name="subject_id">${featureSubjectOptions()}</select></label>`;
+    } else if (type === "note") {
+      fields = `${featureField("title", "title", "text", record?.title || "Untitled note", "required maxlength=\"180\"")}${featureField("content", "content", "textarea", record?.content, "rows=\"8\" maxlength=\"30000\"")}<label>${featureText("subject")}<select name="subject_id">${featureSubjectOptions(record?.subject_id)}</select></label>`;
+    } else if (type === "goal") {
+      fields = `${featureField("title", "title", "text", record?.title, "required maxlength=\"160\"")}${featureField("details", "details", "textarea", record?.details, "rows=\"2\" maxlength=\"2000\"")}<div class="form-row"><label>${featureText("period")}<select name="period"><option value="daily">Daily</option><option value="weekly" ${!record || record.period === "weekly" ? "selected" : ""}>Weekly</option><option value="monthly" ${record?.period === "monthly" ? "selected" : ""}>Monthly</option><option value="custom" ${record?.period === "custom" ? "selected" : ""}>Custom</option></select></label>${featureField("unit", "unit", "text", record?.unit || "sessions", "required maxlength=\"30\"")}</div><div class="form-row">${featureField("target_value", "target", "number", record?.target_value || 1, "min=\"0.01\" step=\"0.01\" required")}${featureField("current_value", "current", "number", record?.current_value || 0, "min=\"0\" step=\"0.01\" required")}</div>${featureField("due_at", "dueAt", "date", record?.due_at ? dateKey(new Date(record.due_at)) : "")}`;
+    } else if (type === "goal-progress") {
+      fields = featureField("increment", "progress", "number", "", "min=\"0.01\" step=\"0.01\" required");
+    } else if (type === "exam") {
+      fields = `${featureField("title", "title", "text", record?.title, "required maxlength=\"160\"")}${featureField("details", "details", "textarea", record?.details, "rows=\"2\" maxlength=\"2000\"")}<label>${featureText("subject")}<select name="subject_id">${featureSubjectOptions(record?.subject_id)}</select></label><div class="form-row">${featureField("exam_at", "examAt", "datetime-local", localDateTimeValue(record?.exam_at), "required")}${featureField("max_marks", "maximumMarks", "number", record?.max_marks ?? 100, "min=\"0.01\" step=\"0.01\" required")}</div>`;
+    } else if (type === "exam-result") {
+      const currentResult = Array.isArray(record.exam_results) ? record.exam_results[0] : record.exam_results;
+      fields = `${featureField("obtained_marks", "result", "number", currentResult?.obtained_marks ?? record.obtained_marks, `min="0" max="${Number(record.max_marks)}" step="0.01" required`)}${featureField("notes", "notes", "textarea", currentResult?.notes, "rows=\"3\" maxlength=\"2000\"")}`;
+    } else if (type === "profile") {
+      const profile = record || {};
+      fields = `${featureField("display_name", "displayName", "text", profile.display_name || session.user.user_metadata?.full_name || "", "required maxlength=\"100\"")}${featureField("timezone", "timezone", "text", profile.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone, "required maxlength=\"80\"")}<label>${featureText("language")}<select name="language"><option value="en" ${profile.language === "en" ? "selected" : ""}>English</option><option value="ar" ${profile.language === "ar" ? "selected" : ""}>العربية</option></select></label><label>${translateUiText("Choose a profile photo from your device")}<input type="file" name="avatar_file" accept="image/png,image/jpeg,image/webp"></label><small>${translateUiText("PNG, JPEG, or WebP · up to 2 MB")}</small>`;
+    } else {
+      return;
+    }
+
+    let modal = document.getElementById("feature-modal");
+    if (!modal) {
+      document.body.insertAdjacentHTML("beforeend", `<div class="modal-backdrop" id="feature-modal" hidden><section class="modal" role="dialog" aria-modal="true" aria-labelledby="feature-modal-title"><button class="modal-close" type="button" data-close-modal aria-label="Close">×</button><p class="eyebrow">STUDY ZONE</p><h2 id="feature-modal-title"></h2><form id="feature-form" class="form-stack"></form></section></div>`);
+      modal = document.getElementById("feature-modal");
+      document.getElementById("feature-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const submit = form.querySelector('[type="submit"]');
+        const errorEl = form.querySelector("[data-form-error]");
+        submit.disabled = true;
+        submit.textContent = featureText("loading");
+        errorEl.textContent = "";
+        try {
+          await saveFeatureForm(form);
+        } catch (error) {
+          errorEl.textContent = `${featureText("error")} ${error.message || ""}`.trim();
+          console.error("Study workspace save failed.", error);
+        } finally {
+          submit.disabled = false;
+          submit.textContent = featureText("save");
+        }
+      });
+    }
+    document.getElementById("feature-modal-title").textContent = featureText(titles[type]);
+    document.getElementById("feature-form").dataset.featureType = type;
+    document.getElementById("feature-form").dataset.recordId = id || "";
+    document.getElementById("feature-form").innerHTML = `${fields}<p class="form-error" data-form-error role="alert"></p><div class="modal-actions"><button class="button button-secondary" type="button" data-close-modal>${featureText("cancel")}</button><button class="button button-primary" type="submit">${featureText("save")}</button></div>`;
+    modal.hidden = false;
+    document.querySelector("#feature-form input, #feature-form textarea, #feature-form select")?.focus();
+  }
+
+  function featureDate(value) {
+    const date = new Date(value);
+    if (!value || Number.isNaN(date.getTime())) throw new Error("Enter a valid date and time.");
+    return date.toISOString();
+  }
+
+  async function saveFeatureForm(form) {
+    if (!supabase || !session) throw new Error(featureText("signIn"));
+    const values = new FormData(form);
+    const type = form.dataset.featureType;
+    const id = form.dataset.recordId;
+    let table;
+    let row;
+
+    if (type === "subject") {
+      table = "subjects";
+      row = {
+        name: String(values.get("name") || "").trim(),
+        description: String(values.get("description") || "").trim(),
+        color: String(values.get("color") || "#06D6A0"),
+        credit_hours: Number(values.get("credit_hours")),
+      };
+    } else if (type === "schedule") {
+      const startsAt = featureDate(values.get("starts_at"));
+      const endsAt = featureDate(values.get("ends_at"));
+      if (new Date(endsAt) <= new Date(startsAt)) throw new Error("The end time must be after the start time.");
+      table = "schedules";
+      row = {
+        title: String(values.get("title") || "").trim(),
+        details: String(values.get("details") || "").trim(),
+        subject_id: values.get("subject_id") || null,
+        starts_at: startsAt,
+        ends_at: endsAt,
+        recurrence: values.get("recurrence"),
+      };
+    } else if (type === "file") {
+      await uploadStudyFile(values);
+      document.getElementById("feature-modal").hidden = true;
+      await loadAccountWorkspace();
+      render();
+      showToast("File uploaded to your private study storage.");
+      return;
+    } else if (type === "note") {
+      table = "notes";
+      row = {
+        title: String(values.get("title") || "").trim(),
+        content: String(values.get("content") || ""),
+        subject_id: values.get("subject_id") || null,
+      };
+    } else if (type === "goal") {
+      table = "goals";
+      row = {
+        title: String(values.get("title") || "").trim(),
+        details: String(values.get("details") || "").trim(),
+        period: values.get("period"),
+        target_value: Number(values.get("target_value")),
+        current_value: Number(values.get("current_value")),
+        unit: String(values.get("unit") || "").trim(),
+        due_at: values.get("due_at") ? new Date(`${values.get("due_at")}T23:59:59`).toISOString() : null,
+      };
+    } else if (type === "goal-progress") {
+      const increment = Number(values.get("increment"));
+      if (!Number.isFinite(increment) || increment <= 0) throw new Error("Enter a positive progress amount.");
+      const { error } = await supabase.rpc("increment_goal_progress", { p_goal_id: id, p_increment: increment });
+      if (error) throw error;
+      document.getElementById("feature-modal").hidden = true;
+      await loadAccountWorkspace();
+      render();
+      showToast("Goal progress updated.");
+      return;
+    } else if (type === "exam") {
+      table = "exams";
+      row = {
+        title: String(values.get("title") || "").trim(),
+        details: String(values.get("details") || "").trim(),
+        subject_id: values.get("subject_id") || null,
+        exam_at: featureDate(values.get("exam_at")),
+        max_marks: Number(values.get("max_marks")),
+      };
+    } else if (type === "exam-result") {
+      const exam = examResults.find((item) => String(item.id) === String(id));
+      const obtainedMarks = Number(values.get("obtained_marks"));
+      if (!exam || !Number.isFinite(obtainedMarks) || obtainedMarks < 0 || obtainedMarks > Number(exam.max_marks)) {
+        throw new Error(featureText("resultRange"));
+      }
+      const { error } = await supabase.from("exam_results").upsert({
+        exam_id: exam.id,
+        obtained_marks: obtainedMarks,
+        notes: String(values.get("notes") || "").trim(),
+      }, { onConflict: "exam_id" });
+      if (error) throw error;
+      document.getElementById("feature-modal").hidden = true;
+      await loadAccountWorkspace();
+      render();
+      showToast("Exam result saved.");
+      return;
+    } else if (type === "profile") {
+      const avatarFile = values.get("avatar_file");
+      row = {
+        display_name: String(values.get("display_name") || "").trim(),
+        timezone: String(values.get("timezone") || "").trim(),
+        language: values.get("language"),
+      };
+      const oldAvatarPath = accountProfile?.avatar_url;
+      let newAvatarPath = null;
+      if (avatarFile instanceof File && avatarFile.size) {
+        newAvatarPath = await uploadProfilePhoto(avatarFile);
+        row.avatar_url = newAvatarPath;
+      }
+      const { data, error } = await supabase.from("profiles").update(row)
+        .eq("id", session.user.id)
+        .select("id,display_name,avatar_url,timezone,language")
+        .maybeSingle();
+      if (error) {
+        if (newAvatarPath) {
+          const { error: cleanupError } = await supabase.storage.from("studyflow-files").remove([newAvatarPath]);
+          if (cleanupError) {
+            console.error("New profile photo could not be removed after the profile update failed.", cleanupError);
+            throw new Error(`${error.message} Photo cleanup also failed: ${cleanupError.message}`);
+          }
+        }
+        throw error;
+      }
+      if (!data) {
+        let cleanupMessage = "";
+        if (newAvatarPath) {
+          const { error: cleanupError } = await supabase.storage.from("studyflow-files").remove([newAvatarPath]);
+          if (cleanupError) {
+            console.error("New profile photo could not be removed after no profile row was updated.", cleanupError);
+            cleanupMessage = ` Photo cleanup also failed: ${cleanupError.message}`;
+          }
+        }
+        throw new Error(`No profile row was updated for this account. Re-run the profile setup section in supabase/schema.sql, then retry.${cleanupMessage}`);
+      }
+      accountProfile = data;
+      let avatarCleanupMessage = "";
+      if (newAvatarPath && oldAvatarPath?.startsWith(`${session.user.id}/`) && oldAvatarPath !== newAvatarPath) {
+        const { error: cleanupError } = await supabase.storage.from("studyflow-files").remove([oldAvatarPath]);
+        if (cleanupError) {
+          console.error("The previous profile photo could not be removed.", cleanupError);
+          avatarCleanupMessage = ` Previous photo cleanup failed: ${cleanupError.message}`;
+        }
+      }
+      await loadAccountWorkspace();
+      document.getElementById("feature-modal").hidden = true;
+      render();
+      updateUserUi();
+      if (row.language !== appLanguage) await setLanguage(row.language);
+      showToast(`${newAvatarPath ? translateUiText("Profile photo uploaded.") : "Profile updated."}${avatarCleanupMessage}`);
+      return;
+    } else {
+      throw new Error("Unsupported study workspace action.");
+    }
+
+    const query = supabase.from(table);
+    const result = id
+      ? await query.update(row).eq("id", id).select().single()
+      : await query.insert(row).select().single();
+    if (result.error) throw result.error;
+    document.getElementById("feature-modal").hidden = true;
+    await loadAccountWorkspace();
+    render();
+    showToast(id ? "Changes saved." : "Added to your study workspace.");
+  }
+
+  async function uploadStudyFile(values) {
+    const file = values.get("file");
+    const allowedTypes = new Set([
+      "application/pdf", "image/jpeg", "image/png", "image/webp", "text/plain", "text/markdown",
+      "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ]);
+    if (!(file instanceof File) || !file.size || file.size > 20 * 1024 * 1024 || !allowedTypes.has(file.type)) {
+      throw new Error(featureText("fileLimit"));
+    }
+    const safeName = file.name.replace(/[^\w.-]+/g, "_").slice(0, 180) || "study-file";
+    const storagePath = `${session.user.id}/${focusId()}-${safeName}`;
+    const { error: uploadError } = await supabase.storage.from("studyflow-files").upload(storagePath, file, {
+      cacheControl: "3600", contentType: file.type, upsert: false,
+    });
+    if (uploadError) throw uploadError;
+
+    const { error: rowError } = await supabase.from("study_files").insert({
+      name: file.name,
+      storage_path: storagePath,
+      mime_type: file.type,
+      size_bytes: file.size,
+      subject_id: values.get("subject_id") || null,
+    });
+    if (rowError) {
+      const { error: cleanupError } = await supabase.storage.from("studyflow-files").remove([storagePath]);
+      if (cleanupError) {
+        console.error("Uploaded file could not be removed after its metadata insert failed.", cleanupError);
+        throw new Error(`${rowError.message} File cleanup also failed: ${cleanupError.message}`);
+      }
+      throw rowError;
+    }
+  }
+
+  async function uploadProfilePhoto(file) {
+    const allowedTypes = new Map([
+      ["image/jpeg", "jpg"],
+      ["image/png", "png"],
+      ["image/webp", "webp"],
+    ]);
+    const extension = allowedTypes.get(file.type);
+    if (!extension || !file.size || file.size > 2 * 1024 * 1024) {
+      throw new Error(translateUiText("PNG, JPEG, or WebP · up to 2 MB"));
+    }
+    const storagePath = `${session.user.id}/avatars/${focusId()}.${extension}`;
+    const { error } = await supabase.storage.from("studyflow-files").upload(storagePath, file, {
+      cacheControl: "3600",
+      contentType: file.type,
+      upsert: false,
+    });
+    if (error) throw error;
+    return storagePath;
+  }
+
+  async function deleteFeatureRecord(type, id) {
+    if (!supabase || !session) return;
+    const configByType = {
+      subject: { table: "subjects", items: subjects, name: (item) => item.name },
+      schedule: { table: "schedules", items: schedule, name: (item) => item.title },
+      file: { table: "study_files", items: sampleFiles, name: (item) => item.name },
+      note: { table: "notes", items: sampleNotes, name: (item) => item.title },
+      goal: { table: "goals", items: goals, name: (item) => item.title },
+      exam: { table: "exams", items: examResults, name: (item) => item.title },
+    };
+    const config = configByType[type];
+    const record = config?.items.find((item) => String(item.id) === String(id));
+    if (!record) return;
+    const warning = type === "subject"
+      ? `Delete subject "${config.name(record)}"? Linked records will be preserved without a subject.`
+      : `Delete "${config.name(record)}"? This cannot be undone.`;
+    if (!window.confirm(warning)) return;
+
+    if (type === "file") {
+      const { error: storageError } = await supabase.storage.from("studyflow-files").remove([record.storage_path]);
+      if (storageError) {
+        showToast(`Could not delete the file from private storage: ${storageError.message}`);
+        console.error("Study file storage deletion failed.", storageError);
+        return;
+      }
+    }
+    const { error } = await supabase.from(config.table).delete().eq("id", id);
+    if (error) {
+      showToast(`Could not delete this record: ${error.message}`);
+      console.error("Study workspace deletion failed.", error);
+      return;
+    }
+    await loadAccountWorkspace();
+    render();
+    showToast("Record deleted.");
+  }
+
+  async function downloadStudyFile(id) {
+    const file = sampleFiles.find((item) => String(item.id) === String(id));
+    if (!file || !supabase || !session) return;
+    const { data, error } = await supabase.storage.from("studyflow-files").createSignedUrl(file.storage_path, 60);
+    if (error) {
+      showToast(`Could not create a private download link: ${error.message}`);
+      console.error("Study file signed URL request failed.", error);
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
 
   function focusLocale() {
@@ -1563,6 +2142,29 @@
     };
   }
 
+  function updateActivityFromFocusRecords() {
+    if (!session) {
+      activity = previewActivity;
+      return;
+    }
+    const pendingIds = new Set(pendingFocusRecords.map((record) => record.idempotency_key));
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6);
+    activity = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(firstDay.getFullYear(), firstDay.getMonth(), firstDay.getDate() + index);
+      const key = localDateKey(date);
+      const seconds = focusRecords.reduce((sum, record) => {
+        if (!record.completed || record.session_type !== "focus" || pendingIds.has(record.idempotency_key)) return sum;
+        const endedAt = new Date(record.ended_at || record.started_at);
+        return localDateKey(endedAt) === key ? sum + Math.max(0, Number(record.duration_seconds) || 0) : sum;
+      }, 0);
+      return {
+        day: new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(date),
+        hours: seconds / 3600,
+      };
+    });
+  }
+
   function renderFocusChart(days, text) {
     const displayDays = appLanguage === "ar" ? [days[6], ...days.slice(0, 6)] : days;
     const maxSeconds = Math.max(3600, ...days.map((day) => day.seconds));
@@ -1666,16 +2268,40 @@
   }
 
   function analyticsPage() {
-    const bars = examResults.map((item) => `<div class="score-row"><span>${item.subject}</span><div class="progress-track"><div class="progress-fill" style="width:${item.score}%"></div></div><span class="score-value">${item.score}%</span></div>`).join("");
-    return `${pageHeading("YOUR STUDY PATTERNS", "Analytics", "Understand your study habits without losing sight of the bigger picture.", `<select class="filter-select" aria-label="Analytics date range"><option>Last 7 days</option><option>Last 30 days</option><option>This semester</option></select>`)}<div class="grid stats-grid">${statCard("STUDY TIME", "23.8h", " across 7 days", "◷", "+ 8% ")}${statCard("DAILY AVERAGE", "3.4h", " each day", "⌁", "On track · ")}${statCard("TASK COMPLETION", "76%", " tasks finished", "✓", "+ 6% ")}${statCard("SUBJECTS ACTIVE", "4", " courses this week", "◈", "Balanced · ")}</div><div class="grid dashboard-grid"><section class="panel">${panelHeading("Daily study hours", "Sample focus time · hours per day")}${lineChart()}</section><section class="panel">${panelHeading("Recent exam results", "Score by subject")}<div class="score-bars">${bars}</div><p class="data-caption">Scores shown are sample content only.</p></section></div><section class="panel section-spacer">${panelHeading("How to read these numbers")}<p class="panel-copy">Study time is summed from completed focus sessions. Task completion is completed tasks divided by all tasks in the selected range. Connect your database to replace the preview with your records.</p></section>`;
+    const weekHours = activity.reduce((sum, item) => sum + item.hours, 0);
+    const completedTasks = tasks.filter((task) => task.status === "completed");
+    const taskRate = tasks.length ? Math.round((completedTasks.length / tasks.length) * 100) : 0;
+    const activeSubjectIds = new Set(focusRecords
+      .filter((record) => record.completed && record.session_type === "focus" && record.subject_id)
+      .filter((record) => Date.now() - new Date(record.started_at).getTime() <= 7 * 86400000)
+      .map((record) => record.subject_id));
+    const scoreRows = session ? examResults.flatMap((exam) => {
+      const result = Array.isArray(exam.exam_results) ? exam.exam_results[0] : exam.exam_results;
+      if (result?.obtained_marks == null) return [];
+      const score = Math.round((Number(result.obtained_marks) / Number(exam.max_marks)) * 100);
+      return [{ subject: exam.subject || subjectName(exam.subject_id), score }];
+    }) : examResults;
+    const bars = scoreRows.map((item) => `<div class="score-row"><span>${escapeHtml(item.subject)}</span><div class="progress-track"><div class="progress-fill" style="width:${item.score}%"></div></div><span class="score-value">${item.score}%</span></div>`).join("");
+    const stats = session
+      ? `${statCard("STUDY TIME", `${weekHours.toFixed(1)}h`, " across 7 days", "◷")}${statCard("DAILY AVERAGE", `${(weekHours / 7).toFixed(1)}h`, " each day", "⌁")}${statCard("TASK COMPLETION", `${taskRate}%`, ` ${completedTasks.length} of ${tasks.length} tasks`, "✓")}${statCard("SUBJECTS ACTIVE", String(activeSubjectIds.size), " courses this week", "◈")}`
+      : `${statCard("STUDY TIME", "—", " Sign in to view verified focus time", "◷")}${statCard("DAILY AVERAGE", "—", " Based on completed sessions", "⌁")}${statCard("TASK COMPLETION", "—", " Based on your saved tasks", "✓")}${statCard("SUBJECTS ACTIVE", "—", " Based on recent sessions", "◈")}`;
+    return `${pageHeading("YOUR STUDY PATTERNS", "Analytics", "Understand your study habits without losing sight of the bigger picture.", "")}<div class="grid stats-grid">${stats}</div><div class="grid dashboard-grid"><section class="panel">${panelHeading("Daily study hours", session ? "Verified focus time · last 7 days" : "Sample focus time · hours per day")}${lineChart()}</section><section class="panel">${panelHeading("Recent exam results", "Score by subject")}<div class="score-bars">${bars || `<div class="empty-state">${session ? "No recorded exam results yet." : "Sign in to view your exam results."}</div>`}</div></section></div><section class="panel section-spacer">${panelHeading("How to read these numbers")}<p class="panel-copy">${session ? "Study time is summed from completed, verified focus sessions. Task completion is based on your saved tasks; active subjects come from recent sessions." : "Sign in to view account-based analytics. Sample content is not included in your personal metrics."}</p></section>`;
   }
 
   function goalsPage() {
-    return `${pageHeading("MILESTONES THAT MATTER", "Goals", "Turn the semester into small, achievable steps.", `<button class="button button-primary" data-action="goal-hint">＋ Create a goal</button>`)}<div class="grid goal-grid">${goals.map((goal) => `<article class="goal-card"><span class="eyebrow">${goal.due.toUpperCase()} LEFT</span><h3>${goal.title}</h3><p>${goal.detail}</p><div class="metric-large">${goal.progress}<small>%</small></div><div class="progress-track"><div class="progress-fill" style="width:${goal.progress}%"></div></div></article>`).join("")}</div><p class="data-caption">Preview goals. Your own goals will be stored per-user after connecting Supabase.</p>`;
+    return `${pageHeading("MILESTONES THAT MATTER", "Goals", "Turn the semester into small, achievable steps.", `<button class="button button-primary" data-action="goal-add">＋ Create a goal</button>`)}<div class="grid goal-grid">${goals.map((goal) => `<article class="goal-card"><span class="eyebrow">${escapeHtml(goal.due || (goal.completed_at ? "COMPLETED" : goal.period || "GOAL"))}</span><h3>${escapeHtml(goal.title)}</h3><p>${escapeHtml(goal.detail || goal.details || `${goal.current_value || 0} / ${goal.target_value || 1} ${goal.unit || "sessions"}`)}</p><div class="metric-large">${Math.round(goal.progress ?? 0)}<small>%</small></div><div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, Math.max(0, goal.progress ?? 0))}%"></div></div>${session && goal.id ? `<div class="card-actions"><button class="text-button" data-action="goal-progress" data-id="${escapeHtml(goal.id)}">Add progress</button><button class="text-button" data-action="goal-edit" data-id="${escapeHtml(goal.id)}">Edit</button><button class="text-button" data-action="goal-delete" data-id="${escapeHtml(goal.id)}">Delete</button></div>` : ""}</article>`).join("") || `<div class="empty-state"><strong>No goals yet</strong>Create a goal to track progress toward a study milestone.</div>`}</div><p class="data-caption">${session ? "Goals and progress are saved to your private account." : "Preview goals are shown. Sign in to create and sync your own goals."}</p>`;
   }
 
   function examsPage() {
-    return `${pageHeading("EXAM TRACKER", "Exams & results", "Keep upcoming assessments and your progress in one view.", `<button class="button button-primary" data-action="exam-hint">＋ Add exam</button>`)}<div class="grid exam-grid">${examResults.map((exam) => `<article class="item-card"><span class="task-meta">PAST RESULT · SAMPLE</span><h3>${exam.subject}</h3><div class="exam-score">${exam.score}<small> / 100</small></div><p>Recorded exam score preview</p></article>`).join("")}</div><section class="panel section-spacer">${panelHeading("Upcoming assessments")}<div class="empty-state"><strong>No upcoming exams connected</strong>Add your real exam dates after connecting the database.</div></section>`;
+    const cards = session ? examResults.map((exam) => {
+      const score = exam.obtained_marks == null ? null : `${Number(exam.obtained_marks)} / ${Number(exam.max_marks)}`;
+      const result = Array.isArray(exam.exam_results) ? exam.exam_results[0] : exam.exam_results;
+      const obtained = result?.obtained_marks ?? exam.obtained_marks;
+      const percentage = obtained == null ? null : Math.round((Number(obtained) / Number(exam.max_marks || 100)) * 100);
+      return `<article class="item-card"><span class="task-meta">${escapeHtml(new Intl.DateTimeFormat(appLanguage, { dateStyle: "medium", timeStyle: "short" }).format(new Date(exam.exam_at || Date.now())))}</span><h3>${escapeHtml(exam.title || exam.subject)}</h3><p>${escapeHtml(exam.subject || subjectName(exam.subject_id))}</p>${percentage == null ? `<div class="exam-score">—<small> / ${escapeHtml(exam.max_marks || "—")}</small></div>` : `<div class="exam-score">${percentage}<small>% · ${escapeHtml(score || `${obtained} / ${exam.max_marks}`)}</small></div>`}${session && exam.id ? `<div class="card-actions"><button class="text-button" data-action="exam-result" data-id="${escapeHtml(exam.id)}">${obtained == null ? "Record result" : "Edit result"}</button><button class="text-button" data-action="exam-edit" data-id="${escapeHtml(exam.id)}">Edit</button><button class="text-button" data-action="exam-delete" data-id="${escapeHtml(exam.id)}">Delete</button></div>` : ""}</article>`;
+    }).join("") : examResults.map((exam) => `<article class="item-card"><span class="task-meta">PAST RESULT · SAMPLE</span><h3>${escapeHtml(exam.subject)}</h3><div class="exam-score">${Number(exam.score)}<small> / 100</small></div><p>Recorded exam score preview</p></article>`).join("");
+    const upcoming = session ? examResults.filter((exam) => new Date(exam.exam_at) >= new Date()).length : 0;
+    return `${pageHeading("EXAM TRACKER", "Exams & results", "Keep upcoming assessments and your progress in one view.", `<button class="button button-primary" data-action="exam-add">＋ Add exam</button>`)}<div class="grid exam-grid">${cards || `<div class="empty-state"><strong>${session ? "No exams yet" : "No exam results to show"}</strong>${session ? "Add an exam to track its date and result." : "Sign in to add and track your own exams."}</div>`}</div><section class="panel section-spacer">${panelHeading("Upcoming assessments", `${upcoming} upcoming`)}${upcoming ? `<div class="activity-list">${examResults.filter((exam) => new Date(exam.exam_at) >= new Date()).map((exam) => `<div class="activity-item"><span>${escapeHtml(exam.title)}</span><time>${escapeHtml(new Intl.DateTimeFormat(appLanguage, { dateStyle: "medium" }).format(new Date(exam.exam_at)))}</time></div>`).join("")}</div>` : `<div class="empty-state">No upcoming exams.</div>`}</section><p class="data-caption">${session ? "Exam dates and results are stored in your private account." : "Sample results are previews, not account records. Sign in to track your own exams."}</p>`;
   }
 
   function achievementsPage() {
@@ -1685,7 +2311,8 @@
     }).filter(Boolean));
     const cards = achievementCatalog.map((item) => {
       const unlocked = earnedCodes.has(item.code);
-      return `<article class="item-card achievement-card ${unlocked ? "unlocked" : "locked"}"><span class="achievement-icon ${unlocked ? "" : "locked"}">${item.symbol}</span><h3>${translateUiText(item.name)}</h3><p>${translateUiText(item.description)}</p><p class="badge-status">${unlocked ? "Unlocked" : "Keep going to unlock"}</p></article>`;
+      const reward = new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(item.reward);
+      return `<article class="item-card achievement-card ${unlocked ? "unlocked" : "locked"}"><span class="achievement-icon ${unlocked ? "" : "locked"}">${item.symbol}</span><h3>${translateUiText(item.name)}</h3><p>${translateUiText(item.description)}</p><p class="badge-status">${unlocked ? "Unlocked" : "Keep going to unlock"}</p><p class="data-caption">${translateUiText("Reward")} +${reward} XP</p></article>`;
     }).join("");
     const xp = Number(rewardSummary?.total_xp) || 0;
     const level = Number(rewardSummary?.level) || 1;
@@ -1701,20 +2328,75 @@
   }
 
   function profilePage() {
-    const displayName = session?.user?.user_metadata?.full_name || "Alex Morgan";
+    const displayName = accountProfile?.display_name || session?.user?.user_metadata?.full_name || "Alex Morgan";
     const email = session?.user?.email || "Student account";
-    return `${pageHeading("YOUR ACCOUNT", "Profile", "Your academic workspace, at a glance.", "")}<div class="profile-layout"><section class="panel profile-card"><div class="profile-avatar" dir="ltr">${initials(displayName)}</div><h2 dir="auto">${escapeHtml(displayName)}</h2><p dir="ltr">${escapeHtml(email)}</p><div class="profile-stats"><div><strong>${session && rewardSummary ? rewardCounterMarkup("profile-level", rewardSummary.level) : "—"}</strong><small>Level</small></div><div><strong>${session && rewardSummary ? rewardCounterMarkup("profile-streak", rewardSummary.current_streak) : "—"}</strong><small>Day streak</small></div></div><p class="profile-xp">${session && rewardSummary ? `${rewardCounterMarkup("profile-xp", rewardSummary.total_xp)} XP` : translateUiText("Sign in to earn secure rewards.")}</p></section><section class="panel">${panelHeading("Academic profile", "Personal details stay private to your account")}<div class="setting-row"><div><strong>Program</strong><small>Computer Science · sample profile</small></div></div><div class="setting-row"><div><strong>Current term</strong><small>Fall term · update in your profile</small></div></div><div class="setting-row"><div><strong>Timezone</strong><small dir="ltr">${escapeHtml(Intl.DateTimeFormat().resolvedOptions().timeZone)}</small></div></div><button class="button button-secondary button-small section-spacer" data-action="profile-hint">Edit profile</button></section></div>`;
+    const timezone = accountProfile?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const avatar = accountProfile?.avatar_display_url
+      ? `<img src="${escapeHtml(accountProfile.avatar_display_url)}" alt="" referrerpolicy="no-referrer">`
+      : initials(displayName);
+    return `${pageHeading("YOUR ACCOUNT", "Profile", "Your academic workspace, at a glance.", "")}<div class="profile-layout"><section class="panel profile-card"><div class="profile-avatar" dir="ltr">${avatar}</div><h2 dir="auto">${escapeHtml(displayName)}</h2><p dir="ltr">${escapeHtml(email)}</p><div class="profile-stats"><div><strong>${session && rewardSummary ? rewardCounterMarkup("profile-level", rewardSummary.level) : "—"}</strong><small>Level</small></div><div><strong>${session && rewardSummary ? rewardCounterMarkup("profile-streak", rewardSummary.current_streak) : "—"}</strong><small>Day streak</small></div></div><p class="profile-xp">${session && rewardSummary ? `${rewardCounterMarkup("profile-xp", rewardSummary.total_xp)} XP` : translateUiText("Sign in to earn secure rewards.")}</p></section><section class="panel">${panelHeading("Academic profile", "Personal details stay private to your account")}<div class="setting-row"><div><strong>Email</strong><small dir="ltr">${escapeHtml(email)}</small></div></div><div class="setting-row"><div><strong>Timezone</strong><small dir="ltr">${escapeHtml(timezone)}</small></div></div><div class="setting-row"><div><strong>Language</strong><small>${escapeHtml(accountProfile?.language || appLanguage)}</small></div></div><button class="button button-secondary button-small section-spacer" data-action="profile-edit" ${session ? "" : "disabled"}>Edit profile</button>${session ? "" : `<p class="data-caption">Sign in to edit your account profile.</p>`}</section></div>`;
   }
 
   function settingsPage() {
-    return `${pageHeading("MAKE IT YOURS", "Settings", "Tune StudyFlow to the way you like to work.", "")}<div class="grid settings-grid"><section class="panel">${panelHeading("Appearance")}<div class="setting-row"><div><strong>Dark theme</strong><small>Designed for focus, day or night</small></div><button class="toggle on" data-action="theme-toggle" aria-label="Toggle light theme" aria-pressed="false"></button></div><div class="setting-row"><div><strong>Emerald accents</strong><small>Official StudyFlow color palette</small></div><span class="subject-color"></span></div><div class="setting-row"><div><strong>Motion & celebrations</strong><small>Use subtle animations and completion celebrations</small></div><button class="toggle ${animationsEnabled ? "on" : ""}" data-action="motion-toggle" aria-label="Motion & celebrations" aria-pressed="${animationsEnabled}"></button></div></section><section class="panel">${panelHeading("Language")}<div class="setting-row"><div><strong>Display language</strong><small>Deadlines appear in the selected language.</small></div></div><div class="language-switcher" role="group" aria-label="Choose language"><span class="language-indicator ${appLanguage === "ar" ? "arabic" : ""}"></span><button class="language-option ${appLanguage === "ar" ? "selected" : ""}" data-language="ar" aria-pressed="${appLanguage === "ar"}">عربي <span>العربية</span></button><button class="language-option ${appLanguage === "en" ? "selected" : ""}" data-language="en" aria-pressed="${appLanguage === "en"}">EN <span>English</span></button></div></section><section class="panel">${panelHeading("Reminders")}<div class="setting-row"><div><strong>Task reminders</strong><small>Upcoming deadlines</small></div><button class="toggle on" data-action="setting-toggle" aria-pressed="true"></button></div><div class="setting-row"><div><strong>Study nudges</strong><small>Gentle focus reminders</small></div><button class="toggle" data-action="setting-toggle" aria-pressed="false"></button></div></section><section class="panel">${panelHeading("Data & privacy")}<div class="setting-row"><div><strong>Account data</strong><small>Stored in your private Supabase account when configured</small></div></div><div class="setting-row"><div><strong>Service keys</strong><small>Only the public anon key belongs in this browser config.</small></div></div></section></div>`;
+    const motionOptions = [
+      ["full", "Full Motion", "Layered transitions and celebrations"],
+      ["reduced", "Reduced Motion", "Short, gentle transitions"],
+      ["off", "Motion Off", "Disable nonessential animation"],
+    ].map(([level, title, description]) => `<button class="motion-option ${motionLevel === level ? "selected" : ""}" type="button" data-motion-level="${level}" aria-pressed="${motionLevel === level}"><strong>${title}</strong><small>${description}</small></button>`).join("");
+    const reminderForm = session
+      ? `<form id="daily-reminder-form" class="form-stack daily-reminder-form"><label class="focus-setting-toggle"><span>${translateUiText("Enable push reminders")}</span><input type="checkbox" name="enabled" ${dailyReminderPreference.enabled ? "checked" : ""}><i aria-hidden="true"></i></label><p class="data-caption">${translateUiText("Get a daily task check-in plus deadline and achievement notifications, even when Study Zone is closed.")}</p><label>${translateUiText("Reminder time")}<input type="time" name="local_time" value="${escapeHtml(String(dailyReminderPreference.local_time || "09:00").slice(0, 5))}" required></label><small>${translateUiText("Uses this device’s timezone.")}</small><button class="button button-primary button-small" type="submit">${translateUiText("Save reminder")}</button><p class="data-caption">${translateUiText("Push reminders need notification permission and the server setup described in README.md.")}</p><p class="form-error" data-reminder-error role="alert"></p></form>`
+      : `<p class="data-caption">${translateUiText("Sign in to configure daily reminders.")}</p>`;
+    return `${pageHeading("MAKE IT YOURS", "Settings", "Tune Study Zone to the way you like to work.", "")}<div class="grid settings-grid"><section class="panel">${panelHeading("Appearance")}<div class="setting-row"><div><strong>Dark theme</strong><small>Designed for focus, day or night</small></div><button class="toggle on" data-action="theme-toggle" aria-label="Toggle light theme" aria-pressed="false"></button></div><div class="setting-row"><div><strong>Emerald accents</strong><small>Official Study Zone color palette</small></div><span class="subject-color"></span></div><div class="setting-row"><div><strong>Motion & celebrations</strong><small>Choose how much motion Study Zone uses.</small></div></div><div class="motion-options" role="group" aria-label="Animation level">${motionOptions}</div></section><section class="panel">${panelHeading("Language")}<div class="setting-row"><div><strong>Display language</strong><small>Deadlines appear in the selected language.</small></div></div><div class="language-switcher" role="group" aria-label="Choose language"><span class="language-indicator ${appLanguage === "ar" ? "arabic" : ""}"></span><button class="language-option ${appLanguage === "ar" ? "selected" : ""}" data-language="ar" aria-pressed="${appLanguage === "ar"}">عربي <span>العربية</span></button><button class="language-option ${appLanguage === "en" ? "selected" : ""}" data-language="en" aria-pressed="${appLanguage === "en"}">EN <span>English</span></button></div></section><section class="panel">${panelHeading("Reminders")}<div class="setting-row"><div><strong>Daily study check-in</strong><small>Review your open tasks once a day, even when Study Zone is closed.</small></div></div>${reminderForm}</section><section class="panel">${panelHeading("Data & privacy")}<div class="setting-row"><div><strong>Account data</strong><small>Stored in your private Supabase account when configured</small></div></div><div class="setting-row"><div><strong>Service keys</strong><small>Only the public anon key belongs in this browser config.</small></div></div></section></div>`;
+  }
+
+  function formatAdminDate(value) {
+    if (!value) return "—";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "—";
+    return new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "medium" }).format(date);
+  }
+
+  async function loadAdminUsers() {
+    const userId = session?.user?.id;
+    if (!supabase || !userId || adminAuthorization.status !== "authorized" || adminAuthorization.userId !== userId) return;
+    const requestId = ++adminUsersRequest;
+    adminUsersLoading = true;
+    adminUsersError = "";
+    render();
+    const { data, error } = await supabase.rpc("admin_list_users", {
+      p_search: adminUsersSearch,
+      p_limit: adminUsersPageSize,
+      p_offset: adminUsersPage * adminUsersPageSize,
+    });
+    if (requestId !== adminUsersRequest || session?.user?.id !== userId) return;
+    adminUsersLoading = false;
+    if (error) {
+      console.error("Could not load the protected admin user list.", error);
+      adminUsersError = error.message;
+      adminUsers = [];
+      render();
+      return;
+    }
+    adminUsers = data || [];
+    adminUsersTotal = Number(adminUsers[0]?.total_count || 0);
+    render();
   }
 
   function adminPage() {
     if (!session || adminAuthorization.status !== "authorized" || adminAuthorization.userId !== session.user.id) {
       return adminAccessPage();
     }
-    return `${pageHeading("ADMINISTRATION", "Admin dashboard", "Protected operational metrics and account administration.", "")}<div class="admin-warning">${translateUiText("Administrator access verified.")}</div><div class="grid admin-grid">${statCard("REGISTERED USERS", "—", " Configure a protected server query", "◉")}${statCard("ACTIVE SESSIONS", "—", " Admin-only metric unavailable", "⌁")}${statCard("SYSTEM STATUS", "Protected", " No admin endpoint configured", "⬡")}</div><section class="panel">${panelHeading("Access control")}<p class="panel-copy">${translateUiText("The admin role is verified by Supabase for your signed-in account.")} ${translateUiText("No administrative services are connected yet.")}</p></section>`;
+    const users = adminUsers.map((user) => `<tr><td><strong>${escapeHtml(user.display_name || "Student")}</strong><small>${escapeHtml(user.email || "—")}</small></td><td>${escapeHtml(translateUiText(user.role || "student"))}</td><td>${escapeHtml(formatAdminDate(user.created_at))}</td><td>${escapeHtml(formatAdminDate(user.last_sign_in_at))}</td><td><span class="admin-user-status ${user.email_confirmed_at ? "confirmed" : "unconfirmed"}">${user.email_confirmed_at ? translateUiText("Confirmed") : translateUiText("Pending confirmation")}</span></td></tr>`).join("");
+    const from = adminUsersTotal ? adminUsersPage * adminUsersPageSize + 1 : 0;
+    const to = Math.min((adminUsersPage + 1) * adminUsersPageSize, adminUsersTotal);
+    const content = adminUsersLoading
+      ? `<div class="empty-state" role="status">${translateUiText("Loading users…")}</div>`
+      : adminUsersError
+        ? `<div class="admin-error" role="alert">${translateUiText("Could not load users.")} ${escapeHtml(adminUsersError)}</div>`
+        : users
+          ? `<div class="admin-users-scroll"><table class="admin-users-table"><thead><tr><th>${translateUiText("User")}</th><th>${translateUiText("Role")}</th><th>${translateUiText("Joined")}</th><th>${translateUiText("Last sign-in")}</th><th>${translateUiText("Email status")}</th></tr></thead><tbody>${users}</tbody></table></div>`
+          : `<div class="empty-state">${translateUiText("No users found.")}</div>`;
+    return `${pageHeading("ADMINISTRATION", "Admin dashboard", "Review registered accounts and their sign-in status.", "")}<div class="admin-warning">${translateUiText("Administrator access verified.")} ${translateUiText("This private list is visible only to authorized administrators.")}</div><section class="panel">${panelHeading("Registered users", `${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(adminUsersTotal)} total`)}<form class="admin-user-search" id="admin-users-search"><label class="search-box"><span>⌕</span><input name="search" type="search" value="${escapeHtml(adminUsersSearch)}" placeholder="${translateUiText("Search by name or email")}" aria-label="${translateUiText("Search by name or email")}"></label><button class="button button-secondary button-small" type="submit">${translateUiText("Search")}</button><button class="button button-secondary button-small" type="button" data-action="admin-users-refresh">${translateUiText("Refresh")}</button></form>${content}<div class="admin-pagination"><span>${from}–${to} ${translateUiText("of")} ${adminUsersTotal}</span><div><button class="button button-secondary button-small" type="button" data-action="admin-users-prev" ${adminUsersPage === 0 || adminUsersLoading ? "disabled" : ""}>${translateUiText("Previous")}</button><button class="button button-secondary button-small" type="button" data-action="admin-users-next" ${to >= adminUsersTotal || adminUsersLoading ? "disabled" : ""}>${translateUiText("Next")}</button></div></div></section>`;
   }
 
   function adminAccessPage() {
@@ -1753,13 +2435,26 @@
     document.body.classList.toggle("focus-distraction", currentPage === "focus" && distractionFree);
     document.documentElement.lang = appLanguage;
     document.documentElement.dir = appLanguage === "ar" ? "rtl" : "ltr";
-    document.documentElement.dataset.motion = animationsEnabled ? "on" : "off";
+    document.documentElement.dataset.motion = motionLevel;
     const content = document.getElementById("page-content");
     content.classList.remove("page-enter");
     content.innerHTML = pageRenderers[currentPage]();
-    if (animationsEnabled && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (shouldAnimate()) {
       void content.offsetWidth;
       content.classList.add("page-enter");
+      animateDashboardProgress(content);
+    }
+
+    function animateDashboardProgress(content) {
+      if (currentPage !== "dashboard" || !shouldAnimate()) return;
+      content.querySelectorAll(".progress-fill").forEach((fill) => {
+        const targetWidth = fill.style.width;
+        if (!targetWidth || targetWidth === "0%") return;
+        fill.style.width = "0%";
+        requestAnimationFrame(() => {
+          if (fill.isConnected && document.visibilityState === "visible") fill.style.width = targetWidth;
+        });
+      });
     }
     document.getElementById("page-crumb").textContent = currentPage === "deadlines" ? deadlineText[appLanguage].title : pageTitles[currentPage];
     document.querySelectorAll(".nav-link[data-page]").forEach((link) => {
@@ -1782,6 +2477,14 @@
       document.getElementById("task-filter")?.addEventListener("change", (event) => {
         statusFilter = event.target.value;
         render();
+      });
+    }
+    if (currentPage === "admin" && adminAuthorization.status === "authorized") {
+      document.getElementById("admin-users-search")?.addEventListener("submit", (event) => {
+        event.preventDefault();
+        adminUsersSearch = String(new FormData(event.currentTarget).get("search") || "").trim();
+        adminUsersPage = 0;
+        void loadAdminUsers();
       });
     }
     if (currentPage === "focus") {
@@ -1810,6 +2513,10 @@
 
   function navigate(page) {
     if (!pageRenderers[page]) return;
+    if (page === currentPage) {
+      document.getElementById("sidebar").classList.remove("open");
+      return;
+    }
     currentPage = page;
     window.location.hash = page;
     document.getElementById("sidebar").classList.remove("open");
@@ -1817,7 +2524,12 @@
       adminAuthorization = { status: "checking", userId: session?.user?.id || null };
       updateAdminNavigation();
     }
-    render();
+    const updatePage = () => render();
+    if (shouldUseFullMotion() && typeof document.startViewTransition === "function") {
+      document.startViewTransition(updatePage);
+    } else {
+      updatePage();
+    }
     if (page === "admin") void verifyAdminAccess();
     if (page === "focus") void loadFocusData();
   }
@@ -1863,6 +2575,7 @@
     if (currentPage === "admin") {
       if (adminAuthorization.status === "authorized") {
         render();
+        void loadAdminUsers();
       } else {
         denyAdminRoute(Boolean(error));
       }
@@ -1881,11 +2594,21 @@
 
   function updateUserUi() {
     const user = session?.user;
-    const name = user?.user_metadata?.full_name || (user?.email ? user.email.split("@")[0] : "Alex Morgan");
+    const name = accountProfile?.display_name || user?.user_metadata?.full_name || (user?.email ? user.email.split("@")[0] : "Alex Morgan");
     const initialsText = initials(name);
     document.getElementById("user-name").textContent = name;
     document.getElementById("user-email").textContent = user?.email || "Student account";
-    document.querySelectorAll(".avatar").forEach((avatar) => { avatar.textContent = initialsText; });
+    document.querySelectorAll(".avatar").forEach((avatar) => {
+      if (accountProfile?.avatar_display_url) {
+        const image = document.createElement("img");
+        image.src = accountProfile.avatar_display_url;
+        image.alt = "";
+        image.referrerPolicy = "no-referrer";
+        avatar.replaceChildren(image);
+      } else {
+        avatar.textContent = initialsText;
+      }
+    });
     document.getElementById("sign-out").hidden = !user;
     updateAdminNavigation();
     document.getElementById("auth-help").textContent = configured
@@ -1916,7 +2639,7 @@
       }));
     }
     const { data, error } = await supabase.from("tasks")
-      .select("id,title,description,subject_id,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,completed_at,subjects(name)")
+      .select("id,title,description,subject_id,starts_at,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,completed_at,subjects(name)")
       .order("due_at", { ascending: true, nullsFirst: false });
     if (error) {
       tasks = [];
@@ -1929,6 +2652,125 @@
     tasks = (data || []).map((task) => ({ ...task, subject: task.subjects?.name || "Independent study" }));
     deadlinesLoading = false;
     render();
+  }
+
+  async function loadAccountWorkspace() {
+    if (!supabase || !session) return;
+    const userId = session.user.id;
+    const [scheduleResult, fileResult, noteResult, goalResult, examResult, profileResult, reminderResult] = await Promise.all([
+      supabase.from("schedules").select("id,title,details,subject_id,starts_at,ends_at,recurrence").order("starts_at"),
+      supabase.from("study_files").select("id,name,storage_path,mime_type,size_bytes,subject_id,is_favorite,created_at").order("created_at", { ascending: false }),
+      supabase.from("notes").select("id,title,content,subject_id,is_favorite,created_at,updated_at").order("updated_at", { ascending: false }),
+      supabase.from("goals").select("id,title,details,period,target_value,current_value,unit,starts_at,due_at,completed_at").order("created_at", { ascending: false }),
+      supabase.from("exams").select("id,title,details,subject_id,exam_at,max_marks,exam_results(obtained_marks,notes)").order("exam_at"),
+      supabase.from("profiles").select("id,display_name,avatar_url,timezone,language").eq("id", userId).maybeSingle(),
+      supabase.from("daily_reminder_preferences").select("enabled,local_time,timezone").eq("user_id", userId).maybeSingle(),
+    ]);
+
+    if (session?.user?.id !== userId) return;
+    const reportError = (label, result) => {
+      if (!result.error) return false;
+      console.error(`Could not load ${label}.`, result.error);
+      showToast(`Could not load ${label}: ${result.error.message}`);
+      return true;
+    };
+
+    if (reportError("study schedule", scheduleResult)) schedule = [];
+    else schedule = (scheduleResult.data || []).map((block) => ({
+      ...block,
+      day: new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(new Date(block.starts_at)),
+      time: new Intl.DateTimeFormat(appLanguage, { hour: "2-digit", minute: "2-digit" }).format(new Date(block.starts_at)),
+      length: `${Math.max(1, Math.round((new Date(block.ends_at) - new Date(block.starts_at)) / 60000))} min`,
+      subject: subjectName(block.subject_id),
+    }));
+
+    if (reportError("study files", fileResult)) sampleFiles = [];
+    else sampleFiles = (fileResult.data || []).map((file) => ({
+      ...file,
+      type: file.mime_type,
+      subject: subjectName(file.subject_id),
+    }));
+
+    if (reportError("notes", noteResult)) sampleNotes = [];
+    else sampleNotes = (noteResult.data || []).map((note) => ({
+      ...note,
+      subject: subjectName(note.subject_id),
+      updated: new Intl.DateTimeFormat(appLanguage, { dateStyle: "medium" }).format(new Date(note.updated_at)),
+    }));
+
+    if (reportError("goals", goalResult)) goals = [];
+    else goals = (goalResult.data || []).map((goal) => ({
+      ...goal,
+      progress: Math.min(100, Math.round((Number(goal.current_value) / Number(goal.target_value)) * 100)),
+      due: goal.completed_at ? "Completed" : goal.due_at
+        ? Math.max(0, Math.ceil((new Date(goal.due_at) - Date.now()) / 86400000)) + " days"
+        : goal.period,
+      detail: goal.details || `${goal.current_value} / ${goal.target_value} ${goal.unit}`,
+    }));
+
+    if (reportError("exams", examResult)) examResults = [];
+    else examResults = (examResult.data || []).map((exam) => ({
+      ...exam,
+      subject: subjectName(exam.subject_id),
+    }));
+
+    if (reportError("profile", profileResult)) accountProfile = null;
+    else {
+      accountProfile = profileResult.data;
+      if (accountProfile) accountProfile.avatar_display_url = await resolveProfileAvatarUrl(accountProfile.avatar_url, userId);
+    }
+
+    if (reportError("daily reminder preferences", reminderResult)) {
+      dailyReminderPreference = { enabled: false, local_time: "09:00", timezone: "UTC" };
+    } else {
+      dailyReminderPreference = {
+        enabled: Boolean(reminderResult.data?.enabled),
+        local_time: reminderResult.data?.local_time || "09:00",
+        timezone: reminderResult.data?.timezone || "UTC",
+      };
+    }
+    updateUserUi();
+    render();
+  }
+
+  async function resolveProfileAvatarUrl(avatarPath, userId) {
+    if (!avatarPath) return "";
+    if (avatarPath.startsWith(`${userId}/`)) {
+      const { data, error } = await supabase.storage.from("studyflow-files").createSignedUrl(avatarPath, 86400);
+      if (error) {
+        console.error("Could not create a private profile photo URL.", error);
+        showToast(`Could not load profile photo: ${error.message}`);
+        return "";
+      }
+      return data.signedUrl;
+    }
+    try {
+      const url = new URL(avatarPath);
+      return url.protocol === "https:" ? url.href : "";
+    } catch (error) {
+      console.error("The profile photo reference is invalid.", error);
+      return "";
+    }
+  }
+
+  function resetAccountWorkspacePreview() {
+    accountProfile = null;
+    activity = previewActivity;
+    schedule = previewSchedule;
+    goals = previewGoals;
+    examResults = previewExamResults;
+    sampleFiles = previewFiles;
+    sampleNotes = previewNotes;
+  }
+
+  function clearAccountWorkspace() {
+    accountProfile = null;
+    activity = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => ({ day, hours: 0 }));
+    schedule = [];
+    goals = [];
+    examResults = [];
+    sampleFiles = [];
+    sampleNotes = [];
   }
 
   async function loadLanguagePreference() {
@@ -1944,6 +2786,116 @@
       document.documentElement.lang = appLanguage;
       document.documentElement.dir = appLanguage === "ar" ? "rtl" : "ltr";
     }
+  }
+
+  function vapidApplicationServerKey(encodedKey) {
+    const padding = "=".repeat((4 - encodedKey.length % 4) % 4);
+    const base64 = `${encodedKey}${padding}`.replace(/-/g, "+").replace(/_/g, "/");
+    const raw = window.atob(base64);
+    return Uint8Array.from(raw, (character) => character.charCodeAt(0));
+  }
+
+  function isSupportedPushEndpoint(endpoint) {
+    try {
+      const url = new URL(endpoint);
+      const host = url.hostname.toLowerCase();
+      const allowedHosts = ["fcm.googleapis.com", "push.services.mozilla.com", "web.push.apple.com"];
+      return url.protocol === "https:"
+        && !url.username
+        && !url.password
+        && (!url.port || url.port === "443")
+        && allowedHosts.some((allowedHost) => host === allowedHost || host.endsWith(`.${allowedHost}`));
+    } catch {
+      return false;
+    }
+  }
+
+  async function saveDailyReminder(form) {
+    if (!supabase || !session) throw new Error(translateUiText("Sign in to configure daily reminders."));
+    const enabled = form.elements.namedItem("enabled").checked;
+    const localTime = String(form.elements.namedItem("local_time").value || "");
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(localTime)) throw new Error("Choose a valid reminder time.");
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    let subscription;
+
+    if (enabled) {
+      const vapidPublicKey = window.studyFlowSupabaseConfig?.vapidPublicKey;
+      if (!vapidPublicKey) throw new Error(translateUiText("Daily push is not configured yet. Ask your administrator to finish the VAPID setup."));
+      if (!window.isSecureContext || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+        throw new Error("Push notifications require a supported browser and HTTPS (localhost is supported for development).");
+      }
+      const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+      if (permission !== "granted") throw new Error(translateUiText("Notification permission is required to enable daily push reminders."));
+      const registration = await navigator.serviceWorker.ready;
+      subscription = await registration.pushManager.getSubscription()
+        || await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: vapidApplicationServerKey(vapidPublicKey),
+        });
+      const serialized = subscription.toJSON();
+      const p256dh = serialized.keys?.p256dh;
+      const authSecret = serialized.keys?.auth;
+      if (!subscription.endpoint || !p256dh || !authSecret) {
+        await subscription.unsubscribe();
+        throw new Error("The browser returned an incomplete push subscription.");
+      }
+      if (!isSupportedPushEndpoint(subscription.endpoint)) {
+        await subscription.unsubscribe();
+        throw new Error("This browser's push service is not currently supported.");
+      }
+      const { error: subscriptionError } = await supabase.from("push_subscriptions").upsert({
+        user_id: session.user.id,
+        endpoint: subscription.endpoint,
+        p256dh,
+        auth_secret: authSecret,
+      }, { onConflict: "user_id,endpoint" });
+      if (subscriptionError) {
+        await subscription.unsubscribe();
+        throw subscriptionError;
+      }
+    }
+
+    const { error } = await supabase.from("daily_reminder_preferences").upsert({
+      user_id: session.user.id,
+      enabled,
+      local_time: localTime,
+      timezone,
+    }, { onConflict: "user_id" });
+    if (error) {
+      if (subscription) {
+        const { error: cleanupError } = await supabase.from("push_subscriptions").delete()
+          .eq("user_id", session.user.id).eq("endpoint", subscription.endpoint);
+        await subscription.unsubscribe();
+        if (cleanupError) {
+          console.error("Could not remove push subscription after saving reminder preferences failed.", cleanupError);
+          throw new Error(`${error.message} Subscription cleanup also failed: ${cleanupError.message}`);
+        }
+      }
+      throw error;
+    }
+
+    dailyReminderPreference = { enabled, local_time: localTime, timezone };
+    if (!enabled) {
+      await removeCurrentPushSubscription(session.user.id);
+      const { error: deleteError } = await supabase.from("push_subscriptions").delete()
+        .eq("user_id", session.user.id);
+      if (deleteError) throw deleteError;
+    }
+    render();
+    showToast(translateUiText("Reminder saved."));
+  }
+
+  async function removeCurrentPushSubscription(userId) {
+    if (!supabase || !userId || !("serviceWorker" in navigator)) return;
+    const registration = await navigator.serviceWorker.getRegistration();
+    const subscription = await registration?.pushManager.getSubscription();
+    if (!subscription) return;
+    const endpoint = subscription.endpoint;
+    const unsubscribed = await subscription.unsubscribe();
+    if (!unsubscribed) throw new Error("The browser could not disable this push subscription.");
+    const { error } = await supabase.from("push_subscriptions").delete()
+      .eq("user_id", userId).eq("endpoint", endpoint);
+    if (error) throw error;
   }
 
   async function loadRemoteNotifications() {
@@ -2004,26 +2956,98 @@
   async function createTask(formData) {
     const title = String(formData.get("title") || "").trim();
     if (!title) throw new Error("Enter a task name.");
-    const newTask = {
+    const dueValue = String(formData.get("due_at") || "");
+    const repeatType = String(formData.get("repeat_type") || "none");
+    const recurrence = buildRecurrencePlan(formData, dueValue.slice(0, 10), repeatType);
+    const groupId = repeatType === "none" ? null : focusId();
+    const baseTask = {
       title,
       subject_id: formData.get("subject_id") || null,
       priority: formData.get("priority"),
-      due_at: formData.get("due_at") ? new Date(formData.get("due_at")).toISOString() : null,
       estimated_minutes: Number(formData.get("estimated_minutes")) || 45,
       status: "not_started",
     };
+    if (dueValue) baseTask.due_at = new Date(dueValue).toISOString();
+    const recurrenceFields = {
+      recurrence_group_id: groupId,
+      recurrence_type: repeatType,
+      recurrence_days: recurrence.days,
+      recurrence_until: recurrence.until,
+    };
+    const instances = recurrence.dateKeys.map((dateKey) => {
+      const occurrence = { ...baseTask, ...recurrenceFields };
+      if (dueValue && dateKey) occurrence.due_at = new Date(`${dateKey}T${dueValue.slice(11, 16) || "23:59"}`).toISOString();
+      return occurrence;
+    });
     if (supabase && session) {
-      const { data, error } = await supabase.from("tasks").insert(newTask)
-        .select("id,title,description,subject_id,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,subjects(name)").single();
+      const { data, error } = await supabase.from("tasks").insert(instances)
+        .select("id,title,description,subject_id,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,subjects(name)");
       if (error) throw error;
-      tasks.unshift({ ...data, subject: data.subjects?.name || "Independent study" });
+      tasks.unshift(...(data || []).map((item) => ({ ...item, subject: item.subjects?.name || "Independent study" })));
     } else {
-      tasks.unshift({ ...newTask, id: `local-${Date.now()}`, subject: subjectName(newTask.subject_id) });
+      tasks.unshift(...instances.map((instance, index) => ({
+        ...instance,
+        id: `local-${Date.now()}-${index}`,
+        subject: subjectName(instance.subject_id),
+      })));
       saveLocalTasks();
     }
     document.getElementById("task-modal").hidden = true;
     render();
-    showToast(supabase && session ? "Task saved to your account." : "Task saved in this browser.");
+    showToast(supabase && session
+      ? `${instances.length} task${instances.length === 1 ? "" : "s"} saved to your account.`
+      : `${instances.length} task${instances.length === 1 ? "" : "s"} saved in this browser.`);
+  }
+
+  function buildRecurrencePlan(formData, startDateValue, repeatType) {
+    if (repeatType === "none") return { dateKeys: [startDateValue || null], days: [], until: null };
+    if (!startDateValue) throw new Error("Choose a due date before setting a repeat schedule.");
+    const start = new Date(`${startDateValue}T00:00:00`);
+    const untilValue = String(formData.get("repeat_until") || "");
+    const until = untilValue ? new Date(`${untilValue}T00:00:00`) : null;
+    if (!until || Number.isNaN(until.getTime()) || until < start) {
+      throw new Error("Choose a repeat end date on or after the first occurrence.");
+    }
+    const maxUntil = new Date(start);
+    maxUntil.setDate(maxUntil.getDate() + 365);
+    if (until > maxUntil) throw new Error("Repeat schedules can be created for up to one year at a time.");
+    if (!["daily", "weekly", "monthly", "custom"].includes(repeatType)) {
+      throw new Error("Choose a valid repeat schedule.");
+    }
+    const days = repeatType === "custom"
+      ? [...new Set(formData.getAll("repeat_days").map(Number))].filter((day) => Number.isInteger(day) && day >= 0 && day <= 6).sort()
+      : [];
+    if (repeatType === "custom" && !days.length) throw new Error("Choose at least one weekday.");
+
+    const dateKeys = [];
+    for (const cursor = new Date(start); cursor <= until; cursor.setDate(cursor.getDate() + 1)) {
+      let matches = repeatType === "daily"
+        || repeatType === "weekly" && cursor.getDay() === start.getDay()
+        || repeatType === "custom" && days.includes(cursor.getDay());
+      if (repeatType === "monthly") {
+        const lastDay = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
+        matches = cursor.getDate() === Math.min(start.getDate(), lastDay);
+      }
+      if (matches) {
+        dateKeys.push(dateKey(cursor));
+        if (dateKeys.length > 366) throw new Error("A repeat schedule cannot contain more than 366 occurrences.");
+      }
+    }
+    return { dateKeys, days, until: untilValue };
+  }
+
+  function updateRepeatControls(form) {
+    const repeatType = form.elements.namedItem("repeat_type")?.value || "none";
+    const recurring = repeatType !== "none";
+    const dayField = form.querySelector("[data-repeat-days]");
+    const untilField = form.querySelector("[data-repeat-until]");
+    const help = form.querySelector("[data-repeat-help]");
+    if (dayField) dayField.hidden = repeatType !== "custom";
+    if (untilField) {
+      untilField.hidden = !recurring;
+      untilField.querySelector("input").required = recurring;
+    }
+    if (help) help.hidden = !recurring;
   }
 
   async function updateTaskStatus(id) {
@@ -2046,7 +3070,7 @@
       if (!supabase || !session) saveLocalTasks();
       render();
       showToast(completing ? task.due_at ? "Deadline completed." : "Task completed." : "Task reopened.");
-      if (completing && !task.due_at && animationsEnabled) launchConfetti();
+      if (completing && !task.due_at && shouldUseFullMotion()) launchConfetti();
       if (completing && supabase && session) await refreshRewardSummary({ celebrate: true, previous: previousRewards });
       if (completing && task.due_at) {
         const gained = previousRewards && rewardSummary
@@ -2082,6 +3106,9 @@
   function openTaskModal() {
     const select = document.getElementById("task-subject");
     select.innerHTML = `<option value="">Independent study</option>${subjects.map((subject) => `<option value="${subject.id}">${escapeHtml(subject.name)}</option>`).join("")}`;
+    const form = document.getElementById("task-form");
+    form.reset();
+    updateRepeatControls(form);
     document.getElementById("task-error").textContent = "";
     document.getElementById("task-modal").hidden = false;
     translateInterface();
@@ -2114,15 +3141,21 @@
     document.getElementById("deadline-error").textContent = "";
     if (deadline) {
       const due = new Date(deadline.due_at);
+      const start = deadline.starts_at ? new Date(deadline.starts_at) : due;
       form.elements.title.value = deadline.title || "";
       form.elements.description.value = deadline.description || "";
       form.elements.subject_id.value = deadline.subject_id || "";
       form.elements.priority.value = deadline.priority || "medium";
+      form.elements.starts_on.value = dateKey(start);
       form.elements.due_date.value = dateKey(due);
       const noTimeSet = due.getHours() === 23 && due.getMinutes() === 59;
       form.elements.due_time.value = noTimeSet ? "" : `${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`;
       form.elements.reminder_before_minutes.value = String(deadline.reminder_before_minutes || 0);
+      form.querySelector("[data-repeat-config]").hidden = true;
+    } else {
+      form.querySelector("[data-repeat-config]").hidden = false;
     }
+    updateRepeatControls(form);
     document.getElementById("deadline-modal").hidden = false;
     form.elements.title.focus();
   }
@@ -2133,13 +3166,21 @@
     const date = String(formData.get("due_date") || "");
     if (!title) throw new Error(t.validationTitle);
     if (!date) throw new Error(t.validationDate);
+    const startsOn = String(formData.get("starts_on") || date);
+    const startDate = new Date(`${startsOn}T00:00:00`);
+    const endDate = new Date(`${date}T00:00:00`);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate > endDate) {
+      throw new Error("The start date must be on or before the deadline.");
+    }
     const dueAt = localDateTimeToIso(date, String(formData.get("due_time") || ""));
     if (!dueAt) throw new Error(t.validationDate);
+    const startsAt = localDateTimeToIso(startsOn, String(formData.get("due_time") || "")) || startDate.toISOString();
     const subjectId = String(formData.get("subject_id") || "") || null;
     const payload = {
       title,
       description: String(formData.get("description") || "").trim(),
       subject_id: subjectId,
+      starts_at: startsAt,
       due_at: dueAt,
       priority: String(formData.get("priority") || "medium"),
       reminder_before_minutes: Number(formData.get("reminder_before_minutes") || 0),
@@ -2148,14 +3189,36 @@
     if (supabase && session) {
       if (editingDeadlineId) {
         const { data, error } = await supabase.from("tasks").update(payload).eq("id", editingDeadlineId)
-          .select("id,title,description,subject_id,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,completed_at,subjects(name)").single();
+          .select("id,title,description,subject_id,starts_at,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,completed_at,subjects(name)").single();
         if (error) throw error;
         tasks = tasks.map((item) => item.id === editingDeadlineId ? { ...data, subject: data.subjects?.name || "Independent study" } : item);
       } else {
-        const { data, error } = await supabase.from("tasks").insert({ ...payload, status: "not_started", estimated_minutes: 30 })
-          .select("id,title,description,subject_id,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,completed_at,subjects(name)").single();
+        const repeatType = String(formData.get("repeat_type") || "none");
+        const recurrence = buildRecurrencePlan(formData, date, repeatType);
+        const dateDuration = Math.round((Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate())
+          - Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())) / 86400000);
+        const groupId = repeatType === "none" ? null : focusId();
+        const instances = recurrence.dateKeys.map((occurrenceDate) => {
+          const occurrenceEnd = new Date(`${occurrenceDate}T00:00:00`);
+          const occurrenceStart = new Date(occurrenceEnd);
+          occurrenceStart.setDate(occurrenceStart.getDate() - dateDuration);
+          const startKey = dateKey(occurrenceStart);
+          return {
+            ...payload,
+            starts_at: localDateTimeToIso(startKey, String(formData.get("due_time") || "")) || occurrenceStart.toISOString(),
+            due_at: localDateTimeToIso(occurrenceDate, String(formData.get("due_time") || "")),
+            recurrence_group_id: groupId,
+            recurrence_type: repeatType,
+            recurrence_days: recurrence.days,
+            recurrence_until: recurrence.until,
+            status: "not_started",
+            estimated_minutes: 30,
+          };
+        });
+        const { data, error } = await supabase.from("tasks").insert(instances)
+          .select("id,title,description,subject_id,starts_at,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,completed_at,subjects(name)");
         if (error) throw error;
-        tasks.unshift({ ...data, subject: data.subjects?.name || "Independent study" });
+        tasks.unshift(...(data || []).map((item) => ({ ...item, subject: item.subjects?.name || "Independent study" })));
       }
     } else {
       if (editingDeadlineId) {
@@ -2163,14 +3226,32 @@
           ? { ...item, ...payload, subject: subjectName(subjectId), updated_at: new Date().toISOString() }
           : item);
       } else {
-        tasks.unshift({
-          ...payload,
-          id: `local-${Date.now()}`,
-          status: "not_started",
-          estimated_minutes: 30,
-          created_at: new Date().toISOString(),
-          subject: subjectName(subjectId),
+        const repeatType = String(formData.get("repeat_type") || "none");
+        const recurrence = buildRecurrencePlan(formData, date, repeatType);
+        const dateDuration = Math.round((Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate())
+          - Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())) / 86400000);
+        const groupId = repeatType === "none" ? null : `local-series-${Date.now()}`;
+        const instances = recurrence.dateKeys.map((occurrenceDate, index) => {
+          const occurrenceEnd = new Date(`${occurrenceDate}T00:00:00`);
+          const occurrenceStart = new Date(occurrenceEnd);
+          occurrenceStart.setDate(occurrenceStart.getDate() - dateDuration);
+          const startKey = dateKey(occurrenceStart);
+          return {
+            ...payload,
+            starts_at: localDateTimeToIso(startKey, String(formData.get("due_time") || "")) || occurrenceStart.toISOString(),
+            due_at: localDateTimeToIso(occurrenceDate, String(formData.get("due_time") || "")),
+            recurrence_group_id: groupId,
+            recurrence_type: repeatType,
+            recurrence_days: recurrence.days,
+            recurrence_until: recurrence.until,
+            id: `local-${Date.now()}-${index}`,
+            status: "not_started",
+            estimated_minutes: 30,
+            created_at: new Date().toISOString(),
+            subject: subjectName(subjectId),
+          };
         });
+        tasks.unshift(...instances);
       }
       saveLocalTasks();
     }
@@ -2268,11 +3349,13 @@
       return;
     }
     session = result.data.session;
+    localStorage.setItem(authPromptStorageKey, "seen");
     document.getElementById("auth-modal").hidden = true;
     updateUserUi();
     await verifyAdminAccess();
     await loadLanguagePreference();
     await loadRemoteTasks();
+    await loadAccountWorkspace();
     await loadRemoteNotifications();
     await loadFocusData(true);
     await refreshRewardSummary();
@@ -2283,6 +3366,10 @@
     if (!supabase) {
       session = null;
       updateUserUi();
+      if (!localStorage.getItem(authPromptStorageKey)) {
+        document.getElementById("auth-modal").hidden = false;
+        localStorage.setItem(authPromptStorageKey, "seen");
+      }
       if (currentPage === "admin") await verifyAdminAccess();
       return;
     }
@@ -2290,18 +3377,29 @@
     if (error) {
       console.error("Could not restore the Supabase session.", error);
       showToast(`Could not restore session: ${error.message}`);
+      if (!localStorage.getItem(authPromptStorageKey)) {
+        document.getElementById("auth-modal").hidden = false;
+        localStorage.setItem(authPromptStorageKey, "seen");
+      }
       if (currentPage === "admin") await verifyAdminAccess();
       return;
     }
     session = data.session;
+    if (session) localStorage.setItem(authPromptStorageKey, "seen");
+    else if (!localStorage.getItem(authPromptStorageKey)) {
+      document.getElementById("auth-modal").hidden = false;
+      localStorage.setItem(authPromptStorageKey, "seen");
+    }
     updateUserUi();
     await verifyAdminAccess();
     if (session) {
       await loadLanguagePreference();
       tasks = [];
       subjects = [];
+      clearAccountWorkspace();
       render();
       await loadRemoteTasks();
+      await loadAccountWorkspace();
       await loadRemoteNotifications();
       await loadFocusData(true);
       await refreshRewardSummary();
@@ -2314,11 +3412,13 @@
       if (session) {
         tasks = [];
         subjects = [];
+        clearAccountWorkspace();
         window.setTimeout(async () => {
           await verifyAdminAccess();
           await loadLanguagePreference();
           render();
           await loadRemoteTasks();
+          await loadAccountWorkspace();
           await loadRemoteNotifications();
           await loadFocusData(true);
           await refreshRewardSummary();
@@ -2328,7 +3428,16 @@
         adminAuthorization = { status: "denied", userId: null };
         if (currentPage === "admin") denyAdminRoute(false);
         tasks = readLocalTasks();
+        subjects = [
+          { id: "subject-calculus", name: "Calculus II", color: "#06D6A0", credits: 4, progress: 72 },
+          { id: "subject-algorithms", name: "Algorithms", color: "#75CDB1", credits: 3, progress: 81 },
+          { id: "subject-biology", name: "Biology", color: "#9ECDAF", credits: 3, progress: 64 },
+          { id: "subject-history", name: "History", color: "#C1D79D", credits: 2, progress: 55 },
+        ];
+        resetAccountWorkspacePreview();
+        document.getElementById("feature-modal")?.setAttribute("hidden", "");
         userNotifications = [];
+        dailyReminderPreference = { enabled: false, local_time: "09:00", timezone: "UTC" };
         rewardSummary = null;
         earnedAchievements = [];
         focusLoadedIdentity = "";
@@ -2437,14 +3546,14 @@
       } else {
         focusRecords = data || [];
       }
-      for (const record of pendingFocusRecords) {
-        if (!focusRecords.some((item) => item.idempotency_key === record.idempotency_key)) focusRecords.unshift(record);
-      }
+      updateActivityFromFocusRecords();
       reconcileFocusTimer();
       if (!error && pendingFocusRecords.length) {
         for (const record of [...pendingFocusRecords]) await persistFocusRecord(record);
       }
+      updateActivityFromFocusRecords();
       if (currentPage === "focus") render();
+      else if (currentPage === "dashboard" || currentPage === "analytics") render();
       syncFocusTicker();
     })();
   }
@@ -2627,36 +3736,59 @@
 
   async function persistFocusRecord(record) {
     if (!record) return;
-    if (!focusRecords.some((item) => item.idempotency_key === record.idempotency_key)) focusRecords.unshift(record);
+    if (focusRecordSavesInFlight.has(record.idempotency_key)) return false;
+    focusRecordSavesInFlight.add(record.idempotency_key);
     if (!session) {
+      if (!focusRecords.some((item) => item.idempotency_key === record.idempotency_key)) focusRecords.unshift(record);
       persistFocusState();
+      updateActivityFromFocusRecords();
+      focusRecordSavesInFlight.delete(record.idempotency_key);
       return true;
     }
     if (!pendingFocusRecords.some((item) => item.idempotency_key === record.idempotency_key)) pendingFocusRecords.push(record);
+    focusSaving = true;
     persistFocusState();
     const rpc = record.completed ? "finish_focus_session" : "cancel_focus_session";
-    const { error } = await supabase.rpc(rpc, { p_session_key: record.idempotency_key });
-    if (error) {
-      focusDataError = error.message;
-      console.error("Could not save focus session.", error);
-      showToast(`${focusText[appLanguage].sessionError} ${error.message}`);
+    let rpcError;
+    try {
+      ({ error: rpcError } = await supabase.rpc(rpc, { p_session_key: record.idempotency_key }));
+    } catch (error) {
+      rpcError = error;
+    }
+    if (rpcError) {
+      focusDataError = rpcError.message || String(rpcError);
+      focusSaving = false;
+      updateActivityFromFocusRecords();
+      focusRecordSavesInFlight.delete(record.idempotency_key);
+      console.error("Could not save focus session.", rpcError);
+      showToast(`${focusText[appLanguage].sessionError} ${focusDataError}`);
       render();
       return false;
     }
-    pendingFocusRecords = pendingFocusRecords.filter((item) => item.idempotency_key !== record.idempotency_key);
-    const { data, error: historyError } = await supabase.from("study_sessions")
-      .select("id,idempotency_key,session_type,started_at,ended_at,duration_seconds,completed,subject_id,task_id")
-      .eq("idempotency_key", record.idempotency_key).maybeSingle();
-    if (historyError) {
-      focusDataError = historyError.message;
+    let data;
+    let historyError;
+    try {
+      ({ data, error: historyError } = await supabase.from("study_sessions")
+        .select("id,idempotency_key,session_type,started_at,ended_at,duration_seconds,completed,subject_id,task_id")
+        .eq("idempotency_key", record.idempotency_key).maybeSingle());
+    } catch (error) {
+      historyError = error;
+    }
+    if (historyError || !data) {
+      focusDataError = historyError?.message || "The verified focus record could not be read back.";
+      focusSaving = false;
+      focusRecordSavesInFlight.delete(record.idempotency_key);
       console.error("Could not refresh the verified focus record.", historyError);
-      showToast(`${focusText[appLanguage].dataError} ${historyError.message}`);
+      showToast(`${focusText[appLanguage].dataError} ${focusDataError}`);
       return false;
     }
-    if (data) {
-      focusRecords = focusRecords.filter((item) => item.idempotency_key !== record.idempotency_key);
-      focusRecords.unshift(data);
-    }
+    pendingFocusRecords = pendingFocusRecords.filter((item) => item.idempotency_key !== record.idempotency_key);
+    focusRecords = focusRecords.filter((item) => item.idempotency_key !== record.idempotency_key);
+    focusRecords.unshift(data);
+    focusSaving = false;
+    focusDataError = "";
+    focusRecordSavesInFlight.delete(record.idempotency_key);
+    updateActivityFromFocusRecords();
     persistFocusState();
     if (currentPage === "focus") render();
     if (record.completed && record.session_type === "focus") await refreshRewardSummary({ celebrate: true });
@@ -2722,7 +3854,7 @@
       nextCycle = completedFocus % focusSettings.longBreakInterval + 1;
       autoStart = focusSettings.autoStartBreaks;
       showToast(text.focusCompleted);
-      if (animationsEnabled) launchConfetti();
+      if (shouldUseFullMotion()) launchConfetti();
       const currentXp = Number(rewardSummary?.total_xp) || 0;
       const earnedXp = previousRewards ? Math.max(0, currentXp - Number(previousRewards.total_xp)) : 0;
       const duration = formatFocusDuration(record?.duration_seconds || Math.floor(getFocusDurationMs("focus") / 1000), text);
@@ -2854,8 +3986,26 @@
     });
   }
 
+  document.addEventListener("submit", async (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || form.id !== "daily-reminder-form") return;
+    event.preventDefault();
+    const submit = form.querySelector('[type="submit"]');
+    const errorEl = form.querySelector("[data-reminder-error]");
+    submit.disabled = true;
+    errorEl.textContent = "";
+    try {
+      await saveDailyReminder(form);
+    } catch (error) {
+      console.error("Could not save daily reminder settings.", error);
+      errorEl.textContent = `${translateUiText("Could not save your reminder.")} ${error.message || ""}`.trim();
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
   document.addEventListener("click", async (event) => {
-    const target = event.target.closest("[data-page], [data-navigate], [data-action], [data-close-modal], [data-deadline-filter], [data-deadline-view], [data-language], #open-auth, #top-profile, #mobile-menu, #timer-toggle, #timer-reset, #timer-skip, [data-auth-mode], #sign-out");
+    const target = event.target.closest("[data-page], [data-navigate], [data-action], [data-motion-level], [data-close-modal], [data-deadline-filter], [data-deadline-view], [data-language], #open-auth, #top-profile, #mobile-menu, #timer-toggle, #timer-reset, #timer-skip, [data-auth-mode], #sign-out");
     if (!target) return;
     if (target.matches("[data-page], [data-navigate]")) {
       event.preventDefault();
@@ -2878,6 +4028,48 @@
       await toggleDeadline(target.dataset.id);
     } else if (target.matches('[data-action="deadline-delete"]')) {
       await deleteDeadline(target.dataset.id);
+    } else if (target.matches('[data-action="subject-add"]')) {
+      openFeatureForm("subject");
+    } else if (target.matches('[data-action="subject-edit"]')) {
+      openFeatureForm("subject", target.dataset.id);
+    } else if (target.matches('[data-action="subject-delete"]')) {
+      await deleteFeatureRecord("subject", target.dataset.id);
+    } else if (target.matches('[data-action="schedule-add"]')) {
+      openFeatureForm("schedule");
+    } else if (target.matches('[data-action="schedule-edit"]')) {
+      openFeatureForm("schedule", target.dataset.id);
+    } else if (target.matches('[data-action="schedule-delete"]')) {
+      await deleteFeatureRecord("schedule", target.dataset.id);
+    } else if (target.matches('[data-action="file-add"]')) {
+      openFeatureForm("file");
+    } else if (target.matches('[data-action="file-download"]')) {
+      await downloadStudyFile(target.dataset.id);
+    } else if (target.matches('[data-action="file-delete"]')) {
+      await deleteFeatureRecord("file", target.dataset.id);
+    } else if (target.matches('[data-action="note-add"]')) {
+      openFeatureForm("note");
+    } else if (target.matches('[data-action="note-edit"]')) {
+      openFeatureForm("note", target.dataset.id);
+    } else if (target.matches('[data-action="note-delete"]')) {
+      await deleteFeatureRecord("note", target.dataset.id);
+    } else if (target.matches('[data-action="goal-add"]')) {
+      openFeatureForm("goal");
+    } else if (target.matches('[data-action="goal-edit"]')) {
+      openFeatureForm("goal", target.dataset.id);
+    } else if (target.matches('[data-action="goal-progress"]')) {
+      openFeatureForm("goal-progress", target.dataset.id);
+    } else if (target.matches('[data-action="goal-delete"]')) {
+      await deleteFeatureRecord("goal", target.dataset.id);
+    } else if (target.matches('[data-action="exam-add"]')) {
+      openFeatureForm("exam");
+    } else if (target.matches('[data-action="exam-edit"]')) {
+      openFeatureForm("exam", target.dataset.id);
+    } else if (target.matches('[data-action="exam-result"]')) {
+      openFeatureForm("exam-result", target.dataset.id);
+    } else if (target.matches('[data-action="exam-delete"]')) {
+      await deleteFeatureRecord("exam", target.dataset.id);
+    } else if (target.matches('[data-action="profile-edit"]')) {
+      openFeatureForm("profile", session?.user?.id);
     } else if (target.matches('[data-action="mark-notifications-read"]')) {
       await markNotificationsRead();
     } else if (target.matches('[data-action="focus-settings"]')) {
@@ -2937,32 +4129,43 @@
       target.classList.toggle("on", !light);
       target.setAttribute("aria-pressed", String(light));
       localStorage.setItem("studyflow.theme", light ? "light" : "dark");
-      target.animate?.([{ transform: "scale(.92)" }, { transform: "scale(1)" }], { duration: 180, easing: "ease-out" });
+      if (shouldAnimate()) target.animate?.([{ transform: "scale(.92)" }, { transform: "scale(1)" }], { duration: 180, easing: "ease-out" });
       showToast("Settings saved.");
-    } else if (target.matches('[data-action="motion-toggle"]')) {
-      animationsEnabled = !animationsEnabled;
+    } else if (target.matches("[data-motion-level]")) {
+      motionLevel = target.dataset.motionLevel;
+      animationsEnabled = motionLevel !== "off";
+      localStorage.setItem("studyflow.motion", motionLevel);
       localStorage.setItem("studyflow.animations", animationsEnabled ? "on" : "off");
-      document.documentElement.dataset.motion = animationsEnabled ? "on" : "off";
-      target.classList.toggle("on", animationsEnabled);
-      target.setAttribute("aria-pressed", String(animationsEnabled));
+      document.documentElement.dataset.motion = motionLevel;
+      if (!animationsEnabled) document.getAnimations().forEach((animation) => animation.cancel());
+      document.querySelectorAll("[data-motion-level]").forEach((option) => {
+        const selected = option.dataset.motionLevel === motionLevel;
+        option.classList.toggle("selected", selected);
+        option.setAttribute("aria-pressed", String(selected));
+      });
       showToast("Settings saved.");
+    } else if (target.matches('[data-action="admin-users-refresh"]')) {
+      void loadAdminUsers();
+    } else if (target.matches('[data-action="admin-users-prev"]')) {
+      adminUsersPage = Math.max(0, adminUsersPage - 1);
+      void loadAdminUsers();
+    } else if (target.matches('[data-action="admin-users-next"]')) {
+      if ((adminUsersPage + 1) * adminUsersPageSize < adminUsersTotal) {
+        adminUsersPage += 1;
+        void loadAdminUsers();
+      }
     } else if (target.matches('[data-action="setting-toggle"]')) {
       target.classList.toggle("on");
       target.setAttribute("aria-pressed", String(target.classList.contains("on")));
     } else if (target.matches("[data-action]")) {
       const messages = {
-        "planner-hint": "Study-block editing is ready to connect to the schedules table.",
-        "subject-hint": "Subject creation will be connected to the subjects table.",
-        "files-hint": "Upload files after configuring the private StudyFlow storage bucket.",
-        "notes-hint": "Note editor will be connected to the private notes table.",
-        "goal-hint": "Goal creation will be connected to the goals table.",
-        "exam-hint": "Exam tracking will be connected to your exams table.",
         "read-hint": "Notification read state will sync after connecting your account.",
-        "profile-hint": "Profile editing is ready to connect to your Supabase profile.",
       };
       if (messages[target.dataset.action]) showInfo(messages[target.dataset.action]);
     } else if (target.matches("[data-close-modal]")) {
-      target.closest(".modal-backdrop").hidden = true;
+      const backdrop = target.closest(".modal-backdrop");
+      backdrop.hidden = true;
+      if (backdrop.id === "auth-modal") localStorage.setItem(authPromptStorageKey, "seen");
     } else if (target.id === "open-auth" || target.id === "top-profile") {
       document.getElementById("auth-modal").hidden = false;
     } else if (target.id === "mobile-menu") {
@@ -2970,6 +4173,12 @@
     } else if (target.matches("[data-auth-mode]")) {
       setAuthMode(target.dataset.authMode);
     } else if (target.id === "sign-out" && supabase) {
+      try {
+        await removeCurrentPushSubscription(session?.user?.id);
+      } catch (error) {
+        console.error("Could not fully remove the current push subscription while signing out.", error);
+        showToast(`Push subscription cleanup failed: ${error.message}`);
+      }
       const { error } = await supabase.auth.signOut();
       if (error) {
         showToast(`Could not sign out: ${error.message}`);
@@ -2978,7 +4187,18 @@
       }
       session = null;
       adminAuthorization = { status: "denied", userId: null };
+      adminUsersRequest += 1;
+      adminUsers = [];
+      adminUsersTotal = 0;
+      resetAccountWorkspacePreview();
+      subjects = [
+        { id: "subject-calculus", name: "Calculus II", color: "#06D6A0", credits: 4, progress: 72 },
+        { id: "subject-algorithms", name: "Algorithms", color: "#75CDB1", credits: 3, progress: 81 },
+        { id: "subject-biology", name: "Biology", color: "#9ECDAF", credits: 3, progress: 64 },
+        { id: "subject-history", name: "History", color: "#C1D79D", credits: 2, progress: 55 },
+      ];
       userNotifications = [];
+      dailyReminderPreference = { enabled: false, local_time: "09:00", timezone: "UTC" };
       document.getElementById("auth-modal").hidden = true;
       updateUserUi();
       if (currentPage === "admin") {
@@ -3008,6 +4228,10 @@
     }
   });
 
+  document.querySelectorAll("#task-form [name='repeat_type'], #deadline-form [name='repeat_type']").forEach((select) => {
+    select.addEventListener("change", () => updateRepeatControls(select.form));
+  });
+
   document.getElementById("deadline-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const button = document.getElementById("deadline-submit");
@@ -3032,7 +4256,9 @@
   document.getElementById("auth-form").addEventListener("submit", handleAuthSubmit);
   window.addEventListener("hashchange", () => {
     const page = window.location.hash.slice(1) || "dashboard";
-    currentPage = pageRenderers[page] ? page : "dashboard";
+    const nextPage = pageRenderers[page] ? page : "dashboard";
+    if (nextPage === currentPage) return;
+    currentPage = nextPage;
     if (currentPage === "admin") adminAuthorization = { status: "checking", userId: session?.user?.id || null };
     render();
     if (currentPage === "admin") void verifyAdminAccess();
@@ -3055,10 +4281,21 @@
   });
   window.addEventListener("scroll", updateScrollProgress, { passive: true });
   window.addEventListener("resize", updateScrollProgress, { passive: true });
+  window.addEventListener("online", updateOfflineStatus);
+  window.addEventListener("offline", updateOfflineStatus);
+  document.addEventListener("visibilitychange", () => {
+    document.documentElement.dataset.motionPaused = String(document.hidden);
+    document.getAnimations().forEach((animation) => {
+      if (document.hidden) animation.pause();
+      else animation.play();
+    });
+  });
 
   const storedTheme = localStorage.getItem("studyflow.theme");
   if (storedTheme === "light") document.documentElement.dataset.theme = "light";
   document.getElementById("footer-year").textContent = new Date().getFullYear();
+  updateOfflineStatus();
+  document.documentElement.dataset.motion = motionLevel;
   currentPage = pageRenderers[window.location.hash.slice(1)] ? window.location.hash.slice(1) : "dashboard";
   render();
   updateUserUi();
@@ -3071,6 +4308,7 @@
     updatePwaInstallButton();
   });
   window.addEventListener("appinstalled", () => {
+    pwaInstalled = true;
     deferredInstallPrompt = null;
     updatePwaInstallButton();
     showToast("App installed.");
@@ -3078,6 +4316,7 @@
   window.matchMedia?.("(display-mode: standalone)").addEventListener?.("change", updatePwaInstallButton);
   if ("serviceWorker" in navigator && window.location.protocol.startsWith("http")) {
     navigator.serviceWorker.register("./service-worker.js").then((registration) => {
+      void registration.update();
       if (registration.waiting) showPwaUpdateNotice(registration.waiting);
       registration.addEventListener("updatefound", () => {
         const installingWorker = registration.installing;

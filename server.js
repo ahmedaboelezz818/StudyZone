@@ -9,6 +9,8 @@ const mimeTypes = {
   ".js": "text/javascript; charset=utf-8",
   ".sql": "text/plain; charset=utf-8",
   ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".ico": "image/x-icon",
   ".webmanifest": "application/manifest+json; charset=utf-8",
 };
 const port = Number(process.env.PORT || 5500);
@@ -42,5 +44,5 @@ createServer(async (request, response) => {
     response.writeHead(500).end("Unable to read requested file");
   }
 }).listen(port, "127.0.0.1", () => {
-  console.log(`StudyFlow is available at http://127.0.0.1:${port}`);
+  console.log(`Study Zone is available at http://127.0.0.1:${port}`);
 });
