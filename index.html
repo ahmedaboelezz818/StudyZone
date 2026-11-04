@@ -8,7 +8,7 @@
     <link rel="manifest" href="./manifest.json" />
     <link rel="icon" href="./favicon.ico" sizes="any" />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" sizes="180x180" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -263,12 +263,14 @@
     </div>
 
     <div class="modal-backdrop" id="pwa-install-modal" hidden>
-      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="pwa-install-title">
+      <section class="modal pwa-install-modal" role="dialog" aria-modal="true" aria-labelledby="pwa-install-title">
         <button class="modal-close" data-close-modal aria-label="Close">×</button>
+        <div class="pwa-install-icon" aria-hidden="true"><img src="./icons/icon-192.png" alt="" width="76" height="76" /></div>
         <p class="eyebrow">STUDY ZONE</p>
         <h2 id="pwa-install-title">Install Study Zone</h2>
+        <p class="modal-subtitle" id="pwa-install-description"></p>
         <p class="modal-subtitle" id="pwa-install-instructions"></p>
-        <div class="modal-actions"><button class="button button-primary" type="button" data-close-modal>Done</button></div>
+        <div class="modal-actions"><button class="button button-primary" type="button" id="pwa-install-confirm">Install Study Zone</button><button class="button button-secondary" type="button" data-close-modal>Cancel</button></div>
       </section>
     </div>
 
@@ -280,7 +282,7 @@
         <h2 id="celebration-title"></h2>
         <p class="modal-subtitle" id="celebration-description"></p>
         <div class="celebration-xp" id="celebration-xp" hidden></div>
-        <div class="modal-actions"><button class="button button-primary" type="button" data-close-modal>Done</button></div>
+        <div class="modal-actions"><button class="button button-secondary" type="button" data-action="celebration-snooze">Snooze</button><button class="button button-primary" type="button" id="celebration-done" data-close-modal>Done</button></div>
       </section>
     </div>
 

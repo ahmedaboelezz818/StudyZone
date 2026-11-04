@@ -84,10 +84,16 @@
     soundEnabled: true,
     browserNotifications: false,
     showSeconds: true,
+    startSound: "focus-start",
+    endSound: "focus-end",
+    breakEndSound: "break-end",
+    soundVolume: 80,
+    soundDuration: 5,
+    soundRepeat: false,
   });
   let focusSettings = { ...defaultFocusSettings };
   const notificationPrefsKey = "studyzone.notification-prefs.v1";
-  let notificationPrefs = { sound: true, dnd: false, start: "22:00", end: "07:00" };
+  let notificationPrefs = { sound: true, dnd: false, start: "22:00", end: "07:00", taskSound: "task-reminder", taskVolume: 80, taskDuration: 5, taskRepeat: false };
   let notificationsPrimed = false;
   try {
     const storedNotificationPrefs = JSON.parse(localStorage.getItem(notificationPrefsKey) || "null");
@@ -97,6 +103,10 @@
         dnd: storedNotificationPrefs.dnd === true,
         start: /^\d{2}:\d{2}$/.test(storedNotificationPrefs.start || "") ? storedNotificationPrefs.start : "22:00",
         end: /^\d{2}:\d{2}$/.test(storedNotificationPrefs.end || "") ? storedNotificationPrefs.end : "07:00",
+        taskSound: ALERT_SOUNDS.some((sound) => sound.id === storedNotificationPrefs.taskSound) ? storedNotificationPrefs.taskSound : "task-reminder",
+        taskVolume: [0, 10, 25, 50, 75, 100].includes(Number(storedNotificationPrefs.taskVolume)) ? Number(storedNotificationPrefs.taskVolume) : 80,
+        taskDuration: [3, 5, 10, 15].includes(Number(storedNotificationPrefs.taskDuration)) ? Number(storedNotificationPrefs.taskDuration) : 5,
+        taskRepeat: storedNotificationPrefs.taskRepeat === true,
       };
     }
   } catch (error) {
@@ -143,6 +153,9 @@
       sessions: "focus sessions", behavior: "Session behavior", autoFocus: "Auto-start focus sessions",
       autoBreaks: "Auto-start breaks", sound: "Completion sound", browserNotifications: "Browser notifications",
       showSeconds: "Show seconds on the flip clock", saveSettings: "Save settings", restoreDefaults: "Restore defaults",
+      focusStartSound: "Focus start sound", focusEndSound: "Focus end sound", breakEndSound: "Break end sound",
+      soundVolume: "Sound volume", soundDuration: "Sound duration", soundRepeat: "Repeat completion sound",
+      soundPreview: "Preview sound",
       settingsSaved: "Focus settings saved.", settingsError: "Could not save your focus settings.",
       invalidSettings: "Enter valid session lengths between 1 and 180 minutes and an interval between 2 and 12.",
       notificationsUnsupported: "Browser notifications are not supported here.",
@@ -177,6 +190,9 @@
       sessions: "جلسات تركيز", behavior: "سلوك الجلسات", autoFocus: "بدء جلسات التركيز تلقائيًا",
       autoBreaks: "بدء الاستراحات تلقائيًا", sound: "صوت عند اكتمال الجلسة", browserNotifications: "إشعارات المتصفح",
       showSeconds: "عرض الثواني في الساعة القلّابة", saveSettings: "حفظ الإعدادات", restoreDefaults: "استعادة الافتراضية",
+      focusStartSound: "صوت بداية التركيز", focusEndSound: "صوت نهاية التركيز", breakEndSound: "صوت نهاية الاستراحة",
+      soundVolume: "مستوى صوت المؤقت", soundDuration: "مدة صوت المؤقت", soundRepeat: "تكرار صوت اكتمال الجلسة",
+      soundPreview: "تجربة الصوت",
       settingsSaved: "تم حفظ إعدادات التركيز.", settingsError: "تعذر حفظ إعدادات التركيز.",
       invalidSettings: "أدخل مددًا صحيحة بين دقيقة و١٨٠ دقيقة، وفاصلًا بين جلستين و١٢ جلسة.",
       notificationsUnsupported: "إشعارات المتصفح غير مدعومة هنا.",
@@ -1010,14 +1026,29 @@
     refreshPwaInstructions();
   }
 
+  function isStandaloneMode() {
+    return Boolean(window.matchMedia?.("(display-mode: standalone)").matches) || window.navigator.standalone === true;
+  }
+
+  function isIosDevice() {
+    const userAgentData = window.navigator.userAgentData;
+    const platform = userAgentData?.platform || window.navigator.platform || "";
+    const userAgent = window.navigator.userAgent || "";
+    const touchPlatform = window.navigator.platform || "";
+    const isAppleTouchDevice = Boolean(touchPlatform) && /mac|iphone|ipad|ipod/i.test(String(touchPlatform)) && (window.navigator.maxTouchPoints || 0) > 1;
+    if (userAgentData?.platform) return /ios|iphone|ipad|ipod/i.test(String(userAgentData.platform));
+    if (/iphone|ipad|ipod/i.test(userAgent)) return true;
+    if (isAppleTouchDevice) return true;
+    return false;
+  }
+
   function isPwaInstalled() {
-    return window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone === true;
+    return isStandaloneMode();
   }
 
   function getPwaInstallInstructions() {
     const userAgent = navigator.userAgent || "";
-    const isIos = /iphone|ipad|ipod/i.test(userAgent)
-      || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    const isIos = isIosDevice();
     const isSafari = /safari/i.test(userAgent)
       && !/(chrome|crios|android|edg|opr|firefox|fxios)/i.test(userAgent);
     const isMacSafari = navigator.platform?.includes("Mac") && isSafari;
@@ -1033,9 +1064,21 @@
     return "Use your browser menu and choose Install app or Add to Home screen if offered. Installation options vary by browser and device.";
   }
 
+  function getPwaInstallState() {
+    if (pwaInstalled || isStandaloneMode()) return "installed";
+    if (deferredInstallPrompt) return "available";
+    if (isIosDevice()) return "instructions";
+    const userAgent = navigator.userAgent || "";
+    if (/firefox|fxios/i.test(userAgent)) return "instructions";
+    return "available";
+  }
+
   function updatePwaInstallButton() {
     const button = document.getElementById("pwa-install");
-    if (button) button.hidden = pwaInstalled || isPwaInstalled();
+    if (!button) return;
+    const state = getPwaInstallState();
+    button.hidden = state === "installed";
+    button.dataset.pwaState = state;
   }
 
   function updateOfflineStatus() {
@@ -1045,6 +1088,12 @@
 
   function refreshPwaInstructions() {
     const instructions = document.getElementById("pwa-install-instructions");
+    const description = document.getElementById("pwa-install-description");
+    if (description) {
+      description.textContent = getPwaInstallState() === "installed"
+        ? (appLanguage === "ar" ? "Study Zone جاهز على هذا الجهاز الآن." : "Study Zone is ready on this device now.")
+        : (appLanguage === "ar" ? "مساحة دراسة واحدة تنظّم مهمتك ومواعيدك وجلسات تركيزك." : "One calm workspace that keeps your tasks, deadlines, and focus sessions organized.");
+    }
     if (instructions) instructions.textContent = getPwaInstallInstructions();
   }
 
@@ -1081,7 +1130,17 @@
     updatePwaInstallButton();
     try {
       await prompt.prompt();
-      await prompt.userChoice;
+      const outcome = await prompt.userChoice;
+      if (outcome?.outcome === "accepted") {
+        pwaInstalled = true;
+        updatePwaInstallButton();
+        refreshPwaInstructions();
+        showToast("App installed.");
+      } else {
+        deferredInstallPrompt = null;
+        updatePwaInstallButton();
+        refreshPwaInstructions();
+      }
     } catch (error) {
       console.error("Could not start Study Zone installation.", error);
       showToast("Could not start installation.");
@@ -3161,6 +3220,16 @@
           ${toggleField("browserNotifications", text.browserNotifications, focusSettings.browserNotifications)}
           ${toggleField("showSeconds", text.showSeconds, focusSettings.showSeconds)}
         </div>
+        <h3>${text.soundVolume}</h3>
+        <div class="focus-setting-options">
+          <label>${text.focusStartSound}<select name="startSound">${ALERT_SOUNDS.map((sound) => `<option value="${sound.id}" ${focusSettings.startSound === sound.id ? "selected" : ""}>${sound.label[appLanguage] || sound.label.en}</option>`).join("")}</select></label>
+          <label>${text.focusEndSound}<select name="endSound">${ALERT_SOUNDS.map((sound) => `<option value="${sound.id}" ${focusSettings.endSound === sound.id ? "selected" : ""}>${sound.label[appLanguage] || sound.label.en}</option>`).join("")}</select></label>
+          <label>${text.breakEndSound}<select name="breakEndSound">${ALERT_SOUNDS.map((sound) => `<option value="${sound.id}" ${focusSettings.breakEndSound === sound.id ? "selected" : ""}>${sound.label[appLanguage] || sound.label.en}</option>`).join("")}</select></label>
+          <label>${text.soundVolume}<input type="range" name="soundVolume" min="0" max="100" step="5" value="${focusSettings.soundVolume}" /><span dir="ltr">${focusSettings.soundVolume}%</span></label>
+          <label>${text.soundDuration}<select name="soundDuration">${[3, 5, 10, 15].map((seconds) => `<option value="${seconds}" ${Number(focusSettings.soundDuration) === seconds ? "selected" : ""}>${seconds}</option>`).join("")}</select></label>
+          ${toggleField("soundRepeat", text.soundRepeat, focusSettings.soundRepeat)}
+        </div>
+        <button class="button button-secondary button-small" type="button" data-action="focus-sound-preview">${text.soundPreview}</button>
         <div class="focus-settings-actions"><button class="button button-secondary" type="button" data-action="focus-settings-defaults">${text.restoreDefaults}</button><button class="button button-primary" type="submit">${text.saveSettings}</button></div>
         <p class="focus-settings-error" id="focus-settings-error" role="alert"></p>
       </form>
@@ -3899,28 +3968,170 @@
     return start < end ? current >= start && current < end : current >= start || current < end;
   }
 
+  const ALERT_SOUNDS = [
+    {
+      id: "focus-start",
+      label: { en: "Focus start", ar: "بداية التركيز" },
+      description: { en: "Two-note signal that a focus session has begun.", ar: "نغمة من فتحتين واضحة تعلن بدء جلسة التركيز." },
+      pattern: {
+        durationMs: 560,
+        tones: [
+          { frequency: 523.25, endFrequency: 392, start: 0, duration: 0.22 },
+          { frequency: 392, endFrequency: 329.63, start: 0.22, duration: 0.34 },
+        ],
+      },
+    },
+    {
+      id: "focus-end",
+      label: { en: "Focus end", ar: "نهاية التركيز" },
+      description: { en: "Deep tone that marks a focus session or Pomodoro cycle as complete.", ar: "نغمة عميقة تميّز اكتمال جلسة التركيز أو دورة البومودورو." },
+      pattern: {
+        durationMs: 1400,
+        tones: [ { frequency: 329.63, endFrequency: 246.94, start: 0, duration: 1.2 } ],
+      },
+    },
+    {
+      id: "task-reminder",
+      label: { en: "Task reminder", ar: "تذكير المهمة" },
+      description: { en: "Two-note alert that pulls a task or appointment back into focus.", ar: "تنبيه من فتحتين يسترجع المهمة أو الموعد إلى التركيز." },
+      pattern: {
+        durationMs: 900,
+        tones: [
+          { frequency: 659.25, endFrequency: 830.61, start: 0, duration: 0.32 },
+          { frequency: 830.61, endFrequency: 987.77, start: 0.32, duration: 0.42 },
+        ],
+      },
+    },
+    {
+      id: "break-end",
+      label: { en: "Break end", ar: "نهاية الاستراحة" },
+      description: { en: "Soft tone that ends a break and prepares the next focus block.", ar: "نغمة هادئة تنهي الاستراحة وتجهز الجلسة القادمة." },
+      pattern: {
+        durationMs: 1000,
+        tones: [ { frequency: 493.88, endFrequency: 440, start: 0, duration: 0.9 } ],
+      },
+    },
+  ];
+
+  let alertAudioContext = null;
+  let alertAudioMaster = null;
+  let alertAudioSources = [];
+  let alertAudioRepeatHandle = null;
+  let alertSnoozeTimer = null;
+  let lastAlertSound = { soundId: "task-reminder", volume: 80, duration: 5 };
+
+  function ensureAlertAudioContext() {
+    if (!alertAudioContext) {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return null;
+      alertAudioContext = new AudioContext();
+      alertAudioMaster = alertAudioContext.createGain();
+      alertAudioMaster.gain.value = 0.9;
+      alertAudioMaster.connect(alertAudioContext.destination);
+    }
+    return alertAudioContext;
+  }
+
+  async function unlockAlertAudio() {
+    const context = ensureAlertAudioContext();
+    if (!context) return null;
+    if (context.state === "suspended") {
+      try { await context.resume(); } catch { /* keep the current context */ }
+    }
+    return context;
+  }
+
+  function stopAlertAudio() {
+    if (alertAudioRepeatHandle) {
+      window.clearTimeout(alertAudioRepeatHandle);
+      alertAudioRepeatHandle = null;
+    }
+    for (const source of alertAudioSources) {
+      try { source.stop(); } catch { /* already stopped */ }
+    }
+    alertAudioSources = [];
+  }
+
+  function startAlert({ key, soundId, volume, duration, repeat } = {}) {
+    stopAlertAudio();
+    activeAlertKey = key || null;
+    lastAlertSound = { soundId: soundId || "task-reminder", volume: volume || 80, duration: duration || 5 };
+    void playAlertSound({ soundId, volume, duration, repeat }).then(() => {
+      if (activeAlertKey !== key) stopAlertAudio();
+    });
+    return key || null;
+  }
+
+  function snoozeActiveAlert(minutes = 5) {
+    stopAlertAudio();
+    if (alertSnoozeTimer) window.clearTimeout(alertSnoozeTimer);
+    alertSnoozeTimer = window.setTimeout(() => {
+      alertSnoozeTimer = null;
+      void playAlertSound({ ...lastAlertSound, repeat: false });
+    }, Math.max(1, minutes) * 60000);
+  }
+
+  async function playAlertSound({ soundId, volume, duration, repeat } = {}) {
+    const context = await unlockAlertAudio();
+    if (!context || !alertAudioMaster) return;
+    const sound = ALERT_SOUNDS.find((item) => item.id === soundId) || ALERT_SOUNDS[ALERT_SOUNDS.length - 1];
+    const pattern = sound.pattern;
+    const volumeValue = Math.max(0, Math.min(100, Number(volume) || 80)) / 100;
+    const iterationDurationMs = pattern.durationMs * 1000;
+    const playDurationMs = repeat === true
+      ? iterationDurationMs
+      : Math.max(iterationDurationMs, Number(duration) > 0 ? Number(duration) * 1000 : iterationDurationMs);
+
+    if (alertAudioRepeatHandle) window.clearTimeout(alertAudioRepeatHandle);
+    alertAudioSources = [];
+    alertAudioMaster.gain.cancelScheduledValues(context.currentTime);
+    alertAudioMaster.gain.setValueAtTime(Math.max(volumeValue * 0.9, 0.0001), context.currentTime);
+    alertAudioMaster.gain.exponentialRampToValueAtTime(Math.max(volumeValue * 0.9, 0.0001), context.currentTime + 0.05);
+
+    const runIteration = (contextNow) => {
+      let cursor = contextNow;
+      for (const tone of pattern.tones) {
+        const startAt = contextNow + tone.start * 1000;
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(tone.frequency, startAt);
+        if (tone.endFrequency) oscillator.frequency.exponentialRampToValueAtTime(Math.max(tone.endFrequency, 1), startAt + tone.duration * 1000);
+        gain.gain.setValueAtTime(0.0001, startAt);
+        gain.gain.exponentialRampToValueAtTime(Math.max(volumeValue * 0.9, 0.0001), startAt + 0.015);
+        gain.gain.setValueAtTime(Math.max(volumeValue * 0.9, 0.0001), startAt + Math.max(tone.duration * 1000 - 0.015, 0.001));
+        gain.gain.exponentialRampToValueAtTime(0.0001, startAt + tone.duration * 1000);
+        oscillator.connect(gain);
+        gain.connect(alertAudioMaster);
+        oscillator.start(startAt);
+        oscillator.stop(startAt + tone.duration * 1000);
+        alertAudioSources.push(oscillator);
+      }
+      const lastTone = pattern.tones[pattern.tones.length - 1];
+      const endAt = contextNow + lastTone.start * 1000 + lastTone.duration * 1000;
+      const stopInMs = Math.max(0, (repeat === true ? iterationDurationMs : playDurationMs) - (endAt - contextNow));
+      if (repeat === true) {
+        alertAudioRepeatHandle = window.setTimeout(() => runIteration(context.currentTime + iterationDurationMs), iterationDurationMs);
+      }
+      if (repeat !== true && stopInMs > 0) window.setTimeout(() => stopAlertAudio(), stopInMs);
+    };
+
+    runIteration(context.currentTime);
+  }
+
+  async function previewAlertSound(soundId) {
+    await playAlertSound({ soundId, volume: 80, duration: 5, repeat: false });
+  }
+
   function playNotificationSound() {
     if (!notificationPrefs.sound || isDoNotDisturbActive()) return;
-    try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContext) return;
-      const context = new AudioContext();
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      oscillator.type = "sine";
-      oscillator.frequency.setValueAtTime(880, context.currentTime);
-      oscillator.frequency.exponentialRampToValueAtTime(620, context.currentTime + 0.18);
-      gain.gain.setValueAtTime(0.0001, context.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.16, context.currentTime + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.28);
-      oscillator.connect(gain);
-      gain.connect(context.destination);
-      oscillator.start();
-      oscillator.stop(context.currentTime + 0.3);
-      oscillator.addEventListener("ended", () => { void context.close(); });
-    } catch (error) {
-      console.warn("Could not play the notification sound.", error);
-    }
+    startAlert({
+      key: `task-alert-${Date.now()}`,
+      soundId: notificationPrefs.taskSound || "task-reminder",
+      volume: notificationPrefs.taskVolume,
+      duration: notificationPrefs.taskDuration,
+      repeat: notificationPrefs.taskRepeat,
+    });
   }
 
   function notificationPreferencesPanel() {
@@ -3935,6 +4146,15 @@
         </div>
         <p class="data-caption">${dndActive ? (appLanguage === "ar" ? "وضع عدم الإزعاج نشط الآن، لذلك لن تُشغّل الأصوات." : "Do not disturb is active right now, so sounds are suppressed.") : (appLanguage === "ar" ? "تُطبّق هذه الإعدادات في هذا المتصفح وتحفظ في حسابك عند توفر الجدول." : "These preferences apply in this browser and sync to your account when the preferences table is available.")}</p>
         <button class="button button-primary button-small" type="submit">${appLanguage === "ar" ? "حفظ إعدادات الإشعارات" : "Save notification settings"}</button>
+        <div class="task-sound-settings">
+          <div class="form-row">
+            <label>${appLanguage === "ar" ? "صوت التذكير" : "Task reminder sound"}<select id="task-sound-select">${ALERT_SOUNDS.map((sound) => `<option value="${sound.id}" ${notificationPrefs.taskSound === sound.id ? "selected" : ""}>${sound.label[appLanguage] || sound.label.en}</option>`).join("")}</select></label>
+            <label>${appLanguage === "ar" ? "مدة صوت التذكير" : "Task sound duration"}<select id="task-sound-duration">${[3, 5, 10, 15].map((seconds) => `<option value="${seconds}" ${Number(notificationPrefs.taskDuration) === seconds ? "selected" : ""}>${seconds}</option>`).join("")}</select></label>
+          </div>
+          <label class="focus-setting-toggle"><span>${appLanguage === "ar" ? "تكرار صوت التذكير" : "Repeat task alert sound"}</span><input type="checkbox" name="taskRepeat" ${notificationPrefs.taskRepeat ? "checked" : ""}><i aria-hidden="true"></i></label>
+          <label>${appLanguage === "ar" ? "مستوى صوت التذكير" : "Task sound volume"}<input type="range" id="task-sound-volume" min="0" max="100" step="5" value="${notificationPrefs.taskVolume}" /><span id="task-sound-volume-value" dir="ltr">${notificationPrefs.taskVolume}%</span></label>
+          <button class="button button-secondary button-small" type="button" data-action="notification-sound-preview">Preview</button>
+        </div>
       </form>
     </section>`;
   }
@@ -3945,6 +4165,10 @@
       dnd: formData.get("dnd") === "on",
       start: String(formData.get("dnd_start") || "22:00"),
       end: String(formData.get("dnd_end") || "07:00"),
+      taskSound: String(formData.get("taskSound") || "task-reminder"),
+      taskVolume: Number(formData.get("taskVolume") || 80),
+      taskDuration: Number(formData.get("taskDuration") || 5),
+      taskRepeat: formData.get("taskRepeat") === "on",
     };
     localStorage.setItem(notificationPrefsKey, JSON.stringify(notificationPrefs));
     if (supabase && session) {
@@ -4535,6 +4759,10 @@
         dnd: notificationResult.data.dnd_enabled === true,
         start: String(notificationResult.data.dnd_start || "22:00").slice(0, 5),
         end: String(notificationResult.data.dnd_end || "07:00").slice(0, 5),
+        taskSound: ALERT_SOUNDS.some((sound) => sound.id === notificationPrefs.taskSound) ? notificationPrefs.taskSound : "task-reminder",
+        taskVolume: [0, 10, 25, 50, 75, 100].includes(Number(notificationPrefs.taskVolume)) ? Number(notificationPrefs.taskVolume) : 80,
+        taskDuration: [3, 5, 10, 15].includes(Number(notificationPrefs.taskDuration)) ? Number(notificationPrefs.taskDuration) : 5,
+        taskRepeat: notificationPrefs.taskRepeat === true,
       };
       localStorage.setItem(notificationPrefsKey, JSON.stringify(notificationPrefs));
     } else if (notificationResult.error && !isMissingRelation(notificationResult.error)) {
@@ -5681,6 +5909,12 @@
     for (const key of ["autoStartFocus", "autoStartBreaks", "soundEnabled", "browserNotifications", "showSeconds"]) {
       if (typeof source[key] === "boolean") normalized[key] = source[key];
     }
+    if (typeof source.startSound === "string") normalized.startSound = ALERT_SOUNDS.some((sound) => sound.id === source.startSound) ? source.startSound : "focus-start";
+    if (typeof source.endSound === "string") normalized.endSound = ALERT_SOUNDS.some((sound) => sound.id === source.endSound) ? source.endSound : "focus-end";
+    if (typeof source.breakEndSound === "string") normalized.breakEndSound = ALERT_SOUNDS.some((sound) => sound.id === source.breakEndSound) ? source.breakEndSound : "break-end";
+    if (Number(source.soundVolume) > 0) normalized.soundVolume = Math.max(0, Math.min(100, Number(source.soundVolume)));
+    if (Number(source.soundDuration) > 0) normalized.soundDuration = Math.max(3, Math.min(15, Number(source.soundDuration)));
+    if (typeof source.soundRepeat === "boolean") normalized.soundRepeat = source.soundRepeat;
     return normalized;
   }
 
@@ -5885,6 +6119,15 @@
     focusSession.status = "running";
     focusSession.runStartedAt = now;
     focusSession.endAt = now + focusSession.remainingMs;
+    if (focusSettings.soundEnabled && focusSession.type === "focus") {
+      void startAlert({
+        key: `focus-start-${focusSession.id}`,
+        soundId: focusSettings.startSound || "focus-start",
+        volume: focusSettings.soundVolume,
+        duration: focusSettings.soundDuration,
+        repeat: false,
+      });
+    }
     persistFocusState();
     updateTimerUi();
     syncFocusTicker();
@@ -5996,34 +6239,31 @@
 
   function playFocusCompletion() {
     if (focusSettings.soundEnabled) {
-      try {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        if (AudioContext) {
-          const context = new AudioContext();
-          const oscillator = context.createOscillator();
-          const gain = context.createGain();
-          oscillator.type = "sine";
-          oscillator.frequency.value = 660;
-          gain.gain.setValueAtTime(0.0001, context.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.08, context.currentTime + 0.02);
-          gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.35);
-          oscillator.connect(gain);
-          gain.connect(context.destination);
-          oscillator.start();
-          oscillator.stop(context.currentTime + 0.36);
-          oscillator.addEventListener("ended", () => void context.close(), { once: true });
-        }
-      } catch (error) {
-        console.error("Could not play the focus completion sound.", error);
-      }
+      void startAlert({
+        key: `focus-end-${focusSession.type}-${focusSession.cycle}`,
+        soundId: focusSession.type === "short_break" || focusSession.type === "long_break" ? focusSettings.breakEndSound : focusSettings.endSound,
+        volume: focusSettings.soundVolume,
+        duration: focusSettings.soundDuration,
+        repeat: focusSettings.soundRepeat,
+      });
     }
     if (focusSettings.browserNotifications && "Notification" in window && Notification.permission === "granted") {
       try {
-        new Notification(focusText[appLanguage].title, {
+        const notificationOptions = {
           body: focusSession.type === "focus" ? focusText[appLanguage].focusCompleted : focusText[appLanguage].breakCompleted,
           icon: "./icon.svg",
+          badge: "./icons/icon-192.png",
           tag: "studyflow-focus-completion",
-        });
+          renotify: true,
+          data: { url: `${window.location.origin}${window.location.pathname}#/focus` },
+        };
+        if ("serviceWorker" in navigator) {
+          const registration = navigator.serviceWorker.ready;
+          if (registration?.showNotification) registration.showNotification(focusText[appLanguage].title, notificationOptions);
+          else new Notification(focusText[appLanguage].title, notificationOptions);
+        } else {
+          new Notification(focusText[appLanguage].title, notificationOptions);
+        }
       } catch (error) {
         console.error("Could not show the focus completion notification.", error);
       }
@@ -6110,6 +6350,12 @@
       soundEnabled: data.has("soundEnabled"),
       browserNotifications: data.has("browserNotifications"),
       showSeconds: data.has("showSeconds"),
+      startSound: String(data.get("startSound") || "focus-start"),
+      endSound: String(data.get("endSound") || "focus-end"),
+      breakEndSound: String(data.get("breakEndSound") || "break-end"),
+      soundVolume: Number(data.get("soundVolume") || 80),
+      soundDuration: Number(data.get("soundDuration") || 5),
+      soundRepeat: data.has("soundRepeat"),
     });
     const integerFields = ["focusMinutes", "shortBreakMinutes", "longBreakMinutes", "longBreakInterval"];
     if (integerFields.some((key) => !Number.isInteger(Number(data.get(key))))
@@ -6371,6 +6617,16 @@
       } catch (error) {
         showToast(`Could not enable task notifications: ${error.message}`);
       }
+    } else if (target.matches('[data-action="notification-sound-preview"]')) {
+      const soundSelect = document.getElementById("task-sound-select");
+      void previewAlertSound(soundSelect?.value || "task-reminder");
+      return;
+    } else if (target.matches('[data-action="focus-sound-preview"]')) {
+      void previewAlertSound(focusSettings.startSound || "focus-start");
+      return;
+    } else if (target.matches('[data-action="celebration-snooze"]')) {
+      snoozeActiveAlert();
+      return;
     } else if (target.matches('[data-action="focus-settings"]')) {
       focusSettingsOpen = !focusSettingsOpen;
       render();
@@ -6729,6 +6985,7 @@ if ("serviceWorker" in navigator) {
   void loadFocusData();
   restoreSession();
   document.getElementById("pwa-install").addEventListener("click", () => void handlePwaInstall());
+  document.getElementById("pwa-install-confirm")?.addEventListener("click", () => void handlePwaInstall());
   window.addEventListener("beforeinstallprompt", (event) => {
     event.preventDefault();
     deferredInstallPrompt = event;
@@ -6738,9 +6995,23 @@ if ("serviceWorker" in navigator) {
     pwaInstalled = true;
     deferredInstallPrompt = null;
     updatePwaInstallButton();
+    refreshPwaInstructions();
     showToast("App installed.");
   });
-  window.matchMedia?.("(display-mode: standalone)").addEventListener?.("change", updatePwaInstallButton);
+  window.matchMedia?.("(display-mode: standalone)").addEventListener?.("change", () => {
+    updatePwaInstallButton();
+    refreshPwaInstructions();
+  });
+  updatePwaInstallButton();
+  refreshPwaInstructions();
+  const taskSoundVolumeInput = document.getElementById("task-sound-volume");
+  taskSoundVolumeInput?.addEventListener("input", () => {
+    const value = Number(taskSoundVolumeInput.value || 80);
+    const volumeLabel = document.getElementById("task-sound-volume-value");
+    if (volumeLabel) volumeLabel.textContent = `${value}%`;
+  });
+  const celebrationDoneButton = document.getElementById("celebration-done");
+  celebrationDoneButton?.addEventListener("click", () => stopAlert());
   if ("serviceWorker" in navigator && window.location.protocol.startsWith("http")) {
     navigator.serviceWorker.register("./service-worker.js").then((registration) => {
       void registration.update();

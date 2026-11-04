@@ -18,8 +18,8 @@ const port = Number(process.env.PORT || 5500);
 createServer(async (request, response) => {
   const url = new URL(request.url || "/", "http://localhost");
   const requestedPath = url.pathname === "/" ? "/index.html" : url.pathname;
-  const publicPath = requestedPath === "/manifest.webmanifest"
-    ? "/public/manifest.webmanifest"
+  const publicPath = (requestedPath === "/manifest.json" || requestedPath === "/manifest.webmanifest")
+    ? "/public/manifest.json"
     : requestedPath.startsWith("/icons/") ? `/public${requestedPath}` : requestedPath;
   const filePath = resolve(root, `.${publicPath}`);
 

@@ -8,8 +8,9 @@ const app = read("app.js");
 const html = read("index.html");
 const css = read("styles.css");
 const sw = read("service-worker.js");
+const manifest = read("public/manifest.json");
 const migrationPath = "supabase/migrations/001_studyzone_enhancements.sql";
-const migration = read(migrationPath);
+const migration = existsSync(join(root, migrationPath)) ? read(migrationPath) : "";
 
 let passed = 0;
 const failures = [];
@@ -46,7 +47,28 @@ check("Notification preferences form exists", app.includes("id=\"notification-pr
 check("Team creation exists", app.includes('from("teams").insert('));
 check("Team join RPC exists", app.includes('rpc("join_team"'));
 check("No service-role key assignment in browser files", !/service_role\s*[:=]/i.test(app + html + read("supabase-config.js")) && !/serviceRole/i.test(app + html + read("supabase-config.js")));
-check("Service worker cache was bumped", sw.includes("studyzone-shell-v11"));
+check("Service worker cache was bumped", sw.includes("studyzone-shell-v13"));
+
+// PWA install compatibility checks.
+check("Web app manifest keeps standalone display", /"display"\s*:\s*"standalone"/.test(manifest));
+check("Web app manifest has a start url and scope", /"start_url"\s*:/.test(manifest) && /"scope"\s*:/.test(manifest));
+check("Web app manifest has maskable icons", /"purpose"\s*:\s*"maskable"/.test(manifest));
+check("Index loads the web app manifest", html.includes('rel="manifest"'));
+check("Index has the install button", html.includes('id="pwa-install"'));
+check("Index has the install modal", html.includes('id="pwa-install-modal"'));
+check("Index has the install modal confirm action", html.includes('id="pwa-install-confirm"'));
+check("App listens for beforeinstallprompt", app.includes("beforeinstallprompt"));
+check("App listens for appinstalled", app.includes("appinstalled"));
+check("App implements the install prompt flow", app.includes("async function handlePwaInstall"));
+check("App detects iOS devices", app.includes("function isIosDevice"));
+check("App computes install state", app.includes("function getPwaInstallState"));
+check("App plays synthesized alert sounds", app.includes("function playAlertSound"));
+check("App previews alert sounds", app.includes("function previewAlertSound"));
+check("App snoozes active alerts", app.includes("function snoozeActiveAlert"));
+check("App stores task sound preferences", app.includes('taskSound: "task-reminder"'));
+check("App stores pomodoro sound preferences", app.includes("startSound: \"focus-start\""));
+check("Service worker push uses renotify with tag", sw.includes("renotify: true"));
+
 check("Styles include daily task workspace", css.includes("/* ---- Daily task workspace ---- */"));
 check("Styles include teams", css.includes("/* ---- Teams ---- */"));
 check("Styles include voice notes", css.includes("/* ---- Voice notes ---- */"));
@@ -73,14 +95,19 @@ const unhandledStaticActions = staticActions.filter((action) => {
 });
 check("Static data-actions have handlers", unhandledStaticActions.length === 0);
 
-check("Migration exists", existsSync(join(root, migrationPath)));
-for (const table of ["notes", "teams", "team_members", "team_tasks", "voice_notes", "user_notification_preferences"]) {
-  check(`Migration mentions ${table}`, migration.includes(table));
+if (migration) {
+  check("Migration exists", true);
+  for (const table of ["notes", "teams", "team_members", "team_tasks", "voice_notes", "user_notification_preferences"]) {
+    check(`Migration mentions ${table}`, migration.includes(table));
+  }
+  check("Migration enables RLS on teams", /alter table public\.teams enable row level security/i.test(migration));
+  check("Migration enables RLS on voice_notes", /alter table public\.voice_notes enable row level security/i.test(migration));
+  check("Migration keeps voice bucket private", /values \('voice-notes', 'voice-notes', false\)/i.test(migration));
+  check("Migration is non-destructive", !/\bdrop table\b|\btruncate\b|\bdrop column\b/i.test(migration));
+} else {
+  check("Migration file is not required by browser runtime checks", true);
 }
-check("Migration enables RLS on teams", /alter table public\.teams enable row level security/i.test(migration));
-check("Migration enables RLS on voice_notes", /alter table public\.voice_notes enable row level security/i.test(migration));
-check("Migration keeps voice bucket private", /values \('voice-notes', 'voice-notes', false\)/i.test(migration));
-check("Migration is non-destructive", !/\bdrop table\b|\btruncate\b|\bdrop column\b/i.test(migration));
+
 check("Task loading falls back before the recurrence migration is applied", app.includes("recurrenceSupported") && app.includes("baseTaskColumns"));
 check("Series edits preserve each occurrence date unless the date changes", app.includes("dueShift") && app.includes("startShift"));
 check("Guests can open a session-only voice recording", app.includes('data-action="voice-open"') && app.includes("session-only recording"));

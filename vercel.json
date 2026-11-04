@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/manifest.json",
+      "destination": "/public/manifest.json"
+    },
+    {
+      "source": "/icons/:path*",
+      "destination": "/public/icons/:path*"
+    }
+  ]
+}
