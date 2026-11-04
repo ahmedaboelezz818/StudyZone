@@ -86,6 +86,22 @@
     showSeconds: true,
   });
   let focusSettings = { ...defaultFocusSettings };
+  const notificationPrefsKey = "studyzone.notification-prefs.v1";
+  let notificationPrefs = { sound: true, dnd: false, start: "22:00", end: "07:00" };
+  let notificationsPrimed = false;
+  try {
+    const storedNotificationPrefs = JSON.parse(localStorage.getItem(notificationPrefsKey) || "null");
+    if (storedNotificationPrefs && typeof storedNotificationPrefs === "object") {
+      notificationPrefs = {
+        sound: storedNotificationPrefs.sound !== false,
+        dnd: storedNotificationPrefs.dnd === true,
+        start: /^\d{2}:\d{2}$/.test(storedNotificationPrefs.start || "") ? storedNotificationPrefs.start : "22:00",
+        end: /^\d{2}:\d{2}$/.test(storedNotificationPrefs.end || "") ? storedNotificationPrefs.end : "07:00",
+      };
+    }
+  } catch (error) {
+    console.warn("Could not restore notification preferences.", error);
+  }
   let focusSession = {
     id: "",
     type: "focus",
@@ -212,6 +228,58 @@
   let editingDeadlineId = null;
   let deadlinesLoading = false;
   const statusChangesInFlight = new Set();
+  const taskDayStorageKey = "studyzone.task-view.v1";
+  const localNotesKey = "studyzone.notes.v1";
+  let taskViewMode = "day";
+  let taskViewDate = startOfLocalDay(new Date());
+  let taskShowCompleted = localStorage.getItem("studyzone.show-completed") !== "false";
+  let taskEditingId = null;
+  let pendingSeriesAction = null;
+  let recurrenceSupported = true;
+  let notesColorSupported = true;
+  let notesSchemaChecked = false;
+  let noteSearch = "";
+  let noteSubjectFilter = "";
+  let noteSort = "updated";
+  let noteEditorState = null;
+  let noteSaveTimer = null;
+  let noteSaveStatus = "idle";
+  let noteEditorElement = null;
+  let taskSectionState = { overdue: true, today: true, nodate: true, completed: true };
+
+  let teams = [];
+  let teamMembers = [];
+  let teamTasks = [];
+  let selectedTeamId = null;
+  let teamsLoading = false;
+  let teamsLoaded = false;
+  let teamsSupported = true;
+  let teamsError = "";
+
+  let voiceNotes = [];
+  let voiceNotesLoading = false;
+  let voiceNotesLoaded = false;
+  let voiceNotesSupported = true;
+  let voiceNotesError = "";
+  let voiceRecorder = null;
+  let voiceStream = null;
+  let voiceChunks = [];
+  let voiceBlob = null;
+  let voicePreviewUrl = "";
+  let voiceStartedAt = 0;
+  let voicePausedTotal = 0;
+  let voicePauseStartedAt = 0;
+  let voiceTimerHandle = null;
+  let voiceState = "idle";
+  let voiceMimeType = "";
+  let voiceDurationSeconds = 0;
+  try {
+    const storedTaskView = JSON.parse(localStorage.getItem(taskDayStorageKey) || "null");
+    if (storedTaskView?.mode === "all" || storedTaskView?.mode === "day") taskViewMode = storedTaskView.mode;
+  } catch (error) {
+    console.warn("Could not restore the saved task view.", error);
+  }
+  let notes = readLocalNotes();
 
   const deadlineText = {
     en: {
@@ -297,6 +365,8 @@
     Subjects: "المواد الدراسية",
     "Study files": "ملفات الدراسة",
     Notes: "الملاحظات",
+    "Voice notes": "الملاحظات الصوتية",
+    Teams: "الفرق",
     "Focus timer": "مؤقت التركيز",
     Analytics: "التحليلات",
     Goals: "الأهداف",
@@ -1057,6 +1127,41 @@
     }
   }
 
+  function readLocalNotes() {
+    try {
+      const saved = localStorage.getItem(localNotesKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (error) {
+      console.error("Could not read saved notes.", error);
+    }
+    return sampleNotes.map((note, index) => ({
+      id: `local-note-${index + 1}`,
+      title: note.title,
+      content: `<p>${escapeHtml(note.title === "Core theorem summary"
+        ? "A shortest path is only as good as the weights you give it. Revisit Dijkstra's assumptions before the next problem set."
+        : note.title === "Cell structure recall"
+          ? "Mitochondria: ATP production. Ribosomes: protein synthesis. Nucleus: stores genetic material."
+          : "Thesis: progress in the discipline came from small, repeatable experiments rather than one big breakthrough.")}</p>`,
+      subject_id: "",
+      subject: note.subject,
+      is_favorite: index === 0,
+      color: "",
+      created_at: new Date(Date.now() - index * 86400000).toISOString(),
+      updated_at: new Date(Date.now() - index * 86400000).toISOString(),
+    }));
+  }
+
+  function saveLocalNotes() {
+    try {
+      localStorage.setItem(localNotesKey, JSON.stringify(notes));
+    } catch (error) {
+      console.error("Could not save notes in this browser.", error);
+    }
+  }
+
   function saveLocalTasks() {
     localStorage.setItem(storageKey, JSON.stringify(tasks));
   }
@@ -1231,7 +1336,7 @@
         }
       }
     }
-    if (["dashboard", "profile", "achievements"].includes(currentPage)) render();
+    if (["dashboard", "profile", "achievements"].includes(currentPage)) scheduleRender();
     return rewardSummary;
   }
 
@@ -1311,55 +1416,335 @@
   }
 
   function dashboardPage() {
-    const openTasks = tasks.filter((task) => task.status !== "completed").length;
-    const completeTasks = tasks.length - openTasks;
-    const weekHours = activity.reduce((sum, item) => sum + item.hours, 0).toFixed(1);
-    const firstName = (accountProfile?.display_name || session?.user?.user_metadata?.full_name || "Alex").trim().split(/\s+/)[0];
+    const todayKey = dateKey(new Date());
+    const openTasks = tasks.filter((task) => task.status !== "completed");
+    const overdueTasks = openTasks.filter((task) => {
+      const endKey = taskEndKey(task);
+      return endKey && endKey < todayKey;
+    }).sort(sortTasksByPlan);
+    const overdueIds = new Set(overdueTasks.map((task) => task.id));
+    const todayTasks = openTasks
+      .filter((task) => !overdueIds.has(task.id) && taskOccursOnKey(task, todayKey))
+      .sort(sortTasksByPlan);
+    const completedToday = tasks.filter((task) => task.status === "completed" && taskOccursOnKey(task, todayKey));
+    const totalToday = todayTasks.length + completedToday.length;
+    const progress = totalToday ? Math.round((completedToday.length / totalToday) * 100) : 0;
+    const firstName = (accountProfile?.display_name || session?.user?.user_metadata?.full_name || (session ? "there" : "Student")).trim().split(/\s+/)[0];
+    const hour = new Date().getHours();
+    const greeting = appLanguage === "ar"
+      ? hour < 12 ? "صباح الخير" : hour < 18 ? "مرحبًا" : "مساء الخير"
+      : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
     const dayLabelText = new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { weekday: "long", month: "long", day: "numeric" }).format(new Date());
-    const dayLabel = appLanguage === "ar" ? dayLabelText : dayLabelText.toUpperCase();
     const formattedNumber = (value) => new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(value);
-    const statGrid = `<div class="grid stats-grid">${statCard("STUDY THIS WEEK", session ? `${weekHours}<small>h</small>` : "—", session ? " across the last 7 days" : " Based on verified focus sessions", "◷")}${statCard("TASKS COMPLETED", session ? `${formattedNumber(completeTasks)}/${formattedNumber(tasks.length)}` : "—", " tasks finished", "✓", session ? `${formattedNumber(openTasks)} left · ` : "")}${statCard("CURRENT LEVEL", rewardSummary ? rewardCounterMarkup("level", rewardSummary.level) : "—", rewardSummary ? ` · ${rewardCounterMarkup("xp", rewardSummary.total_xp)} XP` : " Connect your account for real rewards", "✧")}${statCard("STUDY STREAK", rewardSummary ? `${rewardCounterMarkup("streak", rewardSummary.current_streak)} days` : "—", rewardSummary ? ` · best ${formattedNumber(Number(rewardSummary.best_streak))} days` : " Based on verified activity", "↗")}</div>`;
-    const subjectRows = subjects.map((subject) => `<div class="subject-row"><span class="subject-row-name">${escapeHtml(subject.name)}</span><div class="progress-track"><div class="progress-fill" style="width:${subject.progress ?? 0}%"></div></div><span class="subject-row-value">${subject.progress === null ? "—" : `${subject.progress}%`}</span></div>`).join("") || `<div class="empty-state">Add a subject to start tracking course progress.</div>`;
-    const now = Date.now();
-    const upcomingSchedule = schedule.filter((block) => !block.starts_at
-      || new Date(block.ends_at) > now
-      || block.recurrence !== "none").slice(0, 3);
-    const scheduleRows = upcomingSchedule.map((block) => `<div class="schedule-item"><time class="schedule-time">${escapeHtml((block.day || new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(new Date(block.starts_at))).slice(0, 3))}<br>${escapeHtml(block.time || new Intl.DateTimeFormat(appLanguage, { hour: "2-digit", minute: "2-digit" }).format(new Date(block.starts_at)))}</time><span class="schedule-bar"></span><div><div class="schedule-name">${escapeHtml(block.title)}</div><div class="schedule-subject">${escapeHtml(block.subject || subjectName(block.subject_id))}</div></div><span class="schedule-duration">${escapeHtml(block.length || `${Math.round((new Date(block.ends_at) - new Date(block.starts_at)) / 60000)} min`)}</span></div>`).join("") || `<div class="empty-state">No study blocks planned yet.</div>`;
+    const focusStats = getFocusStats();
+    const focusMinutes = Math.floor(focusStats.todaySeconds / 60);
+    const nextDeadline = tasks
+      .filter((task) => task.status !== "completed" && task.due_at && new Date(task.due_at) > new Date())
+      .sort((a, b) => new Date(a.due_at) - new Date(b.due_at))[0];
+    const statGrid = `<div class="grid stats-grid">
+      ${statCard("TODAY'S TASKS", `${formattedNumber(completedToday.length)}<small>/${formattedNumber(totalToday)}</small>`, progress ? ` ${progress}% complete` : " Add your first task", "✓", progress ? "● " : "")}
+      ${statCard("OVERDUE", formattedNumber(overdueTasks.length), overdueTasks.length ? " Needs attention" : " All clear", "!", overdueTasks.length ? "" : "")}
+      ${statCard("FOCUS TODAY", `${formattedNumber(focusMinutes)}<small> min</small>`, ` ${formattedNumber(focusStats.todaySessions)} sessions`, "◷")}
+      ${statCard("STUDY STREAK", rewardSummary ? `${rewardCounterMarkup("streak", rewardSummary.current_streak)} days` : "—", rewardSummary ? ` Level ${formattedNumber(Number(rewardSummary.level) || 1)}` : " Sign in to track it", "↗")}
+    </div>`;
+    const taskRowForDashboard = (task) => `<div class="dashboard-task ${task.status === "completed" ? "completed" : ""}">
+      <button class="task-check ${task.status === "completed" ? "checked" : ""}" data-action="toggle-task" data-id="${escapeHtml(task.id)}" aria-label="${task.status === "completed" ? "Reopen" : "Complete"} ${escapeHtml(task.title)}">${task.status === "completed" ? "✓" : ""}</button>
+      <button class="dashboard-task-main" data-action="task-edit" data-id="${escapeHtml(task.id)}">
+        <strong dir="auto">${escapeHtml(task.title)}</strong>
+        <small dir="auto">${escapeHtml(task.subject || subjectName(task.subject_id))}${task.due_at ? ` · ${escapeHtml(taskDueLabel(task))}` : ""}</small>
+      </button>
+      <span class="priority ${escapeHtml(task.priority || "medium")}">${escapeHtml(deadlineText[appLanguage][task.priority] || "medium")}</span>
+    </div>`;
+    const todaysList = todayTasks.slice(0, 6).map(taskRowForDashboard).join("");
+    const overdueList = overdueTasks.slice(0, 3).map(taskRowForDashboard).join("");
+    const latestNotes = notes
+      .slice()
+      .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))
+      .slice(0, 3);
+    const noteRows = latestNotes.map((note) => `<button class="dashboard-note" data-action="note-open" data-id="${escapeHtml(note.id)}">
+      <span class="dashboard-note-dot" style="background:${escapeHtml(noteColor(note))}"></span>
+      <span><strong dir="auto">${escapeHtml(note.title || "Untitled note")}</strong><small dir="auto">${escapeHtml(notePlainText(note).slice(0, 80) || "Empty note")}</small></span>
+      <time>${escapeHtml(new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { month: "short", day: "numeric" }).format(new Date(note.updated_at || note.created_at || Date.now())))}</time>
+    </button>`).join("");
+    const goalRows = goals.slice(0, 3).map((goal) => `<div class="dashboard-goal"><div class="goal-topline"><strong>${escapeHtml(goal.title)}</strong><span>${escapeHtml(goal.due || "")}</span></div><div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, Math.max(0, goal.progress || 0))}%"></div></div><div class="goal-bottomline"><span>${escapeHtml(goal.detail || goal.details || "")}</span><span>${Math.round(goal.progress || 0)}%</span></div></div>`).join("");
     const badges = earnedAchievements.slice(0, 3).map((item) => {
       const achievement = Array.isArray(item.achievements) ? item.achievements[0] : item.achievements;
       const catalog = achievementCatalog.find((entry) => entry.code === achievement?.code);
       if (!achievement) return "";
-      return `<div class="achievement-row"><span class="achievement-icon">${catalog?.symbol || "✦"}</span><div><strong>${translateUiText(achievement.name || catalog?.name || "Achievement unlocked!")}</strong><small>${translateUiText(achievement.description || catalog?.description || "")}</small></div></div>`;
+      return `<div class="achievement-row"><span class="achievement-icon">${catalog?.symbol || "✦"}</span><div><strong>${escapeHtml(achievement.name || catalog?.name || "Achievement unlocked!")}</strong><small>${escapeHtml(achievement.description || catalog?.description || "")}</small></div></div>`;
     }).join("") || `<div class="empty-state">${session ? "No achievements unlocked yet." : "Sign in to earn secure rewards."}</div>`;
-    const goalRows = goals.map((goal) => `<div><div class="goal-topline"><strong>${escapeHtml(goal.title)}</strong><span>${escapeHtml(goal.due || "")}</span></div><div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, Math.max(0, goal.progress || 0))}%"></div></div><div class="goal-bottomline"><span>${escapeHtml(goal.detail || goal.details || "")}</span><span>${Math.round(goal.progress || 0)}%</span></div></div>`).join("");
-    return `${pageHeading(dayLabel, `Good evening, ${escapeHtml(firstName)}.`, "A clear plan makes room for your best work.", `<button class="button button-primary" data-action="new-task"><span class="button-icon">＋</span> Add a task</button>`)}
+    const subjectRows = subjects.map((subject) => `<div class="subject-row"><span class="subject-row-name">${escapeHtml(subject.name)}</span><div class="progress-track"><div class="progress-fill" style="width:${subject.progress ?? 0}%"></div></div><span class="subject-row-value">${subject.progress == null ? "—" : `${subject.progress}%`}</span></div>`).join("") || `<div class="empty-state">Add a subject to start tracking course progress.</div>`;
+    return `${pageHeading(dayLabelText.toUpperCase(), `${greeting}, ${escapeHtml(firstName)}.`, appLanguage === "ar" ? "هذه مهام اليوم فقط — ابدأ بخطوة واحدة." : "Here is today, and nothing else. Start with one step.",
+      `<div class="dashboard-heading-actions"><button class="button button-secondary" data-navigate="focus">◷ ${appLanguage === "ar" ? "ابدأ التركيز" : "Start focus"}</button><button class="button button-primary" data-action="new-task" data-date="${todayKey}">＋ ${appLanguage === "ar" ? "مهمة جديدة" : "New task"}</button></div>`)}
       ${statGrid}
       <div class="grid dashboard-grid">
-        <section class="panel">${panelHeading("Study rhythm", session ? "Verified focus time from the past week" : "Sample hours from the past week", `<button class="panel-link" data-navigate="analytics">View analytics →</button>`)}${lineChart()}</section>
-        <section class="panel">${panelHeading("Subject progress", "Current mastery estimates")}<div class="subject-rows">${subjectRows}</div></section>
+        <section class="panel">${panelHeading(appLanguage === "ar" ? "مهام اليوم" : "Today's tasks", appLanguage === "ar" ? `${todayTasks.length} مفتوحة · ${completedToday.length} مكتملة` : `${todayTasks.length} open · ${completedToday.length} done`, `<button class="panel-link" data-navigate="tasks">${appLanguage === "ar" ? "كل المهام ←" : "All tasks →"}</button>`)}
+          <div class="dashboard-progress-line"><div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div><span>${progress}%</span></div>
+          <div class="dashboard-task-list">${todaysList || `<div class="empty-state"><strong>${appLanguage === "ar" ? "لا مهام لليوم" : "Nothing due today"}</strong>${appLanguage === "ar" ? "أضف مهمة أو راجع المهام المتأخرة." : "Add a task or clear your overdue list."}</div>`}</div>
+          ${overdueList ? `<div class="dashboard-overdue"><div class="dashboard-overdue-head"><span>${appLanguage === "ar" ? "متأخرة" : "Overdue"}</span><strong>${formattedNumber(overdueTasks.length)}</strong></div>${overdueList}</div>` : ""}
+          <div class="dashboard-quick-actions">
+            <button data-action="new-task" data-date="${todayKey}">＋ ${appLanguage === "ar" ? "مهمة" : "Task"}</button>
+            <button data-action="note-add">✎ ${appLanguage === "ar" ? "ملاحظة" : "Note"}</button>
+            <button data-navigate="focus">◷ ${appLanguage === "ar" ? "تركيز" : "Focus"}</button>
+            <button data-navigate="tasks">▦ ${appLanguage === "ar" ? "التقويم" : "Calendar"}</button>
+          </div>
+        </section>
+        <aside class="grid dashboard-side">
+          <section class="panel ${focusStats.todaySeconds ? "" : "panel-quiet"}">${panelHeading(appLanguage === "ar" ? "تركيز اليوم" : "Focus today", appLanguage === "ar" ? "جلسات مكتملة فقط" : "Completed sessions only")}
+            <div class="dashboard-focus"><strong>${formattedNumber(focusMinutes)}<small> min</small></strong><span>${formattedNumber(focusStats.todaySessions)} ${appLanguage === "ar" ? "جلسات" : "sessions"}</span></div>
+            ${nextDeadline ? `<div class="dashboard-next"><span>${appLanguage === "ar" ? "أقرب موعد" : "Next deadline"}</span><strong dir="auto">${escapeHtml(nextDeadline.title)}</strong><small>${escapeHtml(taskDueLabel(nextDeadline, { includeDate: true }))}</small></div>` : ""}
+            <button class="button button-primary button-small full-button" data-navigate="focus">${appLanguage === "ar" ? "ابدأ جلسة تركيز" : "Start a focus session"}</button>
+          </section>
+          <section class="panel">${panelHeading(appLanguage === "ar" ? "آخر الملاحظات" : "Recent notes", appLanguage === "ar" ? "من دفترك" : "From your notebook", `<button class="panel-link" data-navigate="notes">${appLanguage === "ar" ? "كل الملاحظات ←" : "All notes →"}</button>`)}
+            <div class="dashboard-notes">${noteRows || `<div class="empty-state">${appLanguage === "ar" ? "لا ملاحظات بعد" : "No notes yet"}</div>`}</div>
+          </section>
+        </aside>
       </div>
       <div class="grid dashboard-grid bottom-grid">
-        <section class="panel">${panelHeading("Up next", "Your planned study blocks", `<button class="panel-link" data-navigate="planner">Open planner →</button>`)}<div class="schedule-list">${scheduleRows}</div></section>
-        <section class="panel">${panelHeading("Recent achievements", "Keep building your rhythm")}<div class="achievement-list">${badges}</div></section>
+        <section class="panel">${panelHeading(appLanguage === "ar" ? "تقدم الأهداف" : "Goal progress", appLanguage === "ar" ? "خطوات صغيرة تضيف" : "Small steps add up", `<button class="panel-link" data-navigate="goals">${appLanguage === "ar" ? "الأهداف ←" : "Goals →"}</button>`)}<div class="goal-list">${goalRows || `<div class="empty-state">${appLanguage === "ar" ? "لا أهداف بعد" : "No goals yet"}</div>`}</div></section>
+        <section class="panel">${panelHeading(appLanguage === "ar" ? "آخر الإنجازات" : "Recent achievements", appLanguage === "ar" ? "واصل بناء عادتك" : "Keep building your rhythm", `<button class="panel-link" data-navigate="achievements">${appLanguage === "ar" ? "الإنجازات ←" : "Achievements →"}</button>`)}<div class="achievement-list">${badges}</div></section>
       </div>
-      <div class="grid dashboard-grid bottom-grid">
-        <section class="panel">${panelHeading("Goal progress", "Small steps add up")}<div class="goal-list">${goalRows}</div></section>
-        <section class="panel">${panelHeading("Quick start")}<div class="activity-list"><div class="activity-item"><span class="activity-event"><i class="activity-bullet"></i>Pick up where you left off</span><button class="panel-link" data-navigate="focus">Focus →</button></div><div class="activity-item"><span class="activity-event"><i class="activity-bullet"></i>Review your upcoming tasks</span><button class="panel-link" data-navigate="tasks">Tasks →</button></div><div class="activity-item"><span class="activity-event"><i class="activity-bullet"></i>Explore your study materials</span><button class="panel-link" data-navigate="files">Files →</button></div></div></section>
-      </div><p class="data-caption">${session ? "Study time, tasks, subjects, schedules, goals, and rewards reflect your account data." : "Sample content is shown in preview mode. Sign in to load your private study data."}</p>`;
+      <section class="panel section-spacer">${panelHeading(appLanguage === "ar" ? "المواد" : "Subjects", appLanguage === "ar" ? "تقديرات التقدم الحالية" : "Current progress")}<div class="subject-rows">${subjectRows}</div></section>
+      <p class="data-caption">${session ? "Everything above is calculated from your saved tasks, notes, and verified focus sessions." : "Guest preview data is stored in this browser. Sign in to sync your private workspace."}</p>`;
+  }
+
+  function startOfLocalDay(value = new Date()) {
+    const date = value instanceof Date ? value : new Date(value);
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  }
+
+  function addLocalDays(date, days) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+  }
+
+  function parseLocalDateKey(key) {
+    const [year, month, day] = String(key || "").split("-").map(Number);
+    if (!year || !month || !day) return null;
+    const date = new Date(year, month - 1, day);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function taskDateRange(task) {
+    if (!task) return null;
+    const startValue = task.starts_at || task.due_at;
+    const endValue = task.due_at || task.starts_at;
+    if (!startValue || !endValue) return null;
+    const start = startOfLocalDay(new Date(startValue));
+    const end = startOfLocalDay(new Date(endValue));
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+    return start <= end ? { start, end } : { start: end, end: start };
+  }
+
+  function taskOccursOnKey(task, key) {
+    const range = taskDateRange(task);
+    const day = parseLocalDateKey(key);
+    return Boolean(range && day && day >= range.start && day <= range.end);
+  }
+
+  function taskEndKey(task) {
+    const range = taskDateRange(task);
+    return range ? dateKey(range.end) : null;
+  }
+
+  function taskSeries(task) {
+    if (!task) return [];
+    if (!task.recurrence_group_id) return [task];
+    const group = tasks.filter((item) => item.recurrence_group_id === task.recurrence_group_id);
+    return group.length ? group : [task];
+  }
+
+  function seriesScopeIds(task, scope) {
+    const group = taskSeries(task);
+    if (scope === "all") return group.map((item) => item.id);
+    if (scope === "future") {
+      const anchor = taskEndKey(task) || dateKey(new Date());
+      return group.filter((item) => (taskEndKey(item) || "") >= anchor).map((item) => item.id);
+    }
+    return [task.id];
+  }
+
+  const priorityRank = { urgent: 0, high: 1, medium: 2, low: 3 };
+
+  function sortTasksByPlan(a, b) {
+    const aRange = taskDateRange(a);
+    const bRange = taskDateRange(b);
+    const aTime = aRange ? aRange.end.getTime() : Number.POSITIVE_INFINITY;
+    const bTime = bRange ? bRange.end.getTime() : Number.POSITIVE_INFINITY;
+    if (aTime !== bTime) return aTime - bTime;
+    const priority = (priorityRank[a.priority] ?? 2) - (priorityRank[b.priority] ?? 2);
+    if (priority !== 0) return priority;
+    return String(a.title || "").localeCompare(String(b.title || ""), appLanguage === "ar" ? "ar" : "en");
+  }
+
+  function openTaskCountForDay(key) {
+    const todayKey = dateKey(new Date());
+    return tasks.filter((task) => {
+      if (task.status === "completed" || !taskOccursOnKey(task, key)) return false;
+      const endKey = taskEndKey(task);
+      return !(endKey && endKey < todayKey);
+    }).length;
+  }
+
+  function formatTaskTime(task) {
+    if (!task?.due_at) return "";
+    const date = new Date(task.due_at);
+    if (Number.isNaN(date.getTime())) return "";
+    if (date.getHours() === 23 && date.getMinutes() === 59) return "";
+    return new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { hour: "numeric", minute: "2-digit" }).format(date);
+  }
+
+  function formatTaskDayLabel(date) {
+    return new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { weekday: "short", month: "short", day: "numeric" }).format(date);
+  }
+
+  function taskDueLabel(task, { includeDate = false } = {}) {
+    const range = taskDateRange(task);
+    if (!range) return translateUiText("No due date");
+    const timeValue = formatTaskTime(task);
+    const multiDay = dateKey(range.start) !== dateKey(range.end);
+    if (multiDay) return `${formatTaskDayLabel(range.start)} → ${formatTaskDayLabel(range.end)}`;
+    if (includeDate) return `${formatTaskDayLabel(range.end)}${timeValue ? ` · ${timeValue}` : ""}`;
+    return timeValue || (appLanguage === "ar" ? "طوال اليوم" : "All day");
+  }
+
+  function taskRow(task, { showDate = false } = {}) {
+    const completed = task.status === "completed";
+    const range = taskDateRange(task);
+    const dueLabel = taskDueLabel(task, { includeDate: showDate });
+    const subject = task.subject || subjectName(task.subject_id);
+    const description = task.description?.trim()
+      ? `<small class="task-description" dir="auto">${escapeHtml(task.description)}</small>`
+      : "";
+    const repeating = task.recurrence_group_id
+      ? `<span class="task-repeat" title="${appLanguage === "ar" ? "مهمة متكررة" : "Repeating task"}">↻</span>`
+      : "";
+    const overdue = !completed && range && dateKey(range.end) < dateKey(new Date());
+    return `<div class="task-row ${completed ? "completed" : ""} ${overdue ? "is-overdue" : ""}" data-task-id="${escapeHtml(task.id)}">
+      <button class="task-check ${completed ? "checked" : ""}" data-action="toggle-task" data-id="${escapeHtml(task.id)}" aria-label="${completed ? "Reopen" : "Complete"} ${escapeHtml(task.title)}">${completed ? "✓" : ""}</button>
+      <div class="task-main"><strong class="task-title" dir="auto">${escapeHtml(task.title)}${repeating}</strong>${description}<span class="task-meta-inline" dir="auto">${escapeHtml(subject)}</span></div>
+      <span class="task-meta" dir="auto">${escapeHtml(subject)}</span>
+      <span class="task-due ${overdue ? "overdue" : ""}">${escapeHtml(dueLabel)}</span>
+      <span class="priority ${escapeHtml(task.priority || "medium")}">${escapeHtml(deadlineText[appLanguage][task.priority] || task.priority || "medium")}</span>
+      <div class="task-actions">
+        <button class="task-icon" data-action="task-edit" data-id="${escapeHtml(task.id)}" aria-label="${appLanguage === "ar" ? "تعديل المهمة" : "Edit task"}">✎</button>
+        <button class="task-icon" data-action="move-task" data-id="${escapeHtml(task.id)}" aria-label="${appLanguage === "ar" ? "نقل المهمة" : "Move task"}">→</button>
+        <button class="task-icon danger" data-action="delete-task" data-id="${escapeHtml(task.id)}" aria-label="${appLanguage === "ar" ? "حذف المهمة" : "Delete task"}">×</button>
+      </div>
+    </div>`;
+  }
+
+  function taskSection(key, title, items, { count = items.length, collapsed = false, hint = "" } = {}) {
+    if (!items.length && !hint) return "";
+    const open = collapsed ? false : taskSectionState[key] !== false;
+    const body = open
+      ? `<div class="task-list">${items.map((task) => taskRow(task, { showDate: key === "overdue" || key === "nodate" })).join("") || `<div class="empty-state"><strong>${escapeHtml(hint)}</strong></div>`}</div>`
+      : "";
+    return `<section class="task-group task-group-${key}">
+      <button class="task-group-head" data-action="toggle-task-section" data-section="${key}" aria-expanded="${open}">
+        <span class="task-group-title">${escapeHtml(title)}</span>
+        <span class="task-group-count">${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(count)}</span>
+        <span class="task-group-chevron">${open ? "⌃" : "⌄"}</span>
+      </button>${body}</section>`;
+  }
+
+  function taskProgressRing(completedCount, totalCount) {
+    const percent = totalCount ? Math.round((completedCount / totalCount) * 100) : 0;
+    const radius = 26;
+    const circumference = 2 * Math.PI * radius;
+    const dash = (percent / 100) * circumference;
+    const label = appLanguage === "ar" ? "إنجاز اليوم" : "Day progress";
+    return `<div class="task-progress-ring" role="progressbar" aria-label="${label}" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100">
+      <svg viewBox="0 0 64 64" aria-hidden="true"><circle class="ring-track" cx="32" cy="32" r="${radius}"/><circle class="ring-fill" cx="32" cy="32" r="${radius}" stroke-dasharray="${dash} ${circumference}" transform="rotate(-90 32 32)"/></svg>
+      <strong>${percent}%</strong>
+    </div>`;
   }
 
   function taskPage() {
-    const action = `<div class="task-toolbar"><label class="search-box"><span>⌕</span><input id="task-search" type="search" dir="auto" value="${escapeHtml(searchTerm)}" placeholder="Search tasks" aria-label="Search tasks"></label><select class="filter-select" id="task-filter" aria-label="Filter task status"><option value="all" ${statusFilter === "all" ? "selected" : ""}>All tasks</option><option value="not_started" ${statusFilter === "not_started" ? "selected" : ""}>Not started</option><option value="in_progress" ${statusFilter === "in_progress" ? "selected" : ""}>In progress</option><option value="completed" ${statusFilter === "completed" ? "selected" : ""}>Completed</option></select><button class="button button-primary button-small" data-action="new-task">＋ New task</button></div>`;
-    const filtered = tasks.filter((task) => {
-      const textMatches = `${task.title} ${task.subject || subjectName(task.subject_id)}`.toLowerCase().includes(searchTerm.toLowerCase());
-      const statusMatches = statusFilter === "all" || task.status === statusFilter;
-      return textMatches && statusMatches;
-    });
-    const list = filtered.length ? filtered.map((task) => `<div class="task-row ${task.status === "completed" ? "completed" : ""}" data-task-id="${escapeHtml(task.id)}">
-      <button class="task-check ${task.status === "completed" ? "checked" : ""}" data-action="toggle-task" data-id="${escapeHtml(task.id)}" aria-label="${task.status === "completed" ? "Reopen" : "Complete"} ${escapeHtml(task.title)}">${task.status === "completed" ? "✓" : ""}</button>
-      <strong class="task-title" dir="auto">${escapeHtml(task.title)}</strong><span class="task-meta" dir="auto">${escapeHtml(task.subject || subjectName(task.subject_id))}</span><span class="task-due">${escapeHtml(formatDue(task.due_at))}</span><span class="priority ${escapeHtml(task.priority)}">${escapeHtml(task.priority)}</span>
-      <button class="task-delete" data-action="delete-task" data-id="${escapeHtml(task.id)}" aria-label="Delete ${escapeHtml(task.title)}">×</button></div>`).join("") : `<div class="empty-state"><strong>No tasks found</strong>Try another search or add your next task.</div>`;
-    return `${pageHeading("TASKBOARD", "Tasks & deadlines", "Keep assignments, priorities, and due dates in one calm place.", action)}<section class="panel">${panelHeading("Your tasks", `${tasks.filter((task) => task.status !== "completed").length} tasks remaining`)}<div class="task-list">${list}</div></section><p class="data-caption">Tasks are stored in this browser in preview mode. Signed-in accounts use Supabase.</p>`;
+    const selectedKey = dateKey(taskViewDate);
+    const todayKey = dateKey(new Date());
+    const dayMode = taskViewMode === "day";
+    const buckets = { overdue: [], day: [], nodate: [], completed: [] };
+    if (dayMode) {
+      const openTasks = tasks.filter((task) => task.status !== "completed");
+      buckets.overdue = openTasks.filter((task) => {
+        const endKey = taskEndKey(task);
+        return endKey && endKey < todayKey;
+      }).sort(sortTasksByPlan);
+      const overdueIds = new Set(buckets.overdue.map((task) => task.id));
+      buckets.day = openTasks.filter((task) => !overdueIds.has(task.id) && taskOccursOnKey(task, selectedKey)).sort(sortTasksByPlan);
+      buckets.nodate = openTasks.filter((task) => !taskDateRange(task) && !overdueIds.has(task.id)).sort(sortTasksByPlan);
+      buckets.completed = tasks.filter((task) => task.status === "completed" && taskOccursOnKey(task, selectedKey)).sort(sortTasksByPlan);
+    } else {
+      buckets.day = tasks.filter((task) => task.status !== "completed").sort(sortTasksByPlan);
+      buckets.completed = tasks.filter((task) => task.status === "completed").sort(sortTasksByPlan);
+    }
+    const dayTasks = buckets.day.concat(buckets.overdue.filter((task) => taskOccursOnKey(task, selectedKey)));
+    const completedOnDay = buckets.completed.filter((task) => taskOccursOnKey(task, selectedKey) || !dayMode);
+    const totalOnDay = dayTasks.length + completedOnDay.length;
+    const percent = totalOnDay ? Math.round((completedOnDay.length / totalOnDay) * 100) : 0;
+    const stripStart = addLocalDays(taskViewDate, -3);
+    const strip = Array.from({ length: 7 }, (_, index) => {
+      const date = addLocalDays(stripStart, index);
+      const key = dateKey(date);
+      const count = openTaskCountForDay(key);
+      const selected = key === selectedKey;
+      const isToday = key === todayKey;
+      return `<button class="day-chip ${selected ? "selected" : ""} ${isToday ? "today" : ""}" data-action="task-select-day" data-date="${key}" aria-pressed="${selected}">
+        <span>${new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { weekday: "short" }).format(date)}</span>
+        <strong>${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(date.getDate())}</strong>
+        ${count ? `<i class="day-chip-count">${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(count)}</i>` : `<i class="day-chip-dot"></i>`}
+      </button>`;
+    }).join("");
+    const search = `<label class="search-box"><span>⌕</span><input id="task-search" type="search" dir="auto" value="${escapeHtml(searchTerm)}" placeholder="Search tasks" aria-label="Search tasks"></label>`;
+    const filters = `<select class="filter-select" id="task-filter" aria-label="Filter task status"><option value="all" ${statusFilter === "all" ? "selected" : ""}>All statuses</option><option value="not_started" ${statusFilter === "not_started" ? "selected" : ""}>Not started</option><option value="in_progress" ${statusFilter === "in_progress" ? "selected" : ""}>In progress</option><option value="completed" ${statusFilter === "completed" ? "selected" : ""}>Completed</option></select>`;
+    const matchesSearch = (task) => {
+      const text = `${task.title} ${task.description || ""} ${task.subject || subjectName(task.subject_id)}`.toLowerCase();
+      return (!searchTerm || text.includes(searchTerm.toLowerCase()))
+        && (statusFilter === "all" || task.status === statusFilter);
+    };
+    Object.keys(buckets).forEach((key) => { buckets[key] = buckets[key].filter(matchesSearch); });
+    const sections = dayMode
+      ? `${taskSection("overdue", appLanguage === "ar" ? "المهام المتأخرة" : "Overdue", buckets.overdue)}
+         ${totalOnDay || buckets.overdue.length || buckets.nodate.length ? "" : `<div class="empty-state task-empty"><strong>${appLanguage === "ar" ? "يومك مرتب" : "Your day is clear"}</strong>${appLanguage === "ar" ? "أضف مهمة أو اختر يومًا آخر." : "Add a task or pick another day."}<button class="button button-primary button-small" data-action="new-task" data-date="${selectedKey}">＋ Add a task</button></div>`}
+         ${taskSection("today", selectedKey === todayKey
+           ? (appLanguage === "ar" ? "مهام اليوم" : "Today")
+           : formatTaskDayLabel(taskViewDate), buckets.day)}
+         ${taskSection("nodate", appLanguage === "ar" ? "بلا موعد" : "No date", buckets.nodate)}
+         ${taskShowCompleted ? taskSection("completed", appLanguage === "ar" ? "المكتملة" : "Completed", buckets.completed) : ""}`
+      : `${taskSection("today", appLanguage === "ar" ? "كل المهام المفتوحة" : "All open tasks", buckets.day)}
+         ${taskSection("completed", appLanguage === "ar" ? "المكتملة" : "Completed", buckets.completed)}`;
+    return `${pageHeading("TASKBOARD", "Tasks", appLanguage === "ar" ? "ركّز على يومك، واترك الباقي في مكانه." : "Focus on today. Everything else stays quietly in place.",
+      `<button class="button button-primary" data-action="new-task" data-date="${selectedKey}"><span class="button-icon">＋</span> ${appLanguage === "ar" ? "مهمة جديدة" : "New task"}</button>`)}
+      <section class="task-day-panel panel">
+        <div class="task-day-top">
+          <div class="task-day-title">
+            <p class="eyebrow">${dayMode ? (selectedKey === todayKey ? "TODAY" : "SELECTED DAY") : "ALL TASKS"}</p>
+            <h2>${dayMode ? (selectedKey === todayKey ? (appLanguage === "ar" ? "اليوم" : "Today") : formatTaskDayLabel(taskViewDate)) : (appLanguage === "ar" ? `كل المهام (${tasks.length})` : `All tasks (${tasks.length})`)}</h2>
+            <p class="task-day-sub">${dayMode
+              ? (totalOnDay ? `${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(completedOnDay.length)} / ${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(totalOnDay)} ${appLanguage === "ar" ? "مكتملة" : "completed"}` : (appLanguage === "ar" ? "لا مهام لهذا اليوم" : "Nothing scheduled"))
+              : (appLanguage === "ar" ? "المهام المفتوحة والمكتملة" : "Open and completed tasks")}</p>
+          </div>
+          ${taskProgressRing(completedOnDay.length, totalOnDay)}
+        </div>
+        <div class="task-day-controls">
+          <div class="task-view-switch" role="group" aria-label="Task view">
+            <button class="${dayMode ? "selected" : ""}" data-action="task-view-mode" data-mode="day">${appLanguage === "ar" ? "يوم" : "Day"}</button>
+            <button class="${!dayMode ? "selected" : ""}" data-action="task-view-mode" data-mode="all">${appLanguage === "ar" ? "الكل" : "All"}</button>
+          </div>
+          <div class="task-date-nav" ${dayMode ? "" : "hidden"}>
+            <button class="icon-button" data-action="task-prev-day" aria-label="Previous day">‹</button>
+            <input type="date" id="task-date" value="${selectedKey}" aria-label="Choose a day" />
+            <button class="icon-button" data-action="task-next-day" aria-label="Next day">›</button>
+            <button class="button button-secondary button-small" data-action="task-today">${appLanguage === "ar" ? "اليوم" : "Today"}</button>
+          </div>
+          <div class="task-toolbar">${search}${filters}<button class="button button-secondary button-small" data-action="toggle-task-completed">${taskShowCompleted ? (appLanguage === "ar" ? "إخفاء المكتملة" : "Hide completed") : (appLanguage === "ar" ? "إظهار المكتملة" : "Show completed")}</button></div>
+        </div>
+        <div class="day-strip" ${dayMode ? "" : "hidden"}>${strip}</div>
+      </section>
+      <div class="task-groups">${sections}</div>
+      <p class="data-caption">${session
+        ? "Tasks are saved to your private account. Overdue tasks stay visible until you complete or reschedule them."
+        : "Tasks are saved in this browser in preview mode. Sign in to sync them across devices."}</p>`;
   }
 
   function dateKey(date) {
@@ -1600,8 +1985,585 @@
     return `${pageHeading("STUDY MATERIALS", "Your files", "A tidy home for resources from every course.", `<button class="button button-primary" data-action="file-add">↑ Upload file</button>`)}<div class="grid resource-grid">${sampleFiles.map((file) => `<article class="item-card"><span class="stat-icon">▤</span><h3 dir="auto">${escapeHtml(file.name)}</h3><p dir="auto">${escapeHtml(file.subject || subjectName(file.subject_id))} · ${escapeHtml(file.type || file.mime_type || "File")}</p>${session && file.id ? `<div class="card-actions"><button class="text-button" data-action="file-download" data-id="${escapeHtml(file.id)}">${featureText("download")}</button><button class="text-button" data-action="file-delete" data-id="${escapeHtml(file.id)}">${featureText("delete")}</button></div>` : ""}</article>`).join("")}${session && !sampleFiles.length ? `<div class="empty-state"><strong>No files uploaded yet</strong>Upload a file to keep your study materials in your private workspace.</div>` : ""}</div><p class="data-caption">${session ? "Files are stored in a private account-owned bucket; downloads use short-lived signed links." : "Sample file cards are shown in preview. Sign in to upload files to private storage."}</p>`;
   }
 
+  const NOTE_TEMPLATES = {
+    blank: { label: "Blank note", title: "", content: "" },
+    summary: {
+      label: "Lesson summary",
+      title: "Lesson summary",
+      content: "<h2>Lesson summary</h2><p><strong>Topic:</strong> </p><h3>Key ideas</h3><ul><li></li></ul><h3>Questions to revisit</h3><ul><li></li></ul><h3>Takeaway</h3><p></p>",
+    },
+    formulas: {
+      label: "Important formulas",
+      title: "Important formulas",
+      content: "<h2>Important formulas</h2><ul class=\"rt-checklist\"><li data-checked=\"false\">Formula · when to use it</li><li data-checked=\"false\">Formula · when to use it</li></ul><p><strong>Watch out for:</strong> </p>",
+    },
+    questions: {
+      label: "Questions & answers",
+      title: "Questions & answers",
+      content: "<h2>Questions & answers</h2><h3>Question 1</h3><p><strong>Answer:</strong> </p><h3>Question 2</h3><p><strong>Answer:</strong> </p>",
+    },
+    revision: {
+      label: "Exam revision",
+      title: "Exam revision",
+      content: "<h2>Exam revision</h2><p><strong>Exam date:</strong> </p><h3>Must know</h3><ul class=\"rt-checklist\"><li data-checked=\"false\"></li></ul><h3>Practice</h3><ul class=\"rt-checklist\"><li data-checked=\"false\"></li></ul><h3>Last-minute reminders</h3><p></p>",
+    },
+    lecture: {
+      label: "Lecture notes",
+      title: "Lecture notes",
+      content: "<h2>Lecture notes</h2><p><strong>Date:</strong> </p><h3>Main points</h3><ul><li></li></ul><h3>Examples</h3><p></p><h3>Follow-up</h3><ul class=\"rt-checklist\"><li data-checked=\"false\"></li></ul>",
+    },
+    ideas: {
+      label: "Quick ideas",
+      title: "Quick ideas",
+      content: "<h2>Quick ideas</h2><ul><li></li><li></li><li></li></ul>",
+    },
+  };
+
+  const RICH_DROP_TAGS = new Set(["script", "style", "iframe", "object", "embed", "link", "meta", "form", "input", "button", "textarea", "select", "option", "svg", "math", "template", "base"]);
+  const RICH_ALLOWED_TAGS = new Set(["p", "br", "div", "span", "strong", "b", "em", "i", "u", "s", "strike", "del", "h1", "h2", "h3", "h4", "ul", "ol", "li", "blockquote", "a", "img", "hr", "pre", "code", "font", "sub", "sup"]);
+  const RICH_SAFE_STYLE = /^(color|background-color|font-size|text-align|direction|font-family|font-weight|font-style|text-decoration)$/;
+  const RICH_SAFE_STYLE_VALUE = /^[#a-zA-Z0-9.,%()\s_-]+$/;
+
+  function sanitizeRichText(html) {
+    if (!html) return "";
+    const doc = new DOMParser().parseFromString(`<div id="rt-root">${html}</div>`, "text/html");
+    const root = doc.getElementById("rt-root");
+    if (!root) return "";
+    const cleanAttributes = (element) => {
+      const tag = element.tagName.toLowerCase();
+      [...element.attributes].forEach((attribute) => {
+        const name = attribute.name.toLowerCase();
+        const value = attribute.value;
+        if (name.startsWith("on") || name === "id" || name === "contenteditable") {
+          element.removeAttribute(attribute.name);
+          return;
+        }
+        if (tag === "a" && name === "href") {
+          if (!/^(https?:|mailto:)/i.test(value.trim())) element.removeAttribute(attribute.name);
+          return;
+        }
+        if ((tag === "img" && name === "src") || name === "href") {
+          if (!/^https:\/\//i.test(value.trim())) element.removeAttribute(attribute.name);
+          return;
+        }
+        if (name === "style") {
+          const safe = value.split(";").map((declaration) => {
+            const [property, ...rest] = declaration.split(":");
+            const propertyName = (property || "").trim().toLowerCase();
+            const propertyValue = rest.join(":").trim();
+            if (!RICH_SAFE_STYLE.test(propertyName) || !propertyValue || !RICH_SAFE_STYLE_VALUE.test(propertyValue)) return "";
+            if (/url\s*\(|expression/i.test(propertyValue)) return "";
+            return `${propertyName}:${propertyValue}`;
+          }).filter(Boolean).join(";");
+          if (safe) element.setAttribute("style", safe);
+          else element.removeAttribute("style");
+          return;
+        }
+        if (tag === "li" && name === "data-checked" && (value === "true" || value === "false")) return;
+        if (tag === "ul" && name === "class" && value === "rt-checklist") return;
+        if (tag === "a" && (name === "target" || name === "rel")) return;
+        if (tag === "img" && (name === "alt" || name === "loading")) return;
+        element.removeAttribute(attribute.name);
+      });
+      if (tag === "a") {
+        element.setAttribute("target", "_blank");
+        element.setAttribute("rel", "noopener noreferrer nofollow");
+      }
+      if (tag === "img") {
+        element.setAttribute("loading", "lazy");
+        if (!element.getAttribute("alt")) element.setAttribute("alt", "");
+      }
+    };
+    const walk = (node) => {
+      [...node.childNodes].forEach((child) => {
+        if (child.nodeType === Node.TEXT_NODE) return;
+        if (child.nodeType !== Node.ELEMENT_NODE) {
+          child.remove();
+          return;
+        }
+        const tag = child.tagName.toLowerCase();
+        if (RICH_DROP_TAGS.has(tag)) {
+          child.remove();
+          return;
+        }
+        if (!RICH_ALLOWED_TAGS.has(tag)) {
+          const fragment = doc.createDocumentFragment();
+          while (child.firstChild) fragment.appendChild(child.firstChild);
+          child.replaceWith(fragment);
+          walk(node);
+          return;
+        }
+        cleanAttributes(child);
+        walk(child);
+      });
+    };
+    walk(root);
+    return root.innerHTML;
+  }
+
+  function noteContentHtml(note) {
+    const raw = String(note?.content || "");
+    if (!raw) return "";
+    if (/<[a-z][\s\S]*>/i.test(raw)) return sanitizeRichText(raw);
+    return raw.split(/\n{2,}/).map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`).join("");
+  }
+
+  function notePlainText(note) {
+    const html = noteContentHtml(note);
+    if (!html) return "";
+    try {
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      return (doc.body.textContent || "").replace(/\s+/g, " ").trim();
+    } catch {
+      return "";
+    }
+  }
+
+  function noteColor(note) {
+    if (note.color && /^#[0-9a-f]{6}$/i.test(note.color)) return note.color;
+    const palette = ["#06D6A0", "#75CDB1", "#E6BA6C", "#A5C9BF"];
+    let hash = 0;
+    for (const char of String(note.id || note.title || "note")) hash = (hash * 31 + char.charCodeAt(0)) % 997;
+    return palette[hash % palette.length];
+  }
+
   function notesPage() {
-    return `${pageHeading("YOUR KNOWLEDGE VAULT", "Notes", "Capture what matters and find it when you need it.", `<button class="button button-primary" data-action="note-add">＋ New note</button>`)}<div class="grid resource-grid">${sampleNotes.map((note) => `<article class="item-card"><span class="task-meta">${escapeHtml(note.subject || subjectName(note.subject_id))}</span><h3>${escapeHtml(note.title)}</h3><p>Updated ${escapeHtml(note.updated || new Intl.DateTimeFormat(appLanguage, { dateStyle: "medium" }).format(new Date(note.updated_at || Date.now())))}</p><div class="note-preview">${escapeHtml(note.content || "A place for your key ideas, examples, and questions to revisit later.")}</div>${session && note.id ? `<div class="card-actions"><button class="text-button" data-action="note-edit" data-id="${escapeHtml(note.id)}">Edit</button><button class="text-button" data-action="note-delete" data-id="${escapeHtml(note.id)}">Delete</button></div>` : ""}</article>`).join("")}${session && !sampleNotes.length ? `<div class="empty-state"><strong>No notes yet</strong>Create a private note to capture your study ideas.</div>` : ""}</div><p class="data-caption">${session ? "Your notes are private and synchronized to your account." : "Sample content is shown in preview. Sign in to create and sync notes."}</p>`;
+    const filtered = notes.filter((note) => {
+      const text = `${note.title || ""} ${notePlainText(note)} ${note.subject || subjectName(note.subject_id)}`.toLowerCase();
+      const searchMatches = !noteSearch || text.includes(noteSearch.toLowerCase());
+      const subjectMatches = !noteSubjectFilter || String(note.subject_id || "") === noteSubjectFilter;
+      return searchMatches && subjectMatches;
+    }).sort((a, b) => {
+      if (Boolean(b.is_favorite) !== Boolean(a.is_favorite)) return Number(Boolean(b.is_favorite)) - Number(Boolean(a.is_favorite));
+      if (noteSort === "title") return String(a.title || "").localeCompare(String(b.title || ""), appLanguage === "ar" ? "ar" : "en");
+      if (noteSort === "created") return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+      return new Date(b.updated_at || 0) - new Date(a.updated_at || 0);
+    });
+    const card = (note) => {
+      const preview = notePlainText(note).slice(0, 180);
+      const updated = note.updated_at
+        ? new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "medium" }).format(new Date(note.updated_at))
+        : note.updated || "";
+      const subject = note.subject || subjectName(note.subject_id);
+      return `<article class="note-card" style="--note-color:${escapeHtml(noteColor(note))}" data-note-id="${escapeHtml(note.id)}">
+        <button class="note-card-main" data-action="note-open" data-id="${escapeHtml(note.id)}" aria-label="${escapeHtml(appLanguage === "ar" ? `فتح ${note.title}` : `Open ${note.title}`)}">
+          <span class="note-card-subject">${escapeHtml(subject || (appLanguage === "ar" ? "بلا مادة" : "No subject"))}</span>
+          <h3 dir="auto">${escapeHtml(note.title || (appLanguage === "ar" ? "ملاحظة بدون عنوان" : "Untitled note"))}</h3>
+          <p class="note-card-preview" dir="auto">${escapeHtml(preview || (appLanguage === "ar" ? "ملاحظة فارغة" : "Empty note"))}</p>
+          <span class="note-card-date">${escapeHtml(updated)}</span>
+        </button>
+        <div class="note-card-actions">
+          <button class="task-icon ${note.is_favorite ? "pinned" : ""}" data-action="note-pin" data-id="${escapeHtml(note.id)}" aria-label="${note.is_favorite ? (appLanguage === "ar" ? "إلغاء التثبيت" : "Unpin note") : (appLanguage === "ar" ? "تثبيت الملاحظة" : "Pin note")}" aria-pressed="${Boolean(note.is_favorite)}">${note.is_favorite ? "★" : "☆"}</button>
+          <button class="task-icon" data-action="note-edit" data-id="${escapeHtml(note.id)}" aria-label="${appLanguage === "ar" ? "تعديل الملاحظة" : "Edit note"}">✎</button>
+          <button class="task-icon danger" data-action="note-delete" data-id="${escapeHtml(note.id)}" aria-label="${appLanguage === "ar" ? "حذف الملاحظة" : "Delete note"}">×</button>
+        </div>
+      </article>`;
+    };
+    const pinned = filtered.filter((note) => note.is_favorite);
+    const rest = filtered.filter((note) => !note.is_favorite);
+    const subjectOptions = `<option value="">${appLanguage === "ar" ? "كل المواد" : "All subjects"}</option>${subjects.map((subject) => `<option value="${escapeHtml(subject.id)}" ${String(noteSubjectFilter) === String(subject.id) ? "selected" : ""}>${escapeHtml(subject.name)}</option>`).join("")}`;
+    const templateOptions = Object.entries(NOTE_TEMPLATES).map(([key, template]) => `<option value="${key}">${escapeHtml(template.label)}</option>`).join("");
+    const body = filtered.length
+      ? `${pinned.length ? `<section class="notes-group"><h2 class="notes-group-title">★ ${appLanguage === "ar" ? "مثبتة" : "Pinned"}</h2><div class="grid notes-grid">${pinned.map(card).join("")}</div></section>` : ""}
+         ${rest.length ? `<section class="notes-group"><h2 class="notes-group-title">${appLanguage === "ar" ? "كل الملاحظات" : "All notes"}</h2><div class="grid notes-grid">${rest.map(card).join("")}</div></section>` : ""}`
+      : `<div class="empty-state notes-empty"><strong>${noteSearch || noteSubjectFilter ? (appLanguage === "ar" ? "لا توجد نتائج" : "No notes match your search") : (appLanguage === "ar" ? "ابدأ دفترك الرقمي" : "Start your digital notebook")}</strong>${noteSearch || noteSubjectFilter ? (appLanguage === "ar" ? "جرّب بحثًا أو مادة أخرى." : "Try another search or subject.") : (appLanguage === "ar" ? "أنشئ ملاحظة بتنسيق غني أو ابدأ من قالب جاهز." : "Create a rich text note or start from a ready-made template.")}<button class="button button-primary button-small" data-action="note-add">＋ ${appLanguage === "ar" ? "ملاحظة جديدة" : "New note"}</button></div>`;
+    return `${pageHeading("YOUR KNOWLEDGE VAULT", appLanguage === "ar" ? "الملاحظات" : "Notes", appLanguage === "ar" ? "اكتب، نسّق، وثبّت ما يهمك — مع حفظ تلقائي." : "Write, format, and pin what matters — with autosave.",
+      `<div class="notes-heading-actions"><select class="filter-select" id="note-template" aria-label="${appLanguage === "ar" ? "قالب الملاحظة" : "Note template"}">${templateOptions}</select><button class="button button-primary" data-action="note-add">＋ ${appLanguage === "ar" ? "ملاحظة جديدة" : "New note"}</button></div>`)}
+      <section class="panel notes-toolbar">
+        <label class="search-box"><span>⌕</span><input id="note-search" type="search" dir="auto" value="${escapeHtml(noteSearch)}" placeholder="${appLanguage === "ar" ? "ابحث في الملاحظات" : "Search notes"}" aria-label="${appLanguage === "ar" ? "ابحث في الملاحظات" : "Search notes"}"></label>
+        <select class="filter-select" id="note-subject-filter" aria-label="${appLanguage === "ar" ? "تصفية حسب المادة" : "Filter by subject"}">${subjectOptions}</select>
+        <select class="filter-select" id="note-sort" aria-label="${appLanguage === "ar" ? "ترتيب الملاحظات" : "Sort notes"}">
+          <option value="updated" ${noteSort === "updated" ? "selected" : ""}>${appLanguage === "ar" ? "الأحدث تحديثًا" : "Recently updated"}</option>
+          <option value="created" ${noteSort === "created" ? "selected" : ""}>${appLanguage === "ar" ? "الأحدث إنشاءً" : "Recently created"}</option>
+          <option value="title" ${noteSort === "title" ? "selected" : ""}>${appLanguage === "ar" ? "الاسم" : "Title A–Z"}</option>
+        </select>
+        <span class="notes-count">${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(filtered.length)} ${appLanguage === "ar" ? "ملاحظة" : filtered.length === 1 ? "note" : "notes"}</span>
+      </section>
+      ${body}
+      <p class="data-caption">${session
+        ? "Notes are private to your account. Formatting is stored as sanitized rich text."
+        : "Notes are saved in this browser in preview mode. Sign in to sync them across devices."}${notesColorSupported ? "" : " Colors become available after applying the notes migration."}</p>`;
+  }
+
+  function noteBodyForHtml(html) {
+    const value = String(html || "").trim();
+    if (value === "<br>" || value === "<div><br></div>" || value === "<p><br></p>") return "";
+    return sanitizeRichText(value);
+  }
+
+  function noteEditorMarkup(note, templateKey) {
+    const isNew = !note?.id;
+    const template = NOTE_TEMPLATES[templateKey] || NOTE_TEMPLATES.blank;
+    const title = note?.title || template.title || "";
+    const content = note ? noteContentHtml(note) : sanitizeRichText(template.content);
+    const colorSwatches = notesColorSupported
+      ? `<div class="note-color-row" role="group" aria-label="${appLanguage === "ar" ? "لون الملاحظة" : "Note color"}">${[
+        ["", appLanguage === "ar" ? "افتراضي" : "Default"],
+        ["#06D6A0", "Emerald"], ["#75CDB1", "Mint"], ["#E6BA6C", "Amber"], ["#A5C9BF", "Sage"], ["#7FB3D5", "Blue"],
+      ].map(([value, label]) => `<button type="button" class="note-color ${String(note?.color || "") === value ? "selected" : ""}" data-note-color="${value}" style="--swatch:${value || "var(--accent)"}" aria-label="${label}" title="${label}"></button>`).join("")}</div>`
+      : "";
+    const subjOptions = `<option value="">${appLanguage === "ar" ? "بلا مادة" : "No subject"}</option>${subjects.map((subject) => `<option value="${escapeHtml(subject.id)}" ${String(note?.subject_id || "") === String(subject.id) ? "selected" : ""}>${escapeHtml(subject.name)}</option>`).join("")}`;
+    const toolButton = (command, label, text, extra = "") => `<button type="button" class="rt-button" data-rt="${command}" ${extra} aria-label="${label}" title="${label}">${text}</button>`;
+    return `<div class="modal-backdrop note-backdrop" id="note-modal" hidden>
+      <section class="modal note-modal" role="dialog" aria-modal="true" aria-labelledby="note-editor-title">
+        <header class="note-editor-head">
+          <div class="note-editor-title-wrap">
+            <p class="eyebrow" id="note-editor-kicker">${isNew ? (appLanguage === "ar" ? "ملاحظة جديدة" : "NEW NOTE") : (appLanguage === "ar" ? "تعديل الملاحظة" : "EDIT NOTE")}</p>
+            <input id="note-editor-title" class="note-title-input" dir="auto" maxlength="180" value="${escapeHtml(title)}" placeholder="${appLanguage === "ar" ? "عنوان الملاحظة" : "Note title"}" aria-label="${appLanguage === "ar" ? "عنوان الملاحظة" : "Note title"}" />
+          </div>
+          <button class="modal-close" type="button" data-action="note-close" aria-label="${appLanguage === "ar" ? "إغلاق" : "Close"}">×</button>
+        </header>
+        <div class="note-editor-meta">
+          <select id="note-editor-subject" class="filter-select" aria-label="${appLanguage === "ar" ? "المادة" : "Subject"}">${subjOptions}</select>
+          ${colorSwatches}
+          <label class="note-pin-toggle"><input type="checkbox" id="note-editor-pin" ${note?.is_favorite ? "checked" : ""} /> <span>${appLanguage === "ar" ? "تثبيت" : "Pin"}</span></label>
+          <span class="note-save-status" id="note-save-status">${isNew ? "" : (appLanguage === "ar" ? "محفوظة" : "Saved")}</span>
+        </div>
+        ${isNew ? `<div class="note-template-row" role="group" aria-label="${appLanguage === "ar" ? "قوالب الملاحظات" : "Note templates"}"><span>${appLanguage === "ar" ? "ابدأ من قالب:" : "Start from a template:"}</span>${Object.entries(NOTE_TEMPLATES).map(([key, item]) => `<button type="button" class="note-template-chip" data-note-template="${key}">${escapeHtml(item.label)}</button>`).join("")}</div>` : ""}
+        <div class="rt-toolbar" id="note-toolbar" role="toolbar" aria-label="${appLanguage === "ar" ? "أدوات التنسيق" : "Formatting toolbar"}">
+          <div class="rt-group">
+            ${toolButton("undo", "Undo", "↶")}${toolButton("redo", "Redo", "↷")}
+          </div>
+          <div class="rt-group">
+            <select class="rt-select" id="rt-block" aria-label="${appLanguage === "ar" ? "نمط الفقرة" : "Paragraph style"}"><option value="p">${appLanguage === "ar" ? "فقرة" : "Paragraph"}</option><option value="h1">H1</option><option value="h2">H2</option><option value="h3">H3</option><option value="blockquote">${appLanguage === "ar" ? "اقتباس" : "Quote"}</option><option value="pre">${appLanguage === "ar" ? "كود" : "Code"}</option></select>
+            <select class="rt-select" id="rt-size" aria-label="${appLanguage === "ar" ? "حجم الخط" : "Font size"}"><option value="">${appLanguage === "ar" ? "الحجم" : "Size"}</option><option value="14px">14</option><option value="16px">16</option><option value="18px">18</option><option value="24px">24</option><option value="30px">30</option></select>
+          </div>
+          <div class="rt-group">
+            ${toolButton("bold", "Bold (Ctrl+B)", "<strong>B</strong>")}
+            ${toolButton("italic", "Italic (Ctrl+I)", "<em>I</em>")}
+            ${toolButton("underline", "Underline (Ctrl+U)", "<u>U</u>")}
+            ${toolButton("strikeThrough", "Strikethrough", "<s>S</s>")}
+            <label class="rt-color" title="${appLanguage === "ar" ? "لون الخط" : "Text color"}"><span style="--swatch:#E6FBF6"></span><input type="color" id="rt-fore-color" value="#E6FBF6" aria-label="${appLanguage === "ar" ? "لون الخط" : "Text color"}" /></label>
+          </div>
+          <div class="rt-group rt-highlights" role="group" aria-label="${appLanguage === "ar" ? "تظليل النص" : "Highlight text"}">
+            ${[["#E6BA6C", "Yellow"], ["#06D6A0", "Green"], ["#7FB3D5", "Blue"], ["#E39AC7", "Pink"], ["#E39A5B", "Orange"]].map(([color, label]) => `<button type="button" class="rt-swatch" data-rt-highlight="${color}" style="--swatch:${color}" aria-label="${label}" title="${label}"></button>`).join("")}
+            ${toolButton("hiliteClear", appLanguage === "ar" ? "إزالة التظليل" : "Clear highlight", "⌫")}
+          </div>
+          <div class="rt-group">
+            ${toolButton("insertUnorderedList", "Bulleted list", "•≡")}
+            ${toolButton("insertOrderedList", "Numbered list", "1≡")}
+            <button type="button" class="rt-button" data-rt="checklist" aria-label="${appLanguage === "ar" ? "قائمة تحقق" : "Checklist"}" title="${appLanguage === "ar" ? "قائمة تحقق" : "Checklist"}">☑</button>
+            ${toolButton("insertHorizontalRule", "Divider", "—")}
+          </div>
+          <div class="rt-group">
+            ${toolButton("justifyLeft", "Align right/left", "⇤")}
+            ${toolButton("justifyCenter", "Align center", "↔")}
+            ${toolButton("justifyRight", "Align left/right", "⇥")}
+            ${toolButton("justifyFull", "Justify", "≡")}
+            ${toolButton("dirRtl", "RTL", "RTL")}
+            ${toolButton("dirLtr", "LTR", "LTR")}
+          </div>
+          <div class="rt-group">
+            <button type="button" class="rt-button" data-rt="link" aria-label="${appLanguage === "ar" ? "إضافة رابط" : "Insert link"}" title="${appLanguage === "ar" ? "إضافة رابط" : "Insert link"}">🔗</button>
+            <button type="button" class="rt-button" data-rt="image" aria-label="${appLanguage === "ar" ? "إدراج صورة" : "Insert image"}" title="${appLanguage === "ar" ? "إدراج صورة" : "Insert image"}">▣</button>
+            ${toolButton("removeFormat", appLanguage === "ar" ? "مسح التنسيق" : "Clear formatting", "⌫")}
+          </div>
+        </div>
+        <div class="rt-editor" id="note-editor" contenteditable="true" dir="auto" role="textbox" aria-multiline="true" aria-label="${appLanguage === "ar" ? "محتوى الملاحظة" : "Note content"}" spellcheck="true">${content}</div>
+        <footer class="note-editor-foot">
+          <span id="note-word-count"></span>
+          <div class="note-editor-actions">
+            ${isNew ? "" : `<button type="button" class="button button-quiet button-small danger-text" data-action="note-delete-editor">${appLanguage === "ar" ? "حذف" : "Delete"}</button>`}
+            <button type="button" class="button button-secondary button-small" data-action="note-save-now">${appLanguage === "ar" ? "حفظ الآن" : "Save now"}</button>
+            <button type="button" class="button button-primary button-small" data-action="note-close">${appLanguage === "ar" ? "تم" : "Done"}</button>
+          </div>
+        </footer>
+      </section>
+    </div>`;
+  }
+
+  function updateNoteWordCount() {
+    const editor = document.getElementById("note-editor");
+    const counter = document.getElementById("note-word-count");
+    if (!editor || !counter) return;
+    const text = (editor.textContent || "").trim();
+    const words = text ? text.split(/\s+/).length : 0;
+    counter.textContent = `${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(words)} ${appLanguage === "ar" ? "كلمة" : words === 1 ? "word" : "words"}`;
+  }
+
+  function setNoteSaveStatus(status) {
+    noteSaveStatus = status;
+    const element = document.getElementById("note-save-status");
+    if (!element) return;
+    const labels = {
+      idle: appLanguage === "ar" ? "محفوظة" : "Saved",
+      dirty: appLanguage === "ar" ? "تغييرات غير محفوظة" : "Unsaved changes",
+      saving: appLanguage === "ar" ? "جارٍ الحفظ…" : "Saving…",
+      saved: appLanguage === "ar" ? `تم الحفظ · ${new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { hour: "numeric", minute: "2-digit" }).format(new Date())}` : `Saved · ${new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date())}`,
+      error: appLanguage === "ar" ? "تعذر الحفظ" : "Save failed",
+    };
+    element.textContent = labels[status] || "";
+    element.dataset.state = status;
+  }
+
+  function scheduleNoteSave() {
+    setNoteSaveStatus("dirty");
+    if (noteSaveTimer) window.clearTimeout(noteSaveTimer);
+    noteSaveTimer = window.setTimeout(() => { void saveNoteNow({ silent: true }); }, 900);
+  }
+
+  async function saveNoteNow({ silent = false } = {}) {
+    const state = noteEditorState;
+    if (!state) return;
+    if (noteSaveTimer) {
+      window.clearTimeout(noteSaveTimer);
+      noteSaveTimer = null;
+    }
+    const titleInput = document.getElementById("note-editor-title");
+    const editor = document.getElementById("note-editor");
+    if (!titleInput || !editor) return;
+    const title = titleInput.value.trim();
+    const content = noteBodyForHtml(editor.innerHTML);
+    if (!title && !content.replace(/<[^>]+>/g, "").trim()) {
+      setNoteSaveStatus("idle");
+      return;
+    }
+    const payload = {
+      title: title || (appLanguage === "ar" ? "ملاحظة بدون عنوان" : "Untitled note"),
+      content,
+      subject_id: document.getElementById("note-editor-subject")?.value || null,
+      is_favorite: Boolean(document.getElementById("note-editor-pin")?.checked),
+    };
+    if (notesColorSupported) payload.color = state.color || "";
+    setNoteSaveStatus("saving");
+    try {
+      if (supabase && session) {
+        let result;
+        if (state.id && !String(state.id).startsWith("local-")) {
+          result = await supabase.from("notes").update(payload).eq("id", state.id)
+            .select("id,title,content,subject_id,is_favorite,created_at,updated_at").single();
+        } else {
+          result = await supabase.from("notes").insert(payload)
+            .select("id,title,content,subject_id,is_favorite,created_at,updated_at").single();
+        }
+        if (result.error) throw result.error;
+        const saved = result.data;
+        if (notesColorSupported) saved.color = payload.color;
+        const index = notes.findIndex((note) => String(note.id) === String(saved.id));
+        const normalized = { ...saved, subject: subjectName(saved.subject_id) };
+        if (index >= 0) notes[index] = normalized;
+        else notes.unshift(normalized);
+        state.id = saved.id;
+      } else {
+        const now = new Date().toISOString();
+        const id = state.id || `local-note-${Date.now()}`;
+        const existing = notes.find((note) => String(note.id) === String(id));
+        const saved = { ...(existing || {}), ...payload, id, subject: subjectName(payload.subject_id), created_at: existing?.created_at || now, updated_at: now };
+        if (existing) notes = notes.map((note) => String(note.id) === String(id) ? saved : note);
+        else notes.unshift(saved);
+        state.id = id;
+        saveLocalNotes();
+      }
+      state.savedTitle = payload.title;
+      setNoteSaveStatus("saved");
+      updateNoteWordCount();
+    } catch (error) {
+      console.error("Could not save the note.", error);
+      setNoteSaveStatus("error");
+      if (!silent) showToast(`${appLanguage === "ar" ? "تعذر حفظ الملاحظة:" : "Could not save the note:"} ${error.message}`);
+      throw error;
+    }
+  }
+
+  function closeNoteEditor() {
+    if (noteSaveTimer) {
+      window.clearTimeout(noteSaveTimer);
+      noteSaveTimer = null;
+    }
+    const modal = document.getElementById("note-modal");
+    if (!modal) return;
+    const hasContent = document.getElementById("note-editor-title")?.value.trim()
+      || (document.getElementById("note-editor")?.textContent || "").trim();
+    if (hasContent && noteSaveStatus !== "saved" && noteSaveStatus !== "idle") {
+      void saveNoteNow({ silent: true }).catch(() => {});
+    }
+    modal.hidden = true;
+    noteEditorState = null;
+    noteSaveStatus = "idle";
+    if (currentPage === "notes") render();
+  }
+
+  function openNoteEditor(id = null, templateKey = "blank") {
+    const note = id ? notes.find((item) => String(item.id) === String(id)) : null;
+    if (id && !note) {
+      showToast(appLanguage === "ar" ? "تعذر العثور على الملاحظة." : "The note could not be found.");
+      return;
+    }
+    const existing = document.getElementById("note-modal");
+    if (existing) existing.remove();
+    document.body.insertAdjacentHTML("beforeend", noteEditorMarkup(note, templateKey));
+    noteEditorState = {
+      id: note?.id || null,
+      color: note?.color || "",
+      savedTitle: note?.title || "",
+    };
+    attachNoteEditorListeners();
+    document.getElementById("note-modal").hidden = false;
+    updateNoteWordCount();
+    translateInterface();
+    if (!note) document.getElementById("note-editor-title").focus();
+    else document.getElementById("note-editor").focus();
+  }
+
+  function attachNoteEditorListeners() {
+    const modal = document.getElementById("note-modal");
+    const editor = document.getElementById("note-editor");
+    const title = document.getElementById("note-editor-title");
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal) closeNoteEditor();
+      const templateButton = event.target.closest("[data-note-template]");
+      if (templateButton) {
+        const template = NOTE_TEMPLATES[templateButton.dataset.noteTemplate];
+        if (!template) return;
+        if ((editor.textContent || "").trim() && !window.confirm(appLanguage === "ar" ? "استبدال المحتوى الحالي بالقالب؟" : "Replace the current content with this template?")) return;
+        editor.innerHTML = sanitizeRichText(template.content);
+        if (!title.value.trim()) title.value = template.title;
+        updateNoteWordCount();
+        scheduleNoteSave();
+        editor.focus();
+        return;
+      }
+      const colorButton = event.target.closest("[data-note-color]");
+      if (colorButton) {
+        noteEditorState.color = colorButton.dataset.noteColor;
+        modal.querySelectorAll("[data-note-color]").forEach((button) => button.classList.toggle("selected", button === colorButton));
+        scheduleNoteSave();
+        return;
+      }
+      const commandButton = event.target.closest("[data-rt]");
+      if (commandButton) {
+        event.preventDefault();
+        runRichTextCommand(commandButton.dataset.rt);
+        return;
+      }
+      const highlightButton = event.target.closest("[data-rt-highlight]");
+      if (highlightButton) {
+        event.preventDefault();
+        editor.focus();
+        document.execCommand("styleWithCSS", false, true);
+        document.execCommand("hiliteColor", false, highlightButton.dataset.rtHighlight);
+        scheduleNoteSave();
+      }
+    });
+    modal.addEventListener("mousedown", (event) => {
+      if (event.target.closest(".rt-button, .rt-swatch")) event.preventDefault();
+    });
+    editor.addEventListener("input", () => { updateNoteWordCount(); scheduleNoteSave(); });
+    title.addEventListener("input", scheduleNoteSave);
+    document.getElementById("note-editor-subject").addEventListener("change", scheduleNoteSave);
+    document.getElementById("note-editor-pin").addEventListener("change", scheduleNoteSave);
+    document.getElementById("rt-block").addEventListener("change", (event) => {
+      editor.focus();
+      document.execCommand("formatBlock", false, event.target.value);
+      scheduleNoteSave();
+    });
+    document.getElementById("rt-size").addEventListener("change", (event) => {
+      if (!event.target.value) return;
+      editor.focus();
+      document.execCommand("styleWithCSS", false, true);
+      document.execCommand("fontSize", false, "7");
+      const fontElements = editor.querySelectorAll('font[size="7"]');
+      fontElements.forEach((font) => {
+        const span = document.createElement("span");
+        span.style.fontSize = event.target.value;
+        span.innerHTML = font.innerHTML;
+        font.replaceWith(span);
+      });
+      editor.querySelectorAll('span[style*="xxx-large"]').forEach((span) => { span.style.fontSize = event.target.value; });
+      event.target.value = "";
+      scheduleNoteSave();
+    });
+    document.getElementById("rt-fore-color").addEventListener("input", (event) => {
+      editor.focus();
+      document.execCommand("styleWithCSS", false, true);
+      document.execCommand("foreColor", false, event.target.value);
+      scheduleNoteSave();
+    });
+    editor.addEventListener("click", (event) => {
+      const item = event.target.closest("li");
+      const list = item?.closest("ul.rt-checklist");
+      if (!item || !list) return;
+      const checked = item.dataset.checked !== "true";
+      item.dataset.checked = String(checked);
+      item.classList.toggle("checked", checked);
+      scheduleNoteSave();
+    });
+    editor.addEventListener("paste", (event) => {
+      const html = event.clipboardData?.getData("text/html");
+      if (!html) return;
+      event.preventDefault();
+      document.execCommand("insertHTML", false, sanitizeRichText(html));
+      scheduleNoteSave();
+    });
+  }
+
+  function runRichTextCommand(command) {
+    const editor = document.getElementById("note-editor");
+    if (!editor) return;
+    editor.focus();
+    document.execCommand("styleWithCSS", false, true);
+    if (command === "checklist") {
+      document.execCommand("insertHTML", false, '<ul class="rt-checklist"><li data-checked="false"> </li></ul>');
+    } else if (command === "hiliteClear" || command === "hiliteColor") {
+      document.execCommand("hiliteColor", false, command === "hiliteClear" ? "transparent" : "#E6BA6C");
+    } else if (command === "dirRtl" || command === "dirLtr") {
+      document.execCommand("dir", false, command === "dirRtl" ? "rtl" : "ltr");
+    } else if (command === "link") {
+      const url = window.prompt(appLanguage === "ar" ? "رابط (https://...)" : "Link URL (https://...)");
+      if (url && /^https?:\/\//i.test(url.trim())) document.execCommand("createLink", false, url.trim());
+    } else if (command === "image") {
+      const url = window.prompt(appLanguage === "ar" ? "رابط الصورة (https://...)" : "Image URL (https://...)");
+      if (url && /^https:\/\//i.test(url.trim())) document.execCommand("insertImage", false, url.trim());
+    } else {
+      document.execCommand(command, false, null);
+    }
+    scheduleNoteSave();
+  }
+
+  async function toggleNotePin(id) {
+    const note = notes.find((item) => String(item.id) === String(id));
+    if (!note) return;
+    const nextValue = !note.is_favorite;
+    try {
+      if (supabase && session && !String(id).startsWith("local-")) {
+        const { error } = await supabase.from("notes").update({ is_favorite: nextValue }).eq("id", id);
+        if (error) throw error;
+      }
+      note.is_favorite = nextValue;
+      if (!supabase || !session) saveLocalNotes();
+      render();
+      showToast(nextValue
+        ? (appLanguage === "ar" ? "تم تثبيت الملاحظة." : "Note pinned.")
+        : (appLanguage === "ar" ? "تم إلغاء تثبيت الملاحظة." : "Note unpinned."));
+    } catch (error) {
+      showToast(`${appLanguage === "ar" ? "تعذر تحديث الملاحظة:" : "Could not update the note:"} ${error.message}`);
+      console.error("Could not pin the note.", error);
+    }
+  }
+
+  async function deleteNote(id, { closeEditor = false } = {}) {
+    const note = notes.find((item) => String(item.id) === String(id));
+    if (!note) return;
+    if (!window.confirm(appLanguage === "ar" ? `حذف "${note.title}"؟ لا يمكن التراجع.` : `Delete "${note.title}"? This cannot be undone.`)) return;
+    try {
+      if (supabase && session && !String(id).startsWith("local-")) {
+        const { error } = await supabase.from("notes").delete().eq("id", id);
+        if (error) throw error;
+      }
+      notes = notes.filter((item) => String(item.id) !== String(id));
+      if (!supabase || !session) saveLocalNotes();
+      if (closeEditor) {
+        const modal = document.getElementById("note-modal");
+        if (modal) modal.hidden = true;
+        noteEditorState = null;
+        noteSaveStatus = "idle";
+      }
+      render();
+      showToast(appLanguage === "ar" ? "تم حذف الملاحظة." : "Note deleted.");
+    } catch (error) {
+      showToast(`${appLanguage === "ar" ? "تعذر حذف الملاحظة:" : "Could not delete the note:"} ${error.message}`);
+      console.error("Could not delete the note.", error);
+    }
   }
 
   const featureFormText = {
@@ -2320,11 +3282,745 @@
     return `${pageHeading("MILESTONES", "Achievements", "Celebrate consistency and progress, not just perfect days.", "")}<div class="grid achievement-grid">${cards}</div><section class="panel section-spacer">${panelHeading("Your progress level")}<div class="metric-large">${translateUiText("Level")} ${session ? rewardCounterMarkup("achievement-level", level) : "—"} <span class="metric-caption">· ${session ? `${rewardCounterMarkup("achievement-xp", xp)} XP` : translateUiText("Sign in to earn secure rewards.")}</span></div><div class="progress-track" role="progressbar" aria-label="${translateUiText("Progress to next level")}" aria-valuenow="${session ? progress : 0}" aria-valuemin="0" aria-valuemax="100"><div class="progress-fill" style="width:${session ? progress : 0}%"></div></div><p class="data-caption">${session ? translateUiText("Progress to next level") : translateUiText("Sign in to earn secure rewards.")}${rewardSummary ? "" : session ? ` ${translateUiText("Rewards load after applying the latest Supabase migration.")}` : ""}</p></section>`;
   }
 
+  function isMissingRelation(error) {
+    const code = String(error?.code || "");
+    const message = String(error?.message || "");
+    return code === "42P01" || code === "PGRST205" || /does not exist|could not find the table|schema cache/i.test(message);
+  }
+
+  function teamMemberCount(teamId) {
+    return teamMembers.filter((member) => String(member.team_id) === String(teamId)).length;
+  }
+
+  async function loadTeams() {
+    if (!supabase || !session || teamsLoading) return;
+    teamsLoading = true;
+    teamsError = "";
+    scheduleRender();
+    try {
+      const { data, error } = await supabase.from("teams")
+        .select("id,name,description,join_code,owner_id,created_at")
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      teams = data || [];
+      if (!teams.some((team) => String(team.id) === String(selectedTeamId))) {
+        selectedTeamId = teams[0]?.id || null;
+      }
+      if (teams.length) {
+        const ids = teams.map((team) => team.id);
+        const [memberResult, taskResult] = await Promise.all([
+          supabase.from("team_members").select("team_id,user_id,role,joined_at").in("team_id", ids),
+          supabase.from("team_tasks")
+            .select("id,team_id,created_by,assigned_to,title,description,status,priority,due_at,created_at")
+            .in("team_id", ids).order("due_at", { ascending: true, nullsFirst: false }),
+        ]);
+        if (memberResult.error && !isMissingRelation(memberResult.error)) console.error("Could not load team members.", memberResult.error);
+        if (taskResult.error && !isMissingRelation(taskResult.error)) console.error("Could not load team tasks.", taskResult.error);
+        teamMembers = memberResult.error ? [] : (memberResult.data || []);
+        teamTasks = taskResult.error ? [] : (taskResult.data || []);
+      } else {
+        teamMembers = [];
+        teamTasks = [];
+      }
+      teamsSupported = true;
+    } catch (error) {
+      console.error("Could not load teams.", error);
+      teams = [];
+      teamMembers = [];
+      teamTasks = [];
+      if (isMissingRelation(error)) {
+        teamsSupported = false;
+      } else {
+        teamsError = error.message || "Could not load your teams.";
+      }
+    } finally {
+      teamsLoading = false;
+      teamsLoaded = true;
+      scheduleRender();
+    }
+  }
+
+  function teamMemberLabel(member) {
+    if (!member) return "Member";
+    if (member.user_id === session?.user?.id) return appLanguage === "ar" ? "أنت" : "You";
+    return `${appLanguage === "ar" ? "عضو" : "Member"} ${String(member.user_id || "").slice(0, 6)}`;
+  }
+
+  function teamTaskRow(task, team) {
+    const completed = task.status === "completed";
+    const mine = task.created_by === session?.user?.id;
+    const owner = team.owner_id === session?.user?.id;
+    const due = task.due_at ? taskDueLabel({ due_at: task.due_at }, { includeDate: true }) : "";
+    return `<div class="team-task-row ${completed ? "completed" : ""}">
+      <button class="task-check ${completed ? "checked" : ""}" data-action="team-task-toggle" data-id="${escapeHtml(task.id)}" aria-label="${completed ? "Reopen" : "Complete"} ${escapeHtml(task.title)}">${completed ? "✓" : ""}</button>
+      <div class="team-task-main">
+        <strong dir="auto">${escapeHtml(task.title)}</strong>
+        <small dir="auto">${escapeHtml(due || (appLanguage === "ar" ? "بلا موعد" : "No due date"))}${task.assigned_to === session?.user?.id ? (appLanguage === "ar" ? " · مُسندة إليك" : " · assigned to you") : ""}</small>
+      </div>
+      <span class="priority ${escapeHtml(task.priority || "medium")}">${escapeHtml(deadlineText[appLanguage][task.priority] || "medium")}</span>
+      ${mine || owner ? `<button class="task-icon danger" data-action="team-task-delete" data-id="${escapeHtml(task.id)}" aria-label="${appLanguage === "ar" ? "حذف مهمة الفريق" : "Delete team task"}">×</button>` : ""}
+    </div>`;
+  }
+
+  function teamsPage() {
+    if (!session) {
+      return `${pageHeading("STUDY TOGETHER", appLanguage === "ar" ? "الفرق" : "Teams", appLanguage === "ar" ? "شارك المهام مع مجموعتك الدراسية." : "Share tasks and momentum with your study group.", "")}
+        <section class="panel teams-empty"><div class="empty-state"><strong>${appLanguage === "ar" ? "سجّل الدخول لإنشاء فريق" : "Sign in to create a team"}</strong><p>${appLanguage === "ar" ? "الفرق الخاصة آمنة ومرتبطة بحسابك." : "Private teams are tied to your account and protected by row-level security."}</p><button class="button button-primary button-small" id="open-auth">${appLanguage === "ar" ? "تسجيل الدخول" : "Sign in"}</button></div></section>`;
+    }
+    const actions = `<div class="teams-heading-actions"><button class="button button-secondary" data-action="team-join">${appLanguage === "ar" ? "الانضمام إلى فريق" : "Join team"}</button><button class="button button-primary" data-action="team-create">＋ ${appLanguage === "ar" ? "فريق جديد" : "New team"}</button></div>`;
+    if (teamsLoading && !teamsLoaded) {
+      return `${pageHeading("STUDY TOGETHER", appLanguage === "ar" ? "الفرق" : "Teams", appLanguage === "ar" ? "شارك المهام مع مجموعتك الدراسية." : "Share tasks and momentum with your study group.", actions)}<section class="panel"><div class="empty-state" role="status">${appLanguage === "ar" ? "جارٍ تحميل الفرق…" : "Loading teams…"}</div></section>`;
+    }
+    if (!teamsSupported) {
+      return `${pageHeading("STUDY TOGETHER", appLanguage === "ar" ? "الفرق" : "Teams", appLanguage === "ar" ? "شارك المهام مع مجموعتك الدراسية." : "Share tasks and momentum with your study group.", actions)}<section class="panel"><div class="empty-state"><strong>${appLanguage === "ar" ? "ميزة الفرق غير مهيأة بعد" : "Teams are not enabled yet"}</strong><p>${appLanguage === "ar" ? "طبّق ملف الترحيل 001_studyzone_enhancements.sql في Supabase لتفعيل الفرق." : "Apply supabase/migrations/001_studyzone_enhancements.sql in Supabase to enable private teams."}</p></div></section>`;
+    }
+    if (teamsError) {
+      return `${pageHeading("STUDY TOGETHER", appLanguage === "ar" ? "الفرق" : "Teams", appLanguage === "ar" ? "شارك المهام مع مجموعتك الدراسية." : "Share tasks and momentum with your study group.", actions)}<section class="panel"><div class="empty-state"><strong>${appLanguage === "ar" ? "تعذر تحميل الفرق" : "Could not load teams"}</strong><p>${escapeHtml(teamsError)}</p><button class="button button-secondary button-small" data-action="teams-retry">${appLanguage === "ar" ? "إعادة المحاولة" : "Try again"}</button></div></section>`;
+    }
+    if (!teams.length) {
+      return `${pageHeading("STUDY TOGETHER", appLanguage === "ar" ? "الفرق" : "Teams", appLanguage === "ar" ? "شارك المهام مع مجموعتك الدراسية." : "Share tasks and momentum with your study group.", actions)}
+        <section class="panel teams-empty"><div class="empty-state"><strong>${appLanguage === "ar" ? "ابدأ فريقك الأول" : "Start your first team"}</strong><p>${appLanguage === "ar" ? "أنشئ فريقًا أو انضم بكود من زميل." : "Create a team, or join one with a short code from a classmate."}</p><div class="teams-empty-actions"><button class="button button-secondary button-small" data-action="team-join">${appLanguage === "ar" ? "الانضمام إلى فريق" : "Join team"}</button><button class="button button-primary button-small" data-action="team-create">＋ ${appLanguage === "ar" ? "فريق جديد" : "New team"}</button></div></div></section>`;
+    }
+    const selected = teams.find((team) => String(team.id) === String(selectedTeamId)) || teams[0];
+    const members = teamMembers.filter((member) => String(member.team_id) === String(selected.id));
+    const owner = selected.owner_id === session.user.id;
+    const memberRows = members.map((member) => `<div class="team-member"><span class="team-member-avatar">${escapeHtml(initials(teamMemberLabel(member)))}</span><div><strong>${escapeHtml(teamMemberLabel(member))}</strong><small>${escapeHtml(member.role === "owner" ? (appLanguage === "ar" ? "مالك الفريق" : "Team owner") : (appLanguage === "ar" ? "عضو" : "Member"))}</small></div></div>`).join("") || `<p class="data-caption">${appLanguage === "ar" ? "لا أعضاء بعد." : "No members yet."}</p>`;
+    const tasks = teamTasks.filter((task) => String(task.team_id) === String(selected.id));
+    const openTasks = tasks.filter((task) => task.status !== "completed");
+    const doneTasks = tasks.filter((task) => task.status === "completed");
+    const taskList = `${openTasks.length ? openTasks.map((task) => teamTaskRow(task, selected)).join("") : `<div class="empty-state"><strong>${appLanguage === "ar" ? "لا مهام للفريق" : "No team tasks yet"}</strong>${appLanguage === "ar" ? "أضف أول مهمة مشتركة." : "Add the first shared task below."}</div>`}
+      ${doneTasks.length ? `<details class="team-done"><summary>${appLanguage === "ar" ? "المكتملة" : "Completed"} (${doneTasks.length})</summary>${doneTasks.map((task) => teamTaskRow(task, selected)).join("")}</details>` : ""}`;
+    return `${pageHeading("STUDY TOGETHER", appLanguage === "ar" ? "الفرق" : "Teams", appLanguage === "ar" ? "شارك المهام مع مجموعتك الدراسية." : "Share tasks and momentum with your study group.", actions)}
+      <div class="team-switcher" role="tablist" aria-label="${appLanguage === "ar" ? "فرقك" : "Your teams"}">${teams.map((team) => `<button class="team-chip ${String(team.id) === String(selected.id) ? "selected" : ""}" data-action="team-select" data-id="${escapeHtml(team.id)}" role="tab" aria-selected="${String(team.id) === String(selected.id)}">${escapeHtml(team.name)}<small>${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(teamMemberCount(team.id))}</small></button>`).join("")}</div>
+      <div class="grid team-layout">
+        <section class="panel">
+          <div class="team-heading"><div><p class="eyebrow">${owner ? (appLanguage === "ar" ? "أنت المالك" : "YOU OWN THIS TEAM") : (appLanguage === "ar" ? "عضو" : "MEMBER")}</p><h2>${escapeHtml(selected.name)}</h2><p class="panel-copy">${escapeHtml(selected.description || (appLanguage === "ar" ? "لا وصف بعد." : "No description yet."))}</p></div><div class="team-code"><span>${appLanguage === "ar" ? "كود الانضمام" : "Join code"}</span><strong dir="ltr">${escapeHtml(selected.join_code || "—")}</strong></div></div>
+          <div class="team-members">${memberRows}</div>
+          <div class="team-actions-row">
+            <button class="button button-secondary button-small" data-action="team-refresh">${appLanguage === "ar" ? "تحديث" : "Refresh"}</button>
+            ${owner
+              ? `<button class="button button-quiet button-small danger-text" data-action="team-delete">${appLanguage === "ar" ? "حذف الفريق" : "Delete team"}</button>`
+              : `<button class="button button-quiet button-small danger-text" data-action="team-leave">${appLanguage === "ar" ? "مغادرة الفريق" : "Leave team"}</button>`}
+          </div>
+        </section>
+        <section class="panel">
+          ${panelHeading(appLanguage === "ar" ? "مهام الفريق" : "Team tasks", appLanguage === "ar" ? `${openTasks.length} مفتوحة · ${doneTasks.length} مكتملة` : `${openTasks.length} open · ${doneTasks.length} done`)}
+          <form id="team-task-form" class="team-task-form">
+            <input name="title" dir="auto" required maxlength="180" placeholder="${appLanguage === "ar" ? "أضف مهمة مشتركة" : "Add a shared task"}" aria-label="${appLanguage === "ar" ? "عنوان مهمة الفريق" : "Team task title"}" />
+            <input name="due_date" type="date" aria-label="${appLanguage === "ar" ? "تاريخ الاستحقاق" : "Due date"}" />
+            <input name="due_time" type="time" aria-label="${appLanguage === "ar" ? "وقت الاستحقاق" : "Due time"}" />
+            <select name="priority" aria-label="${appLanguage === "ar" ? "الأولوية" : "Priority"}"><option value="medium">${appLanguage === "ar" ? "متوسطة" : "Medium"}</option><option value="low">${appLanguage === "ar" ? "منخفضة" : "Low"}</option><option value="high">${appLanguage === "ar" ? "عالية" : "High"}</option><option value="urgent">${appLanguage === "ar" ? "عاجلة" : "Urgent"}</option></select>
+            <button class="button button-primary button-small" type="submit">＋</button>
+          </form>
+          <div class="team-task-list">${taskList}</div>
+        </section>
+      </div>
+      <p class="data-caption">${appLanguage === "ar" ? "مهام الفريق مرئية لأعضاء الفريق فقط بفضل سياسات RLS." : "Team tasks are visible only to members of this team through row-level security."}</p>`;
+  }
+
+  function openTeamModal() {
+    if (!session) { document.getElementById("open-auth")?.click(); return; }
+    const form = document.getElementById("team-form");
+    form.reset();
+    document.getElementById("team-error").textContent = "";
+    document.getElementById("team-modal").hidden = false;
+    form.elements.name.focus();
+  }
+
+  async function createTeam(formData) {
+    if (!supabase || !session) throw new Error("Sign in to create a team.");
+    const name = String(formData.get("name") || "").trim();
+    if (!name) throw new Error("Enter a team name.");
+    const { data, error } = await supabase.from("teams").insert({
+      name,
+      description: String(formData.get("description") || "").trim() || null,
+      owner_id: session.user.id,
+    }).select("id,name,description,join_code,owner_id,created_at").single();
+    if (error) throw error;
+    selectedTeamId = data.id;
+    teamsLoaded = false;
+    document.getElementById("team-modal").hidden = true;
+    showToast(appLanguage === "ar" ? "تم إنشاء الفريق." : "Team created.");
+    await loadTeams();
+  }
+
+  function openTeamJoinModal() {
+    if (!session) { document.getElementById("open-auth")?.click(); return; }
+    const form = document.getElementById("team-join-form");
+    form.reset();
+    document.getElementById("team-join-error").textContent = "";
+    document.getElementById("team-join-modal").hidden = false;
+    form.elements.code.focus();
+  }
+
+  async function joinTeam(formData) {
+    if (!supabase || !session) throw new Error("Sign in to join a team.");
+    const code = String(formData.get("code") || "").trim();
+    if (!code) throw new Error("Enter a join code.");
+    const { data, error } = await supabase.rpc("join_team", { p_code: code });
+    if (error) throw error;
+    selectedTeamId = Array.isArray(data) ? data[0] : data;
+    teamsLoaded = false;
+    document.getElementById("team-join-modal").hidden = true;
+    showToast(appLanguage === "ar" ? "انضممت إلى الفريق." : "You joined the team.");
+    await loadTeams();
+  }
+
+  async function deleteTeam(team) {
+    if (!team) return;
+    const message = appLanguage === "ar"
+      ? `حذف "${team.name}"؟ ستحذف مهام الفريق نهائيًا.`
+      : `Delete "${team.name}"? All team tasks and comments will be permanently removed.`;
+    if (!window.confirm(message)) return;
+    const { error } = await supabase.from("teams").delete().eq("id", team.id);
+    if (error) throw error;
+    teams = teams.filter((item) => String(item.id) !== String(team.id));
+    selectedTeamId = teams[0]?.id || null;
+    teamsLoaded = false;
+    showToast(appLanguage === "ar" ? "تم حذف الفريق." : "Team deleted.");
+    await loadTeams();
+  }
+
+  async function leaveTeam(team) {
+    if (!team) return;
+    if (!window.confirm(appLanguage === "ar" ? "مغادرة هذا الفريق؟" : "Leave this team?")) return;
+    const { error } = await supabase.from("team_members")
+      .delete().eq("team_id", team.id).eq("user_id", session.user.id);
+    if (error) throw error;
+    teams = teams.filter((item) => String(item.id) !== String(team.id));
+    selectedTeamId = teams[0]?.id || null;
+    teamsLoaded = false;
+    showToast(appLanguage === "ar" ? "غادرت الفريق." : "You left the team.");
+    await loadTeams();
+  }
+
+  async function addTeamTask(formData) {
+    const team = teams.find((item) => String(item.id) === String(selectedTeamId));
+    if (!team) throw new Error("Choose a team first.");
+    const title = String(formData.get("title") || "").trim();
+    if (!title) throw new Error("Enter a task title.");
+    const dateValue = String(formData.get("due_date") || "");
+    const timeValue = String(formData.get("due_time") || "") || "23:59";
+    const dueAt = dateValue ? new Date(`${dateValue}T${timeValue}:00`) : null;
+    if (dueAt && Number.isNaN(dueAt.getTime())) throw new Error("Choose a valid due date.");
+    const { data, error } = await supabase.from("team_tasks").insert({
+      team_id: team.id,
+      created_by: session.user.id,
+      title,
+      description: null,
+      priority: String(formData.get("priority") || "medium"),
+      due_at: dueAt ? dueAt.toISOString() : null,
+    }).select("id,team_id,created_by,assigned_to,title,description,status,priority,due_at,created_at").single();
+    if (error) throw error;
+    teamTasks.unshift(data);
+    render();
+    showToast(appLanguage === "ar" ? "تمت إضافة مهمة الفريق." : "Team task added.");
+  }
+
+  async function toggleTeamTask(id) {
+    const task = teamTasks.find((item) => String(item.id) === String(id));
+    if (!task) return;
+    const next = task.status === "completed" ? "not_started" : "completed";
+    const { error } = await supabase.from("team_tasks").update({ status: next }).eq("id", id);
+    if (error) { showToast(error.message); return; }
+    task.status = next;
+    render();
+  }
+
+  async function deleteTeamTask(id) {
+    if (!window.confirm(appLanguage === "ar" ? "حذف مهمة الفريق؟" : "Delete this team task?")) return;
+    const { error } = await supabase.from("team_tasks").delete().eq("id", id);
+    if (error) { showToast(error.message); return; }
+    teamTasks = teamTasks.filter((task) => String(task.id) !== String(id));
+    render();
+  }
+
+  function formatVoiceDuration(seconds) {
+    const total = Math.max(0, Math.round(Number(seconds) || 0));
+    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  }
+
+  async function loadVoiceNotes() {
+    if (!supabase || !session || voiceNotesLoading) return;
+    voiceNotesLoading = true;
+    voiceNotesError = "";
+    scheduleRender();
+    try {
+      const { data, error } = await supabase.from("voice_notes")
+        .select("id,note_id,title,storage_path,mime_type,duration_seconds,size_bytes,transcript,transcription_status,created_at")
+        .order("created_at", { ascending: false }).limit(100);
+      if (error) throw error;
+      const rows = await Promise.all((data || []).map(async (row) => {
+        const { data: signed, error: signError } = await supabase.storage
+          .from("voice-notes").createSignedUrl(row.storage_path, 3600);
+        return { ...row, signed_url: signError ? "" : signed?.signedUrl || "" };
+      }));
+      voiceNotes = rows;
+      voiceNotesSupported = true;
+    } catch (error) {
+      console.error("Could not load voice notes.", error);
+      voiceNotes = [];
+      if (isMissingRelation(error) || /bucket|not found/i.test(error.message || "")) {
+        voiceNotesSupported = false;
+        voiceNotesError = error.message || "";
+      } else {
+        voiceNotesError = error.message || "Could not load voice notes.";
+      }
+    } finally {
+      voiceNotesLoading = false;
+      voiceNotesLoaded = true;
+      scheduleRender();
+    }
+  }
+
+  function voiceNoteCard(note) {
+    const linked = note.note_id ? notes.find((item) => String(item.id) === String(note.note_id)) : null;
+    const url = note.signed_url || note.local_url || "";
+    return `<article class="voice-note-card" data-voice-id="${escapeHtml(note.id)}">
+      <div class="voice-note-head">
+        <span class="voice-note-icon">◉</span>
+        <div class="voice-note-title"><strong dir="auto">${escapeHtml(note.title || "Voice note")}</strong><small>${escapeHtml(new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(note.created_at || Date.now())))} · ${escapeHtml(formatVoiceDuration(note.duration_seconds))}${note.local ? (appLanguage === "ar" ? " · هذه الجلسة فقط" : " · this session only") : ""}</small></div>
+        <div class="voice-note-actions">
+          <button class="task-icon" data-action="voice-rename" data-id="${escapeHtml(note.id)}" aria-label="${appLanguage === "ar" ? "إعادة تسمية" : "Rename"}">✎</button>
+          <button class="task-icon danger" data-action="voice-delete" data-id="${escapeHtml(note.id)}" aria-label="${appLanguage === "ar" ? "حذف" : "Delete"}">×</button>
+        </div>
+      </div>
+      ${url ? `<audio controls preload="none" src="${escapeHtml(url)}"></audio>` : `<p class="data-caption">${appLanguage === "ar" ? "تعذر إنشاء رابط تشغيل خاص." : "Could not create a private playback link."}</p>`}
+      ${linked ? `<p class="voice-note-link">${appLanguage === "ar" ? "مرتبطة بـ" : "Linked to"} <button data-action="note-open" data-id="${escapeHtml(linked.id)}">${escapeHtml(linked.title || "Untitled note")}</button></p>` : ""}
+    </article>`;
+  }
+
+  function voicePage() {
+    const actions = `<button class="button button-primary" data-action="voice-open">● ${appLanguage === "ar" ? "تسجيل ملاحظة صوتية" : "Record voice note"}</button>`;
+    if (!session && !voiceNotes.length) {
+      return `${pageHeading("SPEAK IT, KEEP IT", appLanguage === "ar" ? "الملاحظات الصوتية" : "Voice notes", appLanguage === "ar" ? "سجّل أفكارك واحفظها بشكل خاص." : "Capture ideas out loud and keep them private.", actions)}
+        <section class="panel"><div class="empty-state"><strong>${appLanguage === "ar" ? "جرّب تسجيلًا لهذه الجلسة" : "Try a session-only recording"}</strong><p>${appLanguage === "ar" ? "يمكنك التسجيل الآن كمعاينة تبقى في هذا المتصفح فقط. سجّل الدخول للتخزين الخاص الدائم." : "You can record a preview now; it stays in this browser session only. Sign in to save recordings to your private storage."}</p><div class="teams-empty-actions"><button class="button button-primary button-small" data-action="voice-open">● ${appLanguage === "ar" ? "تسجيل معاينة" : "Record a preview"}</button><button class="button button-secondary button-small" id="open-auth">${appLanguage === "ar" ? "تسجيل الدخول للحفظ" : "Sign in to save"}</button></div></div></section>`;
+    }
+    if (session && voiceNotesLoading && !voiceNotesLoaded) {
+      return `${pageHeading("SPEAK IT, KEEP IT", appLanguage === "ar" ? "الملاحظات الصوتية" : "Voice notes", appLanguage === "ar" ? "سجّل أفكارك واحفظها بشكل خاص." : "Capture ideas out loud and keep them private.", actions)}<section class="panel"><div class="empty-state" role="status">${appLanguage === "ar" ? "جارٍ تحميل التسجيلات…" : "Loading recordings…"}</div></section>`;
+    }
+    const setupHint = !voiceNotesSupported
+      ? `<section class="panel"><div class="empty-state"><strong>${appLanguage === "ar" ? "التسجيلات الصوتية غير مهيأة" : "Voice note storage is not enabled yet"}</strong><p>${appLanguage === "ar" ? "طبّق ملف الترحيل 001_studyzone_enhancements.sql لإنشاء الجدول والحاوية الخاصة." : "Apply supabase/migrations/001_studyzone_enhancements.sql to create the private bucket and metadata table."}</p></div></section>`
+      : "";
+    const errorHint = voiceNotesError && voiceNotesSupported
+      ? `<section class="panel"><div class="empty-state"><strong>${appLanguage === "ar" ? "تعذر تحميل التسجيلات" : "Could not load recordings"}</strong><p>${escapeHtml(voiceNotesError)}</p><button class="button button-secondary button-small" data-action="voice-retry">${appLanguage === "ar" ? "إعادة المحاولة" : "Try again"}</button></div></section>`
+      : "";
+    const list = voiceNotes.length
+      ? `<div class="voice-note-grid">${voiceNotes.map(voiceNoteCard).join("")}</div>`
+      : `<div class="empty-state"><strong>${appLanguage === "ar" ? "لا تسجيلات بعد" : "No recordings yet"}</strong>${appLanguage === "ar" ? "اضغط تسجيل وابدأ بفكرة." : "Press record and capture a thought, a lecture summary, or a reminder."}</div>`;
+    return `${pageHeading("SPEAK IT, KEEP IT", appLanguage === "ar" ? "الملاحظات الصوتية" : "Voice notes", appLanguage === "ar" ? "سجّل أفكارك واحفظها بشكل خاص." : "Capture ideas out loud and keep them private.", actions)}
+      ${setupHint}${errorHint}
+      <section class="panel">${panelHeading(appLanguage === "ar" ? "تسجيلاتك" : "Your recordings", appLanguage === "ar" ? `${voiceNotes.length} ملاحظة صوتية` : `${voiceNotes.length} voice note${voiceNotes.length === 1 ? "" : "s"}`)}${list}</section>
+      <p class="data-caption">${session
+        ? (appLanguage === "ar" ? "الصوت يُحفظ في حاوية خاصة، ولا يمكن الوصول إليه إلا بروابط موقعة قصيرة الأجل." : "Audio is stored in a private bucket. Playback uses short-lived signed URLs; files are never public.")
+        : (appLanguage === "ar" ? "معاينات الضيف تبقى في هذه الجلسة فقط ولا تُرفع. سجّل الدخول للحفظ الدائم." : "Guest previews stay in this browser session only and are never uploaded. Sign in to save permanently.")}</p>`;
+  }
+
+  function resetVoiceRecorder({ keepPreview = false } = {}) {
+    if (voiceTimerHandle) { window.clearInterval(voiceTimerHandle); voiceTimerHandle = null; }
+    if (voiceRecorder && voiceRecorder.state !== "inactive") {
+      try { voiceRecorder.stop(); } catch { /* already stopped */ }
+    }
+    voiceRecorder = null;
+    if (voiceStream) {
+      voiceStream.getTracks().forEach((track) => track.stop());
+      voiceStream = null;
+    }
+    voiceChunks = [];
+    voiceBlob = null;
+    voiceDurationSeconds = 0;
+    voiceStartedAt = 0;
+    voicePausedTotal = 0;
+    voicePauseStartedAt = 0;
+    voiceState = "idle";
+    if (!keepPreview && voicePreviewUrl) {
+      URL.revokeObjectURL(voicePreviewUrl);
+      voicePreviewUrl = "";
+    }
+  }
+
+  function voiceElapsedMs() {
+    if (!voiceStartedAt) return 0;
+    const paused = voicePausedTotal + (voiceState === "paused" && voicePauseStartedAt ? Date.now() - voicePauseStartedAt : 0);
+    return Math.max(0, Date.now() - voiceStartedAt - paused);
+  }
+
+  function updateVoiceUi() {
+    const timer = document.getElementById("voice-timer");
+    const status = document.getElementById("voice-status");
+    const start = document.getElementById("voice-start");
+    const pause = document.getElementById("voice-pause");
+    const stop = document.getElementById("voice-stop");
+    const discard = document.getElementById("voice-discard");
+    const save = document.getElementById("voice-save");
+    const preview = document.getElementById("voice-preview");
+    if (!timer) return;
+    timer.textContent = formatVoiceDuration(voiceElapsedMs() / 1000);
+    const labels = {
+      idle: appLanguage === "ar" ? "جاهز عندما تكون." : "Ready when you are.",
+      requesting: appLanguage === "ar" ? "جارٍ طلب إذن الميكروفون…" : "Requesting microphone permission…",
+      recording: appLanguage === "ar" ? "جارٍ التسجيل…" : "Recording…",
+      paused: appLanguage === "ar" ? "التسجيل متوقف مؤقتًا." : "Recording paused.",
+      processing: appLanguage === "ar" ? "جارٍ تجهيز التسجيل…" : "Preparing your recording…",
+      ready: appLanguage === "ar" ? "استمع للمعاينة ثم احفظ." : "Preview your recording, then save it.",
+    };
+    if (status) status.textContent = labels[voiceState] || "";
+    if (start) { start.hidden = voiceState !== "idle" && voiceState !== "ready"; start.textContent = voiceState === "ready" ? (appLanguage === "ar" ? "● تسجيل جديد" : "● Record again") : (appLanguage === "ar" ? "● بدء التسجيل" : "● Start recording"); }
+    if (pause) { pause.hidden = voiceState !== "recording" && voiceState !== "paused"; pause.textContent = voiceState === "paused" ? (appLanguage === "ar" ? "استئناف" : "Resume") : (appLanguage === "ar" ? "إيقاف مؤقت" : "Pause"); }
+    if (stop) stop.hidden = voiceState !== "recording" && voiceState !== "paused";
+    if (discard) discard.hidden = voiceState === "idle" || voiceState === "processing";
+    if (save) save.disabled = voiceState !== "ready" || !voiceBlob;
+    if (preview) { preview.hidden = voiceState !== "ready" || !voicePreviewUrl; if (voicePreviewUrl) preview.src = voicePreviewUrl; }
+  }
+
+  function openVoiceModal() {
+    resetVoiceRecorder();
+    document.getElementById("voice-title").value = appLanguage === "ar" ? "ملاحظة صوتية" : "Voice note";
+    document.getElementById("voice-error").textContent = "";
+    document.getElementById("voice-note-link").innerHTML = `<option value="">${appLanguage === "ar" ? "بلا ملاحظة" : "No note"}</option>${notes.map((note) => `<option value="${escapeHtml(note.id)}">${escapeHtml(note.title || "Untitled note")}</option>`).join("")}`;
+    document.getElementById("voice-help").textContent = session
+      ? (appLanguage === "ar" ? "الحد الأقصى 10 دقائق. يُحفظ في مساحة خاصة بحسابك." : "Maximum length is 10 minutes. Saved to your private storage.")
+      : (appLanguage === "ar" ? "معاينة الضيف تُحفظ لهذه الجلسة فقط. سجّل الدخول للحفظ الدائم." : "Guest recordings stay in this browser session only. Sign in to save permanently.");
+    const modal = document.getElementById("voice-modal");
+    modal.hidden = false;
+    updateVoiceUi();
+    translateInterface();
+  }
+
+  async function startVoiceRecording() {
+    if (voiceState === "recording" || voiceState === "requesting") return;
+    const errorEl = document.getElementById("voice-error");
+    errorEl.textContent = "";
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      errorEl.textContent = appLanguage === "ar" ? "متصفحك لا يدعم تسجيل الصوت." : "Your browser does not support audio recording.";
+      return;
+    }
+    if (voiceState === "ready") resetVoiceRecorder();
+    voiceState = "requesting";
+    updateVoiceUi();
+    try {
+      voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (document.getElementById("voice-modal")?.hidden) {
+        voiceStream.getTracks().forEach((track) => track.stop());
+        voiceStream = null;
+        voiceState = "idle";
+        return;
+      }
+    } catch (error) {
+      voiceState = "idle";
+      updateVoiceUi();
+      const denied = error?.name === "NotAllowedError" || error?.name === "SecurityError";
+      errorEl.textContent = denied
+        ? (appLanguage === "ar" ? "تم رفض إذن الميكروفون. اسمح به من إعدادات المتصفح." : "Microphone permission was denied. Allow it in your browser settings and try again.")
+        : (appLanguage === "ar" ? `تعذر بدء التسجيل: ${error.message}` : `Could not start recording: ${error.message}`);
+      return;
+    }
+    const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
+    voiceMimeType = candidates.find((type) => window.MediaRecorder.isTypeSupported?.(type)) || "";
+    try {
+      voiceRecorder = new window.MediaRecorder(voiceStream, voiceMimeType ? { mimeType: voiceMimeType } : undefined);
+    } catch (error) {
+      errorEl.textContent = appLanguage === "ar" ? "تعذر إنشاء مسجل الصوت." : "Could not create the audio recorder.";
+      resetVoiceRecorder();
+      updateVoiceUi();
+      return;
+    }
+    voiceMimeType = voiceRecorder.mimeType || voiceMimeType || "audio/webm";
+    voiceChunks = [];
+    voiceBlob = null;
+    voiceDurationSeconds = 0;
+    voiceStartedAt = Date.now();
+    voicePausedTotal = 0;
+    voicePauseStartedAt = 0;
+    const activeRecorder = voiceRecorder;
+    activeRecorder.addEventListener("dataavailable", (event) => {
+      if (voiceRecorder === activeRecorder && event.data?.size) voiceChunks.push(event.data);
+    });
+    activeRecorder.addEventListener("stop", () => {
+      if (voiceRecorder !== activeRecorder) return;
+      voiceBlob = new Blob(voiceChunks, { type: voiceMimeType });
+      if (voicePreviewUrl) URL.revokeObjectURL(voicePreviewUrl);
+      voicePreviewUrl = URL.createObjectURL(voiceBlob);
+      voiceDurationSeconds = Math.max(1, Math.round(voiceElapsedMs() / 1000));
+      if (voiceStream) { voiceStream.getTracks().forEach((track) => track.stop()); voiceStream = null; }
+      voiceState = "ready";
+      if (voiceTimerHandle) { window.clearInterval(voiceTimerHandle); voiceTimerHandle = null; }
+      document.getElementById("voice-timer").textContent = formatVoiceDuration(voiceDurationSeconds);
+      updateVoiceUi();
+    });
+    voiceRecorder.start(250);
+    voiceState = "recording";
+    updateVoiceUi();
+    if (voiceTimerHandle) window.clearInterval(voiceTimerHandle);
+    voiceTimerHandle = window.setInterval(() => {
+      const timer = document.getElementById("voice-timer");
+      if (timer) timer.textContent = formatVoiceDuration(voiceElapsedMs() / 1000);
+      if (voiceState === "recording" && voiceElapsedMs() >= 600000) {
+        stopVoiceRecording();
+      }
+    }, 250);
+  }
+
+  function pauseVoiceRecording() {
+    if (!voiceRecorder) return;
+    if (voiceState === "recording") {
+      voiceRecorder.pause();
+      voiceState = "paused";
+      voicePauseStartedAt = Date.now();
+      updateVoiceUi();
+    } else if (voiceState === "paused") {
+      voiceRecorder.resume();
+      voicePausedTotal += Date.now() - voicePauseStartedAt;
+      voicePauseStartedAt = 0;
+      voiceState = "recording";
+      updateVoiceUi();
+    }
+  }
+
+  function stopVoiceRecording() {
+    if (!voiceRecorder || voiceRecorder.state === "inactive") return;
+    voiceDurationSeconds = Math.max(1, Math.round(voiceElapsedMs() / 1000));
+    voiceState = "processing";
+    updateVoiceUi();
+    try { voiceRecorder.stop(); } catch (error) { console.error("Could not stop recording.", error); }
+  }
+
+  function discardVoiceRecording() {
+    resetVoiceRecorder();
+    updateVoiceUi();
+  }
+
+  async function saveVoiceNote() {
+    if (!voiceBlob) return;
+    const errorEl = document.getElementById("voice-error");
+    errorEl.textContent = "";
+    const title = document.getElementById("voice-title").value.trim() || (appLanguage === "ar" ? "ملاحظة صوتية" : "Voice note");
+    const noteId = document.getElementById("voice-note-link").value || null;
+    const saveButton = document.getElementById("voice-save");
+    saveButton.disabled = true;
+    if (!supabase || !session) {
+      voiceNotes.unshift({
+        id: `local-voice-${Date.now()}`,
+        title,
+        note_id: noteId,
+        duration_seconds: voiceDurationSeconds,
+        created_at: new Date().toISOString(),
+        local: true,
+        local_url: voicePreviewUrl,
+      });
+      voicePreviewUrl = "";
+      resetVoiceRecorder({ keepPreview: true });
+      document.getElementById("voice-modal").hidden = true;
+      if (currentPage === "voice") render();
+      showToast(appLanguage === "ar" ? "تم حفظ المعاينة لهذه الجلسة فقط. سجّل الدخول للحفظ الدائم." : "Preview saved for this browser session only. Sign in to save permanently.");
+      return;
+    }
+    try {
+      const extension = /mp4|m4a/.test(voiceMimeType) ? "m4a" : /ogg/.test(voiceMimeType) ? "ogg" : "webm";
+      const unique = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const path = `${session.user.id}/${unique}.${extension}`;
+      const upload = await supabase.storage.from("voice-notes").upload(path, voiceBlob, {
+        contentType: voiceMimeType || "audio/webm",
+        upsert: false,
+      });
+      if (upload.error) throw upload.error;
+      const insert = await supabase.from("voice_notes").insert({
+        note_id: noteId,
+        title,
+        storage_path: path,
+        mime_type: voiceMimeType || "audio/webm",
+        duration_seconds: voiceDurationSeconds,
+        size_bytes: voiceBlob.size,
+      }).select("id,note_id,title,storage_path,mime_type,duration_seconds,size_bytes,transcript,transcription_status,created_at").single();
+      if (insert.error) {
+        await supabase.storage.from("voice-notes").remove([path]);
+        throw insert.error;
+      }
+      const signed = await supabase.storage.from("voice-notes").createSignedUrl(path, 3600);
+      voiceNotes.unshift({ ...insert.data, signed_url: signed.error ? "" : signed.data?.signedUrl || "" });
+      document.getElementById("voice-modal").hidden = true;
+      resetVoiceRecorder();
+      if (currentPage === "voice") render();
+      showToast(appLanguage === "ar" ? "تم حفظ الملاحظة الصوتية." : "Voice note saved.");
+    } catch (error) {
+      console.error("Could not save the voice note.", error);
+      errorEl.textContent = isMissingRelation(error)
+        ? (appLanguage === "ar" ? "جدول الملاحظات الصوتية غير موجود. طبّق ملف الترحيل أولًا." : "The voice_notes table is missing. Apply the migration first.")
+        : (appLanguage === "ar" ? `تعذر حفظ التسجيل: ${error.message}` : `Could not save the recording: ${error.message}`);
+      saveButton.disabled = false;
+    }
+  }
+
+  async function renameVoiceNote(id) {
+    const note = voiceNotes.find((item) => String(item.id) === String(id));
+    if (!note) return;
+    const next = window.prompt(appLanguage === "ar" ? "اسم جديد للتسجيل" : "New recording title", note.title || "Voice note");
+    if (!next || !next.trim()) return;
+    note.title = next.trim().slice(0, 180);
+    if (!note.local) {
+      const { error } = await supabase.from("voice_notes").update({ title: note.title }).eq("id", note.id);
+      if (error) { showToast(error.message); return; }
+    }
+    render();
+  }
+
+  async function deleteVoiceNote(id) {
+    const note = voiceNotes.find((item) => String(item.id) === String(id));
+    if (!note) return;
+    if (!window.confirm(appLanguage === "ar" ? "حذف هذا التسجيل؟" : "Delete this recording?")) return;
+    try {
+      if (!note.local) {
+        const { error } = await supabase.from("voice_notes").delete().eq("id", note.id);
+        if (error) throw error;
+        await supabase.storage.from("voice-notes").remove([note.storage_path]);
+      }
+      if (note.local_url) URL.revokeObjectURL(note.local_url);
+      voiceNotes = voiceNotes.filter((item) => String(item.id) !== String(id));
+      render();
+      showToast(appLanguage === "ar" ? "تم حذف التسجيل." : "Recording deleted.");
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  function minutesFromTime(value) {
+    const [hours, minutes] = String(value || "").split(":").map(Number);
+    if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
+    return hours * 60 + minutes;
+  }
+
+  function isDoNotDisturbActive(prefs = notificationPrefs) {
+    if (!prefs.dnd) return false;
+    const start = minutesFromTime(prefs.start);
+    const end = minutesFromTime(prefs.end);
+    if (start == null || end == null || start === end) return false;
+    const now = new Date();
+    const current = now.getHours() * 60 + now.getMinutes();
+    return start < end ? current >= start && current < end : current >= start || current < end;
+  }
+
+  function playNotificationSound() {
+    if (!notificationPrefs.sound || isDoNotDisturbActive()) return;
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+      const context = new AudioContext();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(880, context.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(620, context.currentTime + 0.18);
+      gain.gain.setValueAtTime(0.0001, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.16, context.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.28);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start();
+      oscillator.stop(context.currentTime + 0.3);
+      oscillator.addEventListener("ended", () => { void context.close(); });
+    } catch (error) {
+      console.warn("Could not play the notification sound.", error);
+    }
+  }
+
+  function notificationPreferencesPanel() {
+    const dndActive = isDoNotDisturbActive();
+    return `<section class="panel">${panelHeading(appLanguage === "ar" ? "إشعارات التطبيق" : "Notification sounds")}
+      <form id="notification-prefs-form" class="form-stack notification-prefs-form">
+        <label class="focus-setting-toggle"><span>${appLanguage === "ar" ? "صوت عند وصول إشعار جديد" : "Play a sound for new notifications"}</span><input type="checkbox" name="sound" ${notificationPrefs.sound ? "checked" : ""}><i aria-hidden="true"></i></label>
+        <label class="focus-setting-toggle"><span>${appLanguage === "ar" ? "وضع عدم الإزعاج" : "Do not disturb"}</span><input type="checkbox" name="dnd" ${notificationPrefs.dnd ? "checked" : ""}><i aria-hidden="true"></i></label>
+        <div class="form-row">
+          <label>${appLanguage === "ar" ? "من" : "From"}<input type="time" name="dnd_start" value="${escapeHtml(notificationPrefs.start)}" /></label>
+          <label>${appLanguage === "ar" ? "إلى" : "To"}<input type="time" name="dnd_end" value="${escapeHtml(notificationPrefs.end)}" /></label>
+        </div>
+        <p class="data-caption">${dndActive ? (appLanguage === "ar" ? "وضع عدم الإزعاج نشط الآن، لذلك لن تُشغّل الأصوات." : "Do not disturb is active right now, so sounds are suppressed.") : (appLanguage === "ar" ? "تُطبّق هذه الإعدادات في هذا المتصفح وتحفظ في حسابك عند توفر الجدول." : "These preferences apply in this browser and sync to your account when the preferences table is available.")}</p>
+        <button class="button button-primary button-small" type="submit">${appLanguage === "ar" ? "حفظ إعدادات الإشعارات" : "Save notification settings"}</button>
+      </form>
+    </section>`;
+  }
+
+  async function saveNotificationPreferences(formData) {
+    notificationPrefs = {
+      sound: formData.get("sound") === "on",
+      dnd: formData.get("dnd") === "on",
+      start: String(formData.get("dnd_start") || "22:00"),
+      end: String(formData.get("dnd_end") || "07:00"),
+    };
+    localStorage.setItem(notificationPrefsKey, JSON.stringify(notificationPrefs));
+    if (supabase && session) {
+      const { error } = await supabase.from("user_notification_preferences").upsert({
+        user_id: session.user.id,
+        sound_enabled: notificationPrefs.sound,
+        dnd_enabled: notificationPrefs.dnd,
+        dnd_start: notificationPrefs.start,
+        dnd_end: notificationPrefs.end,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "user_id" });
+      if (error && !isMissingRelation(error)) throw error;
+    }
+    render();
+    showToast(appLanguage === "ar" ? "تم حفظ إعدادات الإشعارات." : "Notification settings saved.");
+  }
+
+  async function enableTaskNotifications() {
+    if (!supabase || !session) throw new Error("Sign in to enable task notifications.");
+    const vapidPublicKey = window.studyFlowSupabaseConfig?.vapidPublicKey;
+    if (!vapidPublicKey) throw new Error("Daily push is not configured yet. Ask your administrator to finish the VAPID setup.");
+    if (!window.isSecureContext || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      throw new Error("Push notifications require a supported browser and HTTPS (localhost is supported for development).");
+    }
+    const permission = Notification.permission === "granted" ? Notification.permission : await Notification.requestPermission();
+    if (permission !== "granted") throw new Error("Notification permission is required to enable task notifications.");
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription()
+      || await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: vapidApplicationServerKey(vapidPublicKey),
+      });
+    const serialized = subscription.toJSON();
+    const p256dh = serialized.keys?.p256dh;
+    const authSecret = serialized.keys?.auth;
+    if (!subscription.endpoint || !p256dh || !authSecret) {
+      await subscription.unsubscribe();
+      throw new Error("The browser returned an incomplete push subscription.");
+    }
+    if (!isSupportedPushEndpoint(subscription.endpoint)) {
+      await subscription.unsubscribe();
+      throw new Error("This browser's push service is not currently supported.");
+    }
+    const { error } = await supabase.from("push_subscriptions").upsert({
+      user_id: session.user.id,
+      endpoint: subscription.endpoint,
+      p256dh,
+      auth_secret: authSecret,
+    }, { onConflict: "user_id,endpoint" });
+    if (error) {
+      await subscription.unsubscribe();
+      throw error;
+    }
+    const localTime = String(dailyReminderPreference.local_time || "09:00");
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const { error: reminderError } = await supabase.from("daily_reminder_preferences").upsert({
+      user_id: session.user.id,
+      enabled: true,
+      local_time: localTime,
+      timezone,
+    }, { onConflict: "user_id" });
+    if (reminderError) throw reminderError;
+    dailyReminderPreference = { enabled: true, local_time: localTime, timezone };
+    render();
+    showToast(appLanguage === "ar" ? "تم تفعيل إشعارات المهام." : "Task notifications enabled.");
+  }
+
   function notificationsPage() {
     const items = session ? userNotifications : [];
     const rows = items.map((item) => `<article class="notification-card ${item.read_at ? "" : "unread"}"><i class="notification-indicator"></i><div><strong dir="auto">${escapeHtml(item.title)}</strong><p dir="auto">${escapeHtml(item.message)}</p></div><time dir="auto">${escapeHtml(new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.created_at)))}</time></article>`).join("");
     const empty = `<div class="empty-state"><strong>${session ? "All caught up" : "Sign in to sync notifications"}</strong>${session ? "Deadline reminders will appear here when generated." : "Your private deadline notifications are attached to your account."}</div>`;
-    return `${pageHeading("UPDATES", "Notifications", "A quiet place for reminders, milestones, and important updates.", `<button class="button button-secondary button-small" data-action="mark-notifications-read" ${items.every((item) => item.read_at) ? "disabled" : ""}>Mark all read</button>`)}<section class="panel"><div class="notification-list">${rows || empty}</div></section>`;
+    const dndActive = isDoNotDisturbActive();
+    const soundLabel = notificationPrefs.sound
+      ? (dndActive ? (appLanguage === "ar" ? "الصوت مكتوم الآن (عدم الإزعاج)" : "Sound is muted right now (do not disturb)") : (appLanguage === "ar" ? "صوت الإشعارات مفعّل" : "Notification sound is on"))
+      : (appLanguage === "ar" ? "صوت الإشعارات متوقف" : "Notification sound is off");
+    return `${pageHeading("UPDATES", appLanguage === "ar" ? "الإشعارات" : "Notifications", appLanguage === "ar" ? "مكان هادئ للتذكيرات والإنجازات والتحديثات المهمة." : "A quiet place for reminders, milestones, and important updates.", `<button class="button button-secondary button-small" data-navigate="settings">${appLanguage === "ar" ? "إعدادات الصوت" : "Sound settings"}</button><button class="button button-secondary button-small" data-action="mark-notifications-read" ${items.every((item) => item.read_at) ? "disabled" : ""}>${appLanguage === "ar" ? "تعليم الكل كمقروء" : "Mark all read"}</button>`)}<p class="data-caption notification-sound-state">${escapeHtml(soundLabel)}</p><section class="panel"><div class="notification-list">${rows || empty}</div>${session ? `<div class="notifications-actions"><button class="button button-primary button-small" data-action="notifications-enable-task-reminders">${appLanguage === "ar" ? "تفعيل إشعارات المهام" : "Enable task notifications"}</button></div>` : ""}</section>`;
   }
 
   function profilePage() {
@@ -2346,7 +4042,7 @@
     const reminderForm = session
       ? `<form id="daily-reminder-form" class="form-stack daily-reminder-form"><label class="focus-setting-toggle"><span>${translateUiText("Enable push reminders")}</span><input type="checkbox" name="enabled" ${dailyReminderPreference.enabled ? "checked" : ""}><i aria-hidden="true"></i></label><p class="data-caption">${translateUiText("Get a daily task check-in plus deadline and achievement notifications, even when Study Zone is closed.")}</p><label>${translateUiText("Reminder time")}<input type="time" name="local_time" value="${escapeHtml(String(dailyReminderPreference.local_time || "09:00").slice(0, 5))}" required></label><small>${translateUiText("Uses this device’s timezone.")}</small><button class="button button-primary button-small" type="submit">${translateUiText("Save reminder")}</button><p class="data-caption">${translateUiText("Push reminders need notification permission and the server setup described in README.md.")}</p><p class="form-error" data-reminder-error role="alert"></p></form>`
       : `<p class="data-caption">${translateUiText("Sign in to configure daily reminders.")}</p>`;
-    return `${pageHeading("MAKE IT YOURS", "Settings", "Tune Study Zone to the way you like to work.", "")}<div class="grid settings-grid"><section class="panel">${panelHeading("Appearance")}<div class="setting-row"><div><strong>Dark theme</strong><small>Designed for focus, day or night</small></div><button class="toggle on" data-action="theme-toggle" aria-label="Toggle light theme" aria-pressed="false"></button></div><div class="setting-row"><div><strong>Emerald accents</strong><small>Official Study Zone color palette</small></div><span class="subject-color"></span></div><div class="setting-row"><div><strong>Motion & celebrations</strong><small>Choose how much motion Study Zone uses.</small></div></div><div class="motion-options" role="group" aria-label="Animation level">${motionOptions}</div></section><section class="panel">${panelHeading("Language")}<div class="setting-row"><div><strong>Display language</strong><small>Deadlines appear in the selected language.</small></div></div><div class="language-switcher" role="group" aria-label="Choose language"><span class="language-indicator ${appLanguage === "ar" ? "arabic" : ""}"></span><button class="language-option ${appLanguage === "ar" ? "selected" : ""}" data-language="ar" aria-pressed="${appLanguage === "ar"}">عربي <span>العربية</span></button><button class="language-option ${appLanguage === "en" ? "selected" : ""}" data-language="en" aria-pressed="${appLanguage === "en"}">EN <span>English</span></button></div></section><section class="panel">${panelHeading("Reminders")}<div class="setting-row"><div><strong>Daily study check-in</strong><small>Review your open tasks once a day, even when Study Zone is closed.</small></div></div>${reminderForm}</section><section class="panel">${panelHeading("Data & privacy")}<div class="setting-row"><div><strong>Account data</strong><small>Stored in your private Supabase account when configured</small></div></div><div class="setting-row"><div><strong>Service keys</strong><small>Only the public anon key belongs in this browser config.</small></div></div></section></div>`;
+    return `${pageHeading("MAKE IT YOURS", "Settings", "Tune Study Zone to the way you like to work.", "")}<div class="grid settings-grid"><section class="panel">${panelHeading("Appearance")}<div class="setting-row"><div><strong>Dark theme</strong><small>Designed for focus, day or night</small></div><button class="toggle on" data-action="theme-toggle" aria-label="Toggle light theme" aria-pressed="false"></button></div><div class="setting-row"><div><strong>Emerald accents</strong><small>Official Study Zone color palette</small></div><span class="subject-color"></span></div><div class="setting-row"><div><strong>Motion & celebrations</strong><small>Choose how much motion Study Zone uses.</small></div></div><div class="motion-options" role="group" aria-label="Animation level">${motionOptions}</div></section><section class="panel">${panelHeading("Language")}<div class="setting-row"><div><strong>Display language</strong><small>Deadlines appear in the selected language.</small></div></div><div class="language-switcher" role="group" aria-label="Choose language"><span class="language-indicator ${appLanguage === "ar" ? "arabic" : ""}"></span><button class="language-option ${appLanguage === "ar" ? "selected" : ""}" data-language="ar" aria-pressed="${appLanguage === "ar"}">عربي <span>العربية</span></button><button class="language-option ${appLanguage === "en" ? "selected" : ""}" data-language="en" aria-pressed="${appLanguage === "en"}">EN <span>English</span></button></div></section><section class="panel">${panelHeading("Reminders")}<div class="setting-row"><div><strong>Daily study check-in</strong><small>Review your open tasks once a day, even when Study Zone is closed.</small></div></div>${reminderForm}</section>${notificationPreferencesPanel()}<section class="panel">${panelHeading("Data & privacy")}<div class="setting-row"><div><strong>Account data</strong><small>Stored in your private Supabase account when configured</small></div></div><div class="setting-row"><div><strong>Service keys</strong><small>Only the public anon key belongs in this browser config.</small></div></div></section></div>`;
   }
 
   function formatAdminDate(value) {
@@ -2410,13 +4106,13 @@
 
   const pageRenderers = {
     dashboard: dashboardPage, planner: plannerPage, tasks: taskPage, deadlines: deadlinesPage, subjects: subjectsPage,
-    files: filesPage, notes: notesPage, focus: focusPage, analytics: analyticsPage,
+    files: filesPage, notes: notesPage, voice: voicePage, teams: teamsPage, focus: focusPage, analytics: analyticsPage,
     goals: goalsPage, exams: examsPage, achievements: achievementsPage,
     notifications: notificationsPage, profile: profilePage, settings: settingsPage, admin: adminPage,
   };
   const pageTitles = {
     dashboard: "Dashboard", planner: "Study planner", tasks: "Tasks", deadlines: "Deadlines", subjects: "Subjects",
-    files: "Study files", notes: "Notes", focus: "Focus timer", analytics: "Analytics",
+    files: "Study files", notes: "Notes", voice: "Voice notes", teams: "Teams", focus: "Focus timer", analytics: "Analytics",
     goals: "Goals", exams: "Exams & results", achievements: "Achievements",
     notifications: "Notifications", profile: "Profile", settings: "Settings", admin: "Admin",
   };
@@ -2430,7 +4126,38 @@
     if (indicator) indicator.style.transform = `scaleX(${progress})`;
   }
 
+  // Coalesce data-loading renders into one frame so opening the app does not
+  // rebuild the whole page several times while Supabase requests resolve.
+  let scheduledRenderHandle = 0;
+  let renderBatchDepth = 0;
+  let renderPendingInBatch = false;
+  function beginRenderBatch() {
+    renderBatchDepth += 1;
+  }
+  function endRenderBatch() {
+    renderBatchDepth = Math.max(0, renderBatchDepth - 1);
+    if (renderBatchDepth === 0 && renderPendingInBatch) {
+      renderPendingInBatch = false;
+      scheduleRender();
+    }
+  }
+  function scheduleRender() {
+    if (renderBatchDepth > 0) {
+      renderPendingInBatch = true;
+      return;
+    }
+    if (scheduledRenderHandle) return;
+    scheduledRenderHandle = window.requestAnimationFrame(() => {
+      scheduledRenderHandle = 0;
+      render();
+    });
+  }
+
   function render() {
+    if (scheduledRenderHandle) {
+      window.cancelAnimationFrame(scheduledRenderHandle);
+      scheduledRenderHandle = 0;
+    }
     if (!pageRenderers[currentPage]) currentPage = "dashboard";
     document.body.classList.toggle("focus-distraction", currentPage === "focus" && distractionFree);
     document.documentElement.lang = appLanguage;
@@ -2478,6 +4205,14 @@
         statusFilter = event.target.value;
         render();
       });
+      document.getElementById("task-date")?.addEventListener("change", (event) => {
+        const nextDate = parseLocalDateKey(event.target.value);
+        if (nextDate) {
+          taskViewDate = nextDate;
+          taskViewMode = "day";
+          render();
+        }
+      });
     }
     if (currentPage === "admin" && adminAuthorization.status === "authorized") {
       document.getElementById("admin-users-search")?.addEventListener("submit", (event) => {
@@ -2502,6 +4237,30 @@
       });
       document.getElementById("deadline-sort")?.addEventListener("change", (event) => {
         deadlineSort = event.target.value;
+        render();
+      });
+    }
+    if (currentPage === "teams" && session && !teamsLoaded && !teamsLoading) {
+      void loadTeams();
+    }
+    if (currentPage === "voice" && session && !voiceNotesLoaded && !voiceNotesLoading) {
+      void loadVoiceNotes();
+    }
+    if (currentPage === "notes") {
+      document.getElementById("note-search")?.addEventListener("input", (event) => {
+        noteSearch = event.target.value;
+        const cursor = event.target.selectionStart;
+        render();
+        const input = document.getElementById("note-search");
+        input.focus();
+        input.setSelectionRange(cursor, cursor);
+      });
+      document.getElementById("note-subject-filter")?.addEventListener("change", (event) => {
+        noteSubjectFilter = event.target.value;
+        render();
+      });
+      document.getElementById("note-sort")?.addEventListener("change", (event) => {
+        noteSort = event.target.value;
         render();
       });
     }
@@ -2603,7 +4362,11 @@
         const image = document.createElement("img");
         image.src = accountProfile.avatar_display_url;
         image.alt = "";
+        image.decoding = "async";
         image.referrerPolicy = "no-referrer";
+        image.addEventListener("error", () => {
+          avatar.textContent = initialsText;
+        }, { once: true });
         avatar.replaceChildren(image);
       } else {
         avatar.textContent = initialsText;
@@ -2623,7 +4386,7 @@
   async function loadRemoteTasks() {
     if (!supabase || !session) return;
     deadlinesLoading = true;
-    render();
+    scheduleRender();
     const { data: subjectData, error: subjectError } = await supabase.from("subjects")
       .select("id,name,color,credit_hours")
       .order("name");
@@ -2638,34 +4401,67 @@
         progress: null,
       }));
     }
-    const { data, error } = await supabase.from("tasks")
-      .select("id,title,description,subject_id,starts_at,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,completed_at,subjects(name)")
+    const baseTaskColumns = "id,title,description,subject_id,starts_at,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,completed_at,subjects(name)";
+    const recurrenceColumns = "recurrence_group_id,recurrence_type,recurrence_days,recurrence_until";
+    let taskResult = await supabase.from("tasks")
+      .select(`${baseTaskColumns},${recurrenceColumns}`)
       .order("due_at", { ascending: true, nullsFirst: false });
+    // The recurrence columns ship with migration 001. Until it is applied, keep the
+    // existing task feature (and existing task data) working without repeating.
+    if (taskResult.error && /(recurrence_|column .* does not exist|42703|PGRST204)/i.test(`${taskResult.error.code || ""} ${taskResult.error.message || ""}`)) {
+      recurrenceSupported = false;
+      taskResult = await supabase.from("tasks").select(baseTaskColumns)
+        .order("due_at", { ascending: true, nullsFirst: false });
+    } else if (!taskResult.error) {
+      recurrenceSupported = true;
+    }
+    const { data, error } = taskResult;
     if (error) {
       tasks = [];
       deadlinesLoading = false;
-      render();
+      scheduleRender();
       showToast(`Could not load tasks: ${error.message}`);
       console.error("Supabase task read failed.", error);
       return;
     }
-    tasks = (data || []).map((task) => ({ ...task, subject: task.subjects?.name || "Independent study" }));
+    tasks = (data || []).map((task) => ({
+      recurrence_group_id: null,
+      recurrence_type: "none",
+      recurrence_days: [],
+      recurrence_until: null,
+      ...task,
+      subject: task.subjects?.name || "Independent study",
+    }));
     deadlinesLoading = false;
-    render();
+    scheduleRender();
   }
 
   async function loadAccountWorkspace() {
     if (!supabase || !session) return;
     const userId = session.user.id;
+    const loadNoteRows = async () => {
+      const withColor = await supabase.from("notes")
+        .select("id,title,content,subject_id,is_favorite,color,created_at,updated_at")
+        .order("updated_at", { ascending: false });
+      if (withColor.error && /color/i.test(withColor.error.message || "")) {
+        notesColorSupported = false;
+        return supabase.from("notes")
+          .select("id,title,content,subject_id,is_favorite,created_at,updated_at")
+          .order("updated_at", { ascending: false });
+      }
+      notesColorSupported = !withColor.error;
+      return withColor;
+    };
     const [scheduleResult, fileResult, noteResult, goalResult, examResult, profileResult, reminderResult] = await Promise.all([
       supabase.from("schedules").select("id,title,details,subject_id,starts_at,ends_at,recurrence").order("starts_at"),
       supabase.from("study_files").select("id,name,storage_path,mime_type,size_bytes,subject_id,is_favorite,created_at").order("created_at", { ascending: false }),
-      supabase.from("notes").select("id,title,content,subject_id,is_favorite,created_at,updated_at").order("updated_at", { ascending: false }),
+      loadNoteRows(),
       supabase.from("goals").select("id,title,details,period,target_value,current_value,unit,starts_at,due_at,completed_at").order("created_at", { ascending: false }),
       supabase.from("exams").select("id,title,details,subject_id,exam_at,max_marks,exam_results(obtained_marks,notes)").order("exam_at"),
       supabase.from("profiles").select("id,display_name,avatar_url,timezone,language").eq("id", userId).maybeSingle(),
       supabase.from("daily_reminder_preferences").select("enabled,local_time,timezone").eq("user_id", userId).maybeSingle(),
     ]);
+    notesSchemaChecked = true;
 
     if (session?.user?.id !== userId) return;
     const reportError = (label, result) => {
@@ -2691,8 +4487,8 @@
       subject: subjectName(file.subject_id),
     }));
 
-    if (reportError("notes", noteResult)) sampleNotes = [];
-    else sampleNotes = (noteResult.data || []).map((note) => ({
+    if (reportError("notes", noteResult)) notes = [];
+    else notes = (noteResult.data || []).map((note) => ({
       ...note,
       subject: subjectName(note.subject_id),
       updated: new Intl.DateTimeFormat(appLanguage, { dateStyle: "medium" }).format(new Date(note.updated_at)),
@@ -2729,8 +4525,23 @@
         timezone: reminderResult.data?.timezone || "UTC",
       };
     }
+
+    const notificationResult = await supabase.from("user_notification_preferences")
+      .select("sound_enabled,dnd_enabled,dnd_start,dnd_end")
+      .eq("user_id", userId).maybeSingle();
+    if (!notificationResult.error && notificationResult.data) {
+      notificationPrefs = {
+        sound: notificationResult.data.sound_enabled !== false,
+        dnd: notificationResult.data.dnd_enabled === true,
+        start: String(notificationResult.data.dnd_start || "22:00").slice(0, 5),
+        end: String(notificationResult.data.dnd_end || "07:00").slice(0, 5),
+      };
+      localStorage.setItem(notificationPrefsKey, JSON.stringify(notificationPrefs));
+    } else if (notificationResult.error && !isMissingRelation(notificationResult.error)) {
+      console.error("Could not load notification preferences.", notificationResult.error);
+    }
     updateUserUi();
-    render();
+    scheduleRender();
   }
 
   async function resolveProfileAvatarUrl(avatarPath, userId) {
@@ -2760,7 +4571,19 @@
     goals = previewGoals;
     examResults = previewExamResults;
     sampleFiles = previewFiles;
-    sampleNotes = previewNotes;
+    notes = readLocalNotes();
+    teams = [];
+    teamMembers = [];
+    teamTasks = [];
+    selectedTeamId = null;
+    teamsLoaded = false;
+    teamsSupported = true;
+    teamsError = "";
+    voiceNotes = [];
+    voiceNotesLoaded = false;
+    voiceNotesSupported = true;
+    voiceNotesError = "";
+    notificationsPrimed = false;
   }
 
   function clearAccountWorkspace() {
@@ -2770,7 +4593,19 @@
     goals = [];
     examResults = [];
     sampleFiles = [];
-    sampleNotes = [];
+    notes = [];
+    teams = [];
+    teamMembers = [];
+    teamTasks = [];
+    selectedTeamId = null;
+    teamsLoaded = false;
+    teamsSupported = true;
+    teamsError = "";
+    voiceNotes = [];
+    voiceNotesLoaded = false;
+    voiceNotesSupported = true;
+    voiceNotesError = "";
+    notificationsPrimed = false;
   }
 
   async function loadLanguagePreference() {
@@ -2898,23 +4733,40 @@
     if (error) throw error;
   }
 
-  async function loadRemoteNotifications() {
+  async function loadRemoteNotifications({ silent = false } = {}) {
     if (!supabase || !session) {
       userNotifications = [];
+      notificationsPrimed = false;
       return;
     }
+    const previousIds = new Set(userNotifications.map((item) => String(item.id)));
     const { data, error } = await supabase.from("notifications")
       .select("id,type,title,message,read_at,created_at")
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) {
       console.error("Could not load notifications.", error);
-      showToast(`Could not load notifications: ${error.message}`);
+      if (!silent) showToast(`Could not load notifications: ${error.message}`);
       return;
     }
-    userNotifications = data || [];
-    if (currentPage === "notifications") render();
+    const nextItems = data || [];
+    const freshUnread = nextItems.filter((item) => !item.read_at && !previousIds.has(String(item.id)));
+    userNotifications = nextItems;
+    if (notificationsPrimed && freshUnread.length) {
+      playNotificationSound();
+      if (!silent && currentPage !== "notifications") {
+        showToast(freshUnread.length === 1 ? freshUnread[0].title : `${freshUnread.length} new notifications`);
+      }
+    }
+    notificationsPrimed = true;
+    if (currentPage === "notifications") scheduleRender();
   }
+
+  window.setInterval(() => {
+    if (session && document.visibilityState === "visible") {
+      void loadRemoteNotifications({ silent: true });
+    }
+  }, 120000);
 
   async function markNotificationsRead() {
     if (!supabase || !session) {
@@ -2957,38 +4809,69 @@
     const title = String(formData.get("title") || "").trim();
     if (!title) throw new Error("Enter a task name.");
     const dueValue = String(formData.get("due_at") || "");
+    const startsValue = String(formData.get("starts_at") || "");
     const repeatType = String(formData.get("repeat_type") || "none");
+    if (dueValue && startsValue && new Date(startsValue) > new Date(dueValue)) {
+      throw new Error("The start time must be on or before the due time.");
+    }
+    if (repeatType !== "none" && !recurrenceSupported && supabase && session) {
+      throw new Error("Repeating tasks need the latest Supabase migration. Apply supabase/migrations/001_studyzone_enhancements.sql first.");
+    }
     const recurrence = buildRecurrencePlan(formData, dueValue.slice(0, 10), repeatType);
     const groupId = repeatType === "none" ? null : focusId();
+    const startTime = startsValue.slice(11, 16);
+    const dueTime = dueValue.slice(11, 16) || "23:59";
     const baseTask = {
       title,
+      description: String(formData.get("description") || "").trim(),
       subject_id: formData.get("subject_id") || null,
-      priority: formData.get("priority"),
+      priority: formData.get("priority") || "medium",
       estimated_minutes: Number(formData.get("estimated_minutes")) || 45,
-      status: "not_started",
+      reminder_before_minutes: Number(formData.get("reminder_before_minutes")) || 0,
+      status: String(formData.get("status") || "not_started"),
+      completed_at: String(formData.get("status") || "") === "completed" ? new Date().toISOString() : null,
     };
+    if (startsValue) baseTask.starts_at = new Date(startsValue).toISOString();
     if (dueValue) baseTask.due_at = new Date(dueValue).toISOString();
-    const recurrenceFields = {
-      recurrence_group_id: groupId,
-      recurrence_type: repeatType,
-      recurrence_days: recurrence.days,
-      recurrence_until: recurrence.until,
-    };
-    const instances = recurrence.dateKeys.map((dateKey) => {
+    const recurrenceFields = recurrenceSupported
+      ? {
+        recurrence_group_id: groupId,
+        recurrence_type: repeatType,
+        recurrence_days: recurrence.days,
+        recurrence_until: recurrence.until,
+      }
+      : {};
+    const baseDueKey = dueValue.slice(0, 10);
+    const instances = recurrence.dateKeys.map((occurrenceKey) => {
       const occurrence = { ...baseTask, ...recurrenceFields };
-      if (dueValue && dateKey) occurrence.due_at = new Date(`${dateKey}T${dueValue.slice(11, 16) || "23:59"}`).toISOString();
+      if (dueValue && occurrenceKey) {
+        occurrence.due_at = new Date(`${occurrenceKey}T${dueTime}`).toISOString();
+        if (startsValue) {
+          const dayShift = Math.round((parseLocalDateKey(occurrenceKey) - parseLocalDateKey(baseDueKey)) / 86400000);
+          const shiftedStart = addLocalDays(new Date(`${baseDueKey}T${startTime}`), dayShift);
+          occurrence.starts_at = shiftedStart.toISOString();
+        }
+      }
       return occurrence;
     });
     if (supabase && session) {
-      const { data, error } = await supabase.from("tasks").insert(instances)
-        .select("id,title,description,subject_id,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,subjects(name)");
+      const selectColumns = `id,title,description,subject_id,starts_at,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,subjects(name)${recurrenceSupported ? ",recurrence_group_id,recurrence_type,recurrence_days,recurrence_until" : ""}`;
+      const { data, error } = await supabase.from("tasks").insert(instances).select(selectColumns);
       if (error) throw error;
-      tasks.unshift(...(data || []).map((item) => ({ ...item, subject: item.subjects?.name || "Independent study" })));
+      tasks.unshift(...(data || []).map((item) => ({
+        recurrence_group_id: null,
+        recurrence_type: "none",
+        recurrence_days: [],
+        recurrence_until: null,
+        ...item,
+        subject: item.subjects?.name || "Independent study",
+      })));
     } else {
       tasks.unshift(...instances.map((instance, index) => ({
         ...instance,
         id: `local-${Date.now()}-${index}`,
         subject: subjectName(instance.subject_id),
+        created_at: new Date().toISOString(),
       })));
       saveLocalTasks();
     }
@@ -3050,6 +4933,243 @@
     if (help) help.hidden = !recurring;
   }
 
+  async function applyTaskEdit(task, payload) {
+    if (supabase && session) {
+      const { error } = await supabase.from("tasks").update(payload).eq("id", task.id);
+      if (error) throw error;
+    }
+    Object.assign(task, payload);
+    if (!supabase || !session) saveLocalTasks();
+    document.getElementById("task-modal").hidden = true;
+    taskEditingId = null;
+    render();
+    showToast(appLanguage === "ar" ? "تم تحديث المهمة." : "Task updated.");
+  }
+
+  function localInputValue(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  }
+
+  function openTaskModal(id = null, presetDate = null) {
+    const select = document.getElementById("task-subject");
+    select.innerHTML = `<option value="">${deadlineText[appLanguage].independent}</option>${subjects.map((subject) => `<option value="${escapeHtml(subject.id)}">${escapeHtml(subject.name)}</option>`).join("")}`;
+    const form = document.getElementById("task-form");
+    const task = id ? tasks.find((item) => String(item.id) === String(id)) : null;
+    taskEditingId = task ? task.id : null;
+    form.reset();
+    const seriesNote = form.querySelector("[data-series-note]");
+    const repeatConfig = form.querySelector("[data-repeat-config]");
+    const stopButton = form.querySelector('[data-action="task-stop-series"]');
+    document.getElementById("task-error").textContent = "";
+    document.getElementById("task-modal-title").textContent = task
+      ? (appLanguage === "ar" ? "تعديل المهمة" : "Edit task")
+      : (appLanguage === "ar" ? "إضافة مهمة" : "Add a task");
+    document.getElementById("task-modal-help").textContent = task
+      ? (appLanguage === "ar" ? "حدّث التفاصيل، أو انقل المهمة إلى يوم آخر." : "Update the details, or move it to another day.")
+      : (appLanguage === "ar" ? "أضف ما تحتاج تذكّره، وحدد موعده." : "Add what you need to remember and set when it is due.");
+    document.getElementById("task-submit").innerHTML = task
+      ? (appLanguage === "ar" ? "حفظ التغييرات →" : "Save changes →")
+      : (appLanguage === "ar" ? "حفظ المهمة →" : "Save task →");
+    if (task) {
+      form.elements.task_id.value = task.id;
+      form.elements.title.value = task.title || "";
+      form.elements.description.value = task.description || "";
+      form.elements.subject_id.value = task.subject_id || "";
+      form.elements.priority.value = task.priority || "medium";
+      form.elements.status.value = task.status || "not_started";
+      form.elements.estimated_minutes.value = String(task.estimated_minutes || 45);
+      form.elements.starts_at.value = localInputValue(task.starts_at);
+      form.elements.due_at.value = localInputValue(task.due_at);
+      form.elements.reminder_before_minutes.value = String(task.reminder_before_minutes || 0);
+      const isSeries = Boolean(task.recurrence_group_id);
+      repeatConfig.hidden = true;
+      seriesNote.hidden = !isSeries;
+      stopButton.hidden = !isSeries;
+      if (isSeries) {
+        const group = taskSeries(task);
+        seriesNote.textContent = appLanguage === "ar"
+          ? `هذه المهمة جزء من سلسلة متكررة (${group.length} نسخة). سيُطلب منك اختيار نطاق التعديل عند الحفظ.`
+          : `This task is part of a repeating series (${group.length} occurrence${group.length === 1 ? "" : "s"}). You will choose which occurrences to update when you save.`;
+      }
+    } else {
+      form.elements.task_id.value = "";
+      repeatConfig.hidden = false;
+      seriesNote.hidden = true;
+      stopButton.hidden = true;
+      form.elements.status.value = "not_started";
+      form.elements.estimated_minutes.value = "45";
+      if (presetDate) {
+        const date = parseLocalDateKey(presetDate);
+        if (date) {
+          const fallback = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 17, 0);
+          form.elements.due_at.value = localInputValue(fallback.toISOString());
+        }
+      }
+    }
+    updateRepeatControls(form);
+    document.getElementById("task-modal").hidden = false;
+    translateInterface();
+    form.elements.title.focus();
+  }
+
+  function taskPayloadFromForm(formData) {
+    const title = String(formData.get("title") || "").trim();
+    if (!title) throw new Error("Enter a task name.");
+    const startsValue = String(formData.get("starts_at") || "");
+    const dueValue = String(formData.get("due_at") || "");
+    if (startsValue && dueValue && new Date(startsValue) > new Date(dueValue)) {
+      throw new Error("The start time must be on or before the due time.");
+    }
+    return {
+      title,
+      description: String(formData.get("description") || "").trim(),
+      subject_id: String(formData.get("subject_id") || "") || null,
+      priority: String(formData.get("priority") || "medium"),
+      status: String(formData.get("status") || "not_started"),
+      estimated_minutes: Number(formData.get("estimated_minutes")) || 45,
+      reminder_before_minutes: Number(formData.get("reminder_before_minutes")) || 0,
+      starts_at: startsValue ? new Date(startsValue).toISOString() : null,
+      due_at: dueValue ? new Date(dueValue).toISOString() : null,
+      completed_at: String(formData.get("status") || "") === "completed" ? new Date().toISOString() : null,
+    };
+  }
+
+  async function persistTaskPatch(ids, patchForTask) {
+    if (!ids.length) return;
+    if (supabase && session) {
+      const results = await Promise.all(ids.map((id) => {
+        const task = tasks.find((item) => item.id === id);
+        return supabase.from("tasks").update(patchForTask(task)).eq("id", id);
+      }));
+      const failed = results.find((result) => result.error);
+      if (failed) throw failed.error;
+    }
+    tasks = tasks.map((task) => ids.includes(task.id) ? { ...task, ...patchForTask(task) } : task);
+    if (!supabase || !session) saveLocalTasks();
+    render();
+  }
+
+  function openSeriesScopeDialog(kind, task, payload = null) {
+    if (!task) return;
+    const group = taskSeries(task);
+    const futureCount = seriesScopeIds(task, "future").length;
+    const allCount = group.length;
+    const singleLabel = kind === "delete"
+      ? (appLanguage === "ar" ? "حذف هذه المهمة فقط" : "Delete this task only")
+      : (appLanguage === "ar" ? "تعديل هذه المهمة فقط" : "Edit this task only");
+    const futureLabel = kind === "delete"
+      ? (appLanguage === "ar" ? "حذف هذه المهمة والتكرارات القادمة" : "Delete this and all future occurrences")
+      : (appLanguage === "ar" ? "تعديل هذه المهمة والتكرارات القادمة" : "Edit this and all future occurrences");
+    const allLabel = kind === "delete"
+      ? (appLanguage === "ar" ? "حذف السلسلة بالكامل" : "Delete the entire series")
+      : (appLanguage === "ar" ? "تعديل السلسلة بالكامل" : "Edit the entire series");
+    const option = (scope, title, detail, tone = "") => `<button class="scope-option ${tone}" data-action="series-scope" data-scope="${scope}"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(detail)}</small></button>`;
+    pendingSeriesAction = { kind, taskId: task.id, payload };
+    document.getElementById("scope-kicker").textContent = kind === "delete" ? "REPEATING TASK" : "REPEATING TASK · EDIT";
+    document.getElementById("scope-title").textContent = kind === "delete"
+      ? (appLanguage === "ar" ? "ماذا تريد أن تحذف؟" : "What should be deleted?")
+      : (appLanguage === "ar" ? "أي النسخ تريد تعديلها؟" : "Which occurrences should change?");
+    document.getElementById("scope-description").textContent = appLanguage === "ar"
+      ? `سلسلة "${task.title}" تحتوي على ${allCount} مهمة. لن تتأثر أي مهمة خارج هذه السلسلة.`
+      : `"${task.title}" has ${allCount} occurrence${allCount === 1 ? "" : "s"} in this series. Nothing outside the series is affected.`;
+    document.getElementById("scope-options").innerHTML = [
+      option("single", singleLabel, appLanguage === "ar" ? "تتأثر مهمة واحدة فقط" : "Affects 1 occurrence"),
+      option("future", futureLabel, appLanguage === "ar" ? `تتأثر ${futureCount} مهمة` : `Affects ${futureCount} occurrence${futureCount === 1 ? "" : "s"}`),
+      option("all", allLabel, appLanguage === "ar" ? `تتأثر ${allCount} مهمة` : `Affects all ${allCount} occurrence${allCount === 1 ? "" : "s"}`, "danger"),
+    ].join("");
+    document.getElementById("scope-modal").hidden = false;
+    translateInterface();
+  }
+
+  async function applySeriesAction(scope) {
+    const pending = pendingSeriesAction;
+    if (!pending) return;
+    const task = tasks.find((item) => item.id === pending.taskId);
+    if (!task) { pendingSeriesAction = null; return; }
+    const ids = scope === "single" ? [task.id] : seriesScopeIds(task, scope);
+    const modal = document.getElementById("scope-modal");
+    modal.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+    try {
+      if (pending.kind === "delete") {
+        if (supabase && session) {
+          const { error } = await supabase.from("tasks").delete().in("id", ids);
+          if (error) throw error;
+        }
+        tasks = tasks.filter((item) => !ids.includes(item.id));
+        if (!supabase || !session) saveLocalTasks();
+        render();
+        showToast(appLanguage === "ar" ? `تم حذف ${ids.length} مهمة.` : `${ids.length} task${ids.length === 1 ? "" : "s"} deleted.`);
+      } else {
+        const baseDueMs = task.due_at ? new Date(task.due_at).getTime() : null;
+        const newDueMs = pending.payload.due_at ? new Date(pending.payload.due_at).getTime() : null;
+        const baseStartMs = task.starts_at ? new Date(task.starts_at).getTime() : null;
+        const newStartMs = pending.payload.starts_at ? new Date(pending.payload.starts_at).getTime() : null;
+        const dueShift = baseDueMs != null && newDueMs != null ? newDueMs - baseDueMs : 0;
+        const startShift = baseStartMs != null && newStartMs != null ? newStartMs - baseStartMs : 0;
+        const startOffset = newStartMs != null && newDueMs != null ? newStartMs - newDueMs : null;
+        await persistTaskPatch(ids, (item) => {
+          if (scope === "single") return pending.payload;
+          // Series details (title, subject, priority, status…) apply to every selected
+          // occurrence, but each occurrence keeps its own date unless the edit changes it.
+          const { starts_at: _startsAt, due_at: _dueAt, ...rest } = pending.payload;
+          const patch = { ...rest };
+          if (pending.payload.due_at === null) patch.due_at = null;
+          else if (dueShift && item.due_at && newDueMs != null) {
+            patch.due_at = new Date(new Date(item.due_at).getTime() + dueShift).toISOString();
+          }
+          if (pending.payload.starts_at === null) patch.starts_at = null;
+          else if (newStartMs != null) {
+            if (item.starts_at && baseStartMs != null) {
+              patch.starts_at = new Date(new Date(item.starts_at).getTime() + startShift).toISOString();
+            } else if (item.due_at && startOffset != null) {
+              patch.starts_at = new Date(new Date(item.due_at).getTime() + startOffset).toISOString();
+            }
+          }
+          return patch;
+        });
+        showToast(appLanguage === "ar" ? "تم تحديث المهام." : "Tasks updated.");
+      }
+      modal.hidden = true;
+      pendingSeriesAction = null;
+      taskEditingId = null;
+      editingDeadlineId = null;
+      document.getElementById("task-modal").hidden = true;
+      document.getElementById("deadline-modal").hidden = true;
+      document.getElementById("deadline-form").reset();
+      render();
+    } catch (error) {
+      console.error("Could not apply the repeating task change.", error);
+      showToast(`${appLanguage === "ar" ? "تعذر تحديث المهام:" : "Could not update tasks:"} ${error.message}`);
+      modal.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+    }
+  }
+
+  async function stopTaskSeries(task) {
+    if (!task?.recurrence_group_id) return;
+    const ids = taskSeries(task).map((item) => item.id);
+    const confirmed = window.confirm(appLanguage === "ar"
+      ? `إيقاف التكرار مع الاحتفاظ بـ ${ids.length} مهمة؟ ستبقى المهام كما هي دون تكرار مستقبلي.`
+      : `Stop repeating and keep ${ids.length} task${ids.length === 1 ? "" : "s"}? The tasks stay, but the series ends here.`);
+    if (!confirmed) return;
+    try {
+      await persistTaskPatch(ids, () => ({
+        recurrence_group_id: null,
+        recurrence_type: "none",
+        recurrence_days: [],
+        recurrence_until: null,
+      }));
+      document.getElementById("task-modal").hidden = true;
+      taskEditingId = null;
+      showToast(appLanguage === "ar" ? "تم إيقاف التكرار." : "Repeating stopped.");
+    } catch (error) {
+      showToast(`${appLanguage === "ar" ? "تعذر إيقاف التكرار:" : "Could not stop repeating:"} ${error.message}`);
+      console.error("Could not stop the repeating series.", error);
+    }
+  }
+
   async function updateTaskStatus(id) {
     const task = tasks.find((item) => item.id === id);
     if (!task || statusChangesInFlight.has(id)) return;
@@ -3062,11 +5182,15 @@
     if (button) button.disabled = true;
     try {
       if (supabase && session) {
-        const { error } = await supabase.from("tasks").update({ status: nextStatus }).eq("id", id);
+        const { error } = await supabase.from("tasks").update({
+          status: nextStatus,
+          completed_at: completing ? new Date().toISOString() : null,
+        }).eq("id", id);
         if (error) throw error;
       }
       if (completing) await animateCompletionCard(row);
       task.status = nextStatus;
+      task.completed_at = completing ? new Date().toISOString() : null;
       if (!supabase || !session) saveLocalTasks();
       render();
       showToast(completing ? task.due_at ? "Deadline completed." : "Task completed." : "Task reopened.");
@@ -3088,7 +5212,12 @@
 
   async function deleteTask(id) {
     const task = tasks.find((item) => item.id === id);
-    if (!task || !window.confirm(translateUiText(`Delete "${task.title}"?`))) return;
+    if (!task) return;
+    if (task.recurrence_group_id) {
+      openSeriesScopeDialog("delete", task);
+      return;
+    }
+    if (!window.confirm(translateUiText(`Delete "${task.title}"?`))) return;
     if (supabase && session) {
       const { error } = await supabase.from("tasks").delete().eq("id", id);
       if (error) {
@@ -3103,16 +5232,45 @@
     showToast("Task deleted.");
   }
 
-  function openTaskModal() {
-    const select = document.getElementById("task-subject");
-    select.innerHTML = `<option value="">Independent study</option>${subjects.map((subject) => `<option value="${subject.id}">${escapeHtml(subject.name)}</option>`).join("")}`;
-    const form = document.getElementById("task-form");
+  function openMoveTaskModal(id) {
+    const task = tasks.find((item) => String(item.id) === String(id));
+    if (!task) return;
+    const form = document.getElementById("move-task-form");
     form.reset();
-    updateRepeatControls(form);
-    document.getElementById("task-error").textContent = "";
-    document.getElementById("task-modal").hidden = false;
-    translateInterface();
-    document.querySelector('#task-form [name="title"]').focus();
+    form.elements.task_id.value = task.id;
+    const due = task.due_at ? new Date(task.due_at) : new Date();
+    form.elements.move_date.value = dateKey(due);
+    const noTime = !task.due_at || (due.getHours() === 23 && due.getMinutes() === 59);
+    form.elements.move_time.value = noTime ? "" : `${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`;
+    document.getElementById("move-task-help").textContent = task.title;
+    document.getElementById("move-task-error").textContent = "";
+    document.getElementById("move-task-modal").hidden = false;
+    form.elements.move_date.focus();
+  }
+
+  async function moveTask(formData) {
+    const task = tasks.find((item) => String(item.id) === String(formData.get("task_id")));
+    if (!task) throw new Error("The task could not be found.");
+    const dateValue = String(formData.get("move_date") || "");
+    if (!dateValue) throw new Error("Choose a new date.");
+    const timeValue = String(formData.get("move_time") || "") || "23:59";
+    const newDue = new Date(`${dateValue}T${timeValue}:00`);
+    if (Number.isNaN(newDue.getTime())) throw new Error("Choose a valid date.");
+    const patch = { due_at: newDue.toISOString() };
+    if (task.starts_at) {
+      const oldDue = task.due_at ? new Date(task.due_at).getTime() : newDue.getTime();
+      const shift = newDue.getTime() - oldDue;
+      patch.starts_at = new Date(new Date(task.starts_at).getTime() + shift).toISOString();
+    }
+    if (supabase && session) {
+      const { error } = await supabase.from("tasks").update(patch).eq("id", task.id);
+      if (error) throw error;
+    }
+    Object.assign(task, patch);
+    if (!supabase || !session) saveLocalTasks();
+    document.getElementById("move-task-modal").hidden = true;
+    render();
+    showToast(appLanguage === "ar" ? "تم نقل المهمة." : "Task moved.");
   }
 
   function localDateTimeToIso(dateValue, timeValue) {
@@ -3186,14 +5344,29 @@
       reminder_before_minutes: Number(formData.get("reminder_before_minutes") || 0),
     };
 
+    if (editingDeadlineId) {
+      const editing = tasks.find((item) => String(item.id) === String(editingDeadlineId));
+      if (editing?.recurrence_group_id) {
+        openSeriesScopeDialog("edit", editing, payload);
+        return "scoped";
+      }
+    }
+
     if (supabase && session) {
+      const baseSelectColumns = "id,title,description,subject_id,starts_at,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,completed_at,subjects(name)";
+      const selectColumns = `${baseSelectColumns}${recurrenceSupported ? ",recurrence_group_id,recurrence_type,recurrence_days,recurrence_until" : ""}`;
       if (editingDeadlineId) {
         const { data, error } = await supabase.from("tasks").update(payload).eq("id", editingDeadlineId)
-          .select("id,title,description,subject_id,starts_at,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,completed_at,subjects(name)").single();
+          .select(selectColumns).single();
         if (error) throw error;
-        tasks = tasks.map((item) => item.id === editingDeadlineId ? { ...data, subject: data.subjects?.name || "Independent study" } : item);
+        tasks = tasks.map((item) => item.id === editingDeadlineId
+          ? { recurrence_group_id: null, recurrence_type: "none", recurrence_days: [], recurrence_until: null, ...data, subject: data.subjects?.name || "Independent study" }
+          : item);
       } else {
         const repeatType = String(formData.get("repeat_type") || "none");
+        if (repeatType !== "none" && !recurrenceSupported) {
+          throw new Error("Repeating deadlines need the latest Supabase migration. Apply supabase/migrations/001_studyzone_enhancements.sql first.");
+        }
         const recurrence = buildRecurrencePlan(formData, date, repeatType);
         const dateDuration = Math.round((Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate())
           - Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())) / 86400000);
@@ -3207,18 +5380,26 @@
             ...payload,
             starts_at: localDateTimeToIso(startKey, String(formData.get("due_time") || "")) || occurrenceStart.toISOString(),
             due_at: localDateTimeToIso(occurrenceDate, String(formData.get("due_time") || "")),
-            recurrence_group_id: groupId,
-            recurrence_type: repeatType,
-            recurrence_days: recurrence.days,
-            recurrence_until: recurrence.until,
+            ...(recurrenceSupported ? {
+              recurrence_group_id: groupId,
+              recurrence_type: repeatType,
+              recurrence_days: recurrence.days,
+              recurrence_until: recurrence.until,
+            } : {}),
             status: "not_started",
             estimated_minutes: 30,
           };
         });
-        const { data, error } = await supabase.from("tasks").insert(instances)
-          .select("id,title,description,subject_id,starts_at,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,completed_at,subjects(name)");
+        const { data, error } = await supabase.from("tasks").insert(instances).select(selectColumns);
         if (error) throw error;
-        tasks.unshift(...(data || []).map((item) => ({ ...item, subject: item.subjects?.name || "Independent study" })));
+        tasks.unshift(...(data || []).map((item) => ({
+          recurrence_group_id: null,
+          recurrence_type: "none",
+          recurrence_days: [],
+          recurrence_until: null,
+          ...item,
+          subject: item.subjects?.name || "Independent study",
+        })));
       }
     } else {
       if (editingDeadlineId) {
@@ -3261,6 +5442,7 @@
     render();
     showToast(editingDeadlineId ? t.updateSuccess : t.saveSuccess);
     editingDeadlineId = null;
+    return "saved";
   }
 
   async function toggleDeadline(id) {
@@ -3303,7 +5485,12 @@
   async function deleteDeadline(id) {
     const t = deadlineText[appLanguage];
     const item = tasks.find((deadline) => deadline.id === id);
-    if (!item || !window.confirm(t.deleteConfirm)) return;
+    if (!item) return;
+    if (item.recurrence_group_id) {
+      openSeriesScopeDialog("delete", item);
+      return;
+    }
+    if (!window.confirm(t.deleteConfirm)) return;
     if (supabase && session) {
       const { error } = await supabase.from("tasks").delete().eq("id", id);
       if (error) {
@@ -3352,13 +5539,18 @@
     localStorage.setItem(authPromptStorageKey, "seen");
     document.getElementById("auth-modal").hidden = true;
     updateUserUi();
-    await verifyAdminAccess();
-    await loadLanguagePreference();
-    await loadRemoteTasks();
-    await loadAccountWorkspace();
-    await loadRemoteNotifications();
-    await loadFocusData(true);
-    await refreshRewardSummary();
+    beginRenderBatch();
+    try {
+      await verifyAdminAccess();
+      await loadLanguagePreference();
+      await loadRemoteTasks();
+      await loadAccountWorkspace();
+      await loadRemoteNotifications();
+      await loadFocusData(true);
+      await refreshRewardSummary();
+    } finally {
+      endRenderBatch();
+    }
     showToast(authMode === "signup" ? "Your account is ready." : "Welcome back.");
   }
 
@@ -3393,16 +5585,20 @@
     updateUserUi();
     await verifyAdminAccess();
     if (session) {
-      await loadLanguagePreference();
-      tasks = [];
-      subjects = [];
-      clearAccountWorkspace();
-      render();
-      await loadRemoteTasks();
-      await loadAccountWorkspace();
-      await loadRemoteNotifications();
-      await loadFocusData(true);
-      await refreshRewardSummary();
+      beginRenderBatch();
+      try {
+        await loadLanguagePreference();
+        tasks = [];
+        subjects = [];
+        clearAccountWorkspace();
+        await loadRemoteTasks();
+        await loadAccountWorkspace();
+        await loadRemoteNotifications();
+        await loadFocusData(true);
+        await refreshRewardSummary();
+      } finally {
+        endRenderBatch();
+      }
     }
     supabase.auth.onAuthStateChange((_event, nextSession) => {
       session = nextSession;
@@ -3414,14 +5610,18 @@
         subjects = [];
         clearAccountWorkspace();
         window.setTimeout(async () => {
-          await verifyAdminAccess();
-          await loadLanguagePreference();
-          render();
-          await loadRemoteTasks();
-          await loadAccountWorkspace();
-          await loadRemoteNotifications();
-          await loadFocusData(true);
-          await refreshRewardSummary();
+          beginRenderBatch();
+          try {
+            await verifyAdminAccess();
+            await loadLanguagePreference();
+            await loadRemoteTasks();
+            await loadAccountWorkspace();
+            await loadRemoteNotifications();
+            await loadFocusData(true);
+            await refreshRewardSummary();
+          } finally {
+            endRenderBatch();
+          }
         }, 0);
       }
       else {
@@ -3519,7 +5719,7 @@
     pendingFocusRecords = Array.isArray(saved?.pendingRecords) ? saved.pendingRecords : [];
     if (!session) {
       reconcileFocusTimer();
-      if (currentPage === "focus") render();
+      if (currentPage === "focus") scheduleRender();
       syncFocusTicker();
       return Promise.resolve();
     }
@@ -3552,8 +5752,7 @@
         for (const record of [...pendingFocusRecords]) await persistFocusRecord(record);
       }
       updateActivityFromFocusRecords();
-      if (currentPage === "focus") render();
-      else if (currentPage === "dashboard" || currentPage === "analytics") render();
+      if (currentPage === "focus" || currentPage === "dashboard" || currentPage === "analytics") scheduleRender();
       syncFocusTicker();
     })();
   }
@@ -4019,7 +6218,47 @@
       deadlineView = target.dataset.deadlineView;
       render();
     } else if (target.matches('[data-action="new-task"]')) {
-      openTaskModal();
+      openTaskModal(null, target.dataset.date || dateKey(taskViewDate));
+    } else if (target.matches('[data-action="task-edit"]')) {
+      openTaskModal(target.dataset.id);
+    } else if (target.matches('[data-action="move-task"]')) {
+      openMoveTaskModal(target.dataset.id);
+    } else if (target.matches('[data-action="task-select-day"]')) {
+      const nextDate = parseLocalDateKey(target.dataset.date);
+      if (nextDate) {
+        taskViewDate = nextDate;
+        taskViewMode = "day";
+        render();
+      }
+    } else if (target.matches('[data-action="task-view-mode"]')) {
+      taskViewMode = target.dataset.mode === "all" ? "all" : "day";
+      localStorage.setItem(taskDayStorageKey, JSON.stringify({ mode: taskViewMode }));
+      render();
+    } else if (target.matches('[data-action="task-prev-day"]')) {
+      taskViewDate = addLocalDays(taskViewDate, -1);
+      render();
+    } else if (target.matches('[data-action="task-next-day"]')) {
+      taskViewDate = addLocalDays(taskViewDate, 1);
+      render();
+    } else if (target.matches('[data-action="task-today"]')) {
+      taskViewDate = startOfLocalDay(new Date());
+      taskViewMode = "day";
+      localStorage.setItem(taskDayStorageKey, JSON.stringify({ mode: taskViewMode }));
+      render();
+    } else if (target.matches('[data-action="toggle-task-completed"]')) {
+      taskShowCompleted = !taskShowCompleted;
+      localStorage.setItem("studyzone.show-completed", String(taskShowCompleted));
+      render();
+    } else if (target.matches('[data-action="toggle-task-section"]')) {
+      const key = target.dataset.section;
+      taskSectionState[key] = taskSectionState[key] === false;
+      render();
+    } else if (target.matches('[data-action="series-scope"]')) {
+      await applySeriesAction(target.dataset.scope);
+    } else if (target.matches('[data-action="task-stop-series"]')) {
+      const form = document.getElementById("task-form");
+      const task = tasks.find((item) => String(item.id) === String(form.elements.task_id.value));
+      if (task) await stopTaskSeries(task);
     } else if (target.matches('[data-action="deadline-add"]')) {
       openDeadlineModal();
     } else if (target.matches('[data-action="deadline-edit"]')) {
@@ -4046,12 +6285,66 @@
       await downloadStudyFile(target.dataset.id);
     } else if (target.matches('[data-action="file-delete"]')) {
       await deleteFeatureRecord("file", target.dataset.id);
+    } else if (target.matches('[data-action="team-create"]')) {
+      openTeamModal();
+    } else if (target.matches('[data-action="team-join"]')) {
+      openTeamJoinModal();
+    } else if (target.matches('[data-action="team-select"]')) {
+      selectedTeamId = target.dataset.id;
+      render();
+    } else if (target.matches('[data-action="team-refresh"], [data-action="teams-retry"]')) {
+      teamsError = "";
+      teamsLoaded = false;
+      void loadTeams();
+    } else if (target.matches('[data-action="team-delete"]')) {
+      const team = teams.find((item) => String(item.id) === String(selectedTeamId));
+      if (team) await deleteTeam(team);
+    } else if (target.matches('[data-action="team-leave"]')) {
+      const team = teams.find((item) => String(item.id) === String(selectedTeamId));
+      if (team) await leaveTeam(team);
+    } else if (target.matches('[data-action="team-task-toggle"]')) {
+      await toggleTeamTask(target.dataset.id);
+    } else if (target.matches('[data-action="team-task-delete"]')) {
+      await deleteTeamTask(target.dataset.id);
+    } else if (target.matches('[data-action="voice-open"]')) {
+      openVoiceModal();
+    } else if (target.matches('[data-action="voice-start"]')) {
+      await startVoiceRecording();
+    } else if (target.matches('[data-action="voice-pause"]')) {
+      pauseVoiceRecording();
+    } else if (target.matches('[data-action="voice-stop"]')) {
+      stopVoiceRecording();
+    } else if (target.matches('[data-action="voice-discard"]')) {
+      discardVoiceRecording();
+    } else if (target.matches('[data-action="voice-save"]')) {
+      await saveVoiceNote();
+    } else if (target.matches('[data-action="voice-rename"]')) {
+      await renameVoiceNote(target.dataset.id);
+    } else if (target.matches('[data-action="voice-delete"]')) {
+      await deleteVoiceNote(target.dataset.id);
+    } else if (target.matches('[data-action="voice-retry"]')) {
+      voiceNotesLoaded = false;
+      void loadVoiceNotes();
     } else if (target.matches('[data-action="note-add"]')) {
-      openFeatureForm("note");
-    } else if (target.matches('[data-action="note-edit"]')) {
-      openFeatureForm("note", target.dataset.id);
+      const templateKey = document.getElementById("note-template")?.value || "blank";
+      openNoteEditor(null, templateKey);
+    } else if (target.matches('[data-action="note-open"], [data-action="note-edit"]')) {
+      openNoteEditor(target.dataset.id);
+    } else if (target.matches('[data-action="note-pin"]')) {
+      await toggleNotePin(target.dataset.id);
     } else if (target.matches('[data-action="note-delete"]')) {
-      await deleteFeatureRecord("note", target.dataset.id);
+      await deleteNote(target.dataset.id);
+    } else if (target.matches('[data-action="note-close"]')) {
+      closeNoteEditor();
+    } else if (target.matches('[data-action="note-save-now"]')) {
+      try {
+        await saveNoteNow();
+        showToast(appLanguage === "ar" ? "تم حفظ الملاحظة." : "Note saved.");
+      } catch (error) {
+        console.error("Manual note save failed.", error);
+      }
+    } else if (target.matches('[data-action="note-delete-editor"]')) {
+      if (noteEditorState?.id) await deleteNote(noteEditorState.id, { closeEditor: true });
     } else if (target.matches('[data-action="goal-add"]')) {
       openFeatureForm("goal");
     } else if (target.matches('[data-action="goal-edit"]')) {
@@ -4072,6 +6365,12 @@
       openFeatureForm("profile", session?.user?.id);
     } else if (target.matches('[data-action="mark-notifications-read"]')) {
       await markNotificationsRead();
+    } else if (target.matches('[data-action="notifications-enable-task-reminders"]')) {
+      try {
+        await enableTaskNotifications();
+      } catch (error) {
+        showToast(`Could not enable task notifications: ${error.message}`);
+      }
     } else if (target.matches('[data-action="focus-settings"]')) {
       focusSettingsOpen = !focusSettingsOpen;
       render();
@@ -4165,6 +6464,7 @@
     } else if (target.matches("[data-close-modal]")) {
       const backdrop = target.closest(".modal-backdrop");
       backdrop.hidden = true;
+      if (backdrop.id === "voice-modal") resetVoiceRecorder();
       if (backdrop.id === "auth-modal") localStorage.setItem(authPromptStorageKey, "seen");
     } else if (target.id === "open-auth" || target.id === "top-profile") {
       document.getElementById("auth-modal").hidden = false;
@@ -4212,13 +6512,25 @@
 
   document.getElementById("task-form").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const button = event.currentTarget.querySelector('button[type="submit"]');
+    const form = event.currentTarget;
+    const button = form.querySelector('button[type="submit"]');
     const error = document.getElementById("task-error");
     button.disabled = true;
     error.textContent = "";
     try {
-      await createTask(new FormData(event.currentTarget));
-      event.currentTarget.reset();
+      const formData = new FormData(form);
+      const editingTask = tasks.find((item) => String(item.id) === String(formData.get("task_id")));
+      if (editingTask) {
+        const payload = taskPayloadFromForm(formData);
+        if (editingTask.recurrence_group_id) {
+          openSeriesScopeDialog("edit", editingTask, payload);
+          return;
+        }
+        await applyTaskEdit(editingTask, payload);
+      } else {
+        await createTask(formData);
+      }
+      form.reset();
     } catch (reason) {
       error.textContent = reason?.message || "Could not save this task.";
       translateInterface();
@@ -4228,8 +6540,93 @@
     }
   });
 
+  document.getElementById("move-task-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector('button[type="submit"]');
+    const error = document.getElementById("move-task-error");
+    button.disabled = true;
+    error.textContent = "";
+    try {
+      await moveTask(new FormData(form));
+    } catch (reason) {
+      error.textContent = reason?.message || "Could not move this task.";
+      console.error("Could not move the task.", reason);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   document.querySelectorAll("#task-form [name='repeat_type'], #deadline-form [name='repeat_type']").forEach((select) => {
     select.addEventListener("change", () => updateRepeatControls(select.form));
+  });
+
+  document.getElementById("team-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector('button[type="submit"]');
+    const error = document.getElementById("team-error");
+    button.disabled = true;
+    error.textContent = "";
+    try {
+      await createTeam(new FormData(form));
+      form.reset();
+    } catch (reason) {
+      error.textContent = reason?.message || "Could not create the team.";
+      console.error("Team creation failed.", reason);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  document.getElementById("team-join-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector('button[type="submit"]');
+    const error = document.getElementById("team-join-error");
+    button.disabled = true;
+    error.textContent = "";
+    try {
+      await joinTeam(new FormData(form));
+      form.reset();
+    } catch (reason) {
+      error.textContent = reason?.message || "Could not join the team.";
+      console.error("Team join failed.", reason);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  document.addEventListener("submit", async (event) => {
+    if (event.target.id === "notification-prefs-form") {
+      event.preventDefault();
+      const form = event.target;
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      try {
+        await saveNotificationPreferences(new FormData(form));
+      } catch (reason) {
+        showToast(reason?.message || "Could not save notification settings.");
+        console.error("Notification preference save failed.", reason);
+      } finally {
+        button.disabled = false;
+      }
+      return;
+    }
+    if (event.target.id !== "team-task-form") return;
+    event.preventDefault();
+    const form = event.target;
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    try {
+      await addTeamTask(new FormData(form));
+      form.reset();
+    } catch (reason) {
+      showToast(reason?.message || "Could not add the team task.");
+      console.error("Team task creation failed.", reason);
+    } finally {
+      button.disabled = false;
+    }
   });
 
   document.getElementById("deadline-form").addEventListener("submit", async (event) => {
@@ -4241,8 +6638,8 @@
     button.textContent = t.saving;
     error.textContent = "";
     try {
-      await saveDeadline(new FormData(event.currentTarget));
-      event.currentTarget.reset();
+      const result = await saveDeadline(new FormData(event.currentTarget));
+      if (result !== "scoped") event.currentTarget.reset();
     } catch (reason) {
       error.textContent = `${t.saveError} ${reason?.message || ""}`.trim();
       translateInterface();

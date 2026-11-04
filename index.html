@@ -17,10 +17,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&family=Tajawal:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=profile-photo-push-rewards-1" />
+    <link rel="stylesheet" href="./styles.css?v=avatar-render-2" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="./supabase-config.js"></script>
-    <script src="./app.js?v=profile-photo-push-rewards-1" defer></script>
+    <script src="./app.js?v=avatar-render-2" defer></script>
   </head>
   <body>
     <div class="scroll-progress" id="scroll-progress" aria-hidden="true"></div>
@@ -39,6 +39,8 @@
           <a class="nav-link" href="#subjects" data-page="subjects"><span class="nav-icon">◈</span>Subjects</a>
           <a class="nav-link" href="#files" data-page="files"><span class="nav-icon">▤</span>Study files</a>
           <a class="nav-link" href="#notes" data-page="notes"><span class="nav-icon">✎</span>Notes</a>
+          <a class="nav-link" href="#voice" data-page="voice"><span class="nav-icon">◉</span>Voice notes</a>
+          <a class="nav-link" href="#teams" data-page="teams"><span class="nav-icon">⚭</span>Teams</a>
           <a class="nav-link" href="#focus" data-page="focus"><span class="nav-icon">◷</span>Focus timer</a>
         </nav>
         <div class="nav-caption nav-caption-spaced">YOUR PROGRESS</div>
@@ -84,28 +86,128 @@
     </div>
 
     <div class="modal-backdrop" id="task-modal" hidden>
-      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="task-modal-title">
+      <section class="modal task-modal" role="dialog" aria-modal="true" aria-labelledby="task-modal-title">
         <button class="modal-close" data-close-modal aria-label="Close">×</button>
         <p class="eyebrow">STAY ON TRACK</p><h2 id="task-modal-title">Add a task</h2>
+        <p class="modal-subtitle" id="task-modal-help">Keep the details you need in one calm place.</p>
         <form id="task-form" class="form-stack">
+          <input type="hidden" name="task_id" value="" />
           <label>Task name<input name="title" dir="auto" required maxlength="120" placeholder="e.g. Review chapter 4" /></label>
+          <label>Description <span class="optional-label">Optional</span><textarea name="description" dir="auto" rows="2" maxlength="2000" placeholder="Add a note to yourself"></textarea></label>
           <div class="form-row">
             <label>Subject<select name="subject_id" id="task-subject"></select></label>
             <label>Priority<select name="priority"><option value="medium">Medium</option><option value="low">Low</option><option value="high">High</option><option value="urgent">Urgent</option></select></label>
           </div>
           <div class="form-row">
-            <label>Due date<input name="due_at" type="datetime-local" /></label>
+            <label>Status<select name="status"><option value="not_started">Not started</option><option value="in_progress">In progress</option><option value="completed">Completed</option></select></label>
             <label>Estimated minutes<input name="estimated_minutes" type="number" min="5" max="1440" value="45" /></label>
           </div>
+          <div class="form-row">
+            <label>Starts <span class="optional-label">Optional</span><input name="starts_at" type="datetime-local" /></label>
+            <label>Due date<input name="due_at" type="datetime-local" /></label>
+          </div>
+          <label>Reminder<select name="reminder_before_minutes"><option value="0">No reminder</option><option value="15">15 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option></select></label>
           <div class="repeat-config" data-repeat-config><label>Repeat<select name="repeat_type"><option value="none">Does not repeat</option><option value="daily">Every day</option><option value="weekly">Every week</option><option value="monthly">Every month</option><option value="custom">Choose weekdays</option></select></label>
           <fieldset class="repeat-days" data-repeat-days hidden><legend>Repeat on</legend>
             <label><input type="checkbox" name="repeat_days" value="1"> Mon</label><label><input type="checkbox" name="repeat_days" value="2"> Tue</label><label><input type="checkbox" name="repeat_days" value="3"> Wed</label><label><input type="checkbox" name="repeat_days" value="4"> Thu</label><label><input type="checkbox" name="repeat_days" value="5"> Fri</label><label><input type="checkbox" name="repeat_days" value="6"> Sat</label><label><input type="checkbox" name="repeat_days" value="0"> Sun</label>
           </fieldset>
           <label data-repeat-until hidden>Repeat until<input name="repeat_until" type="date"></label>
           <p class="data-caption" data-repeat-help hidden>Choose an end date within the next year. Each occurrence is saved as its own task.</p></div>
+          <p class="data-caption series-note" data-series-note hidden></p>
+          <div class="modal-actions">
+            <button class="button button-secondary" type="button" data-action="task-stop-series" hidden>Stop repeating</button>
+            <button class="button button-secondary" type="button" data-close-modal>Cancel</button>
+            <button class="button button-primary" type="submit" id="task-submit">Save task <span>→</span></button>
+          </div>
           <div class="form-error" id="task-error" role="alert"></div>
-          <button class="button button-primary full-button" type="submit">Save task <span>→</span></button>
         </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="move-task-modal" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="move-task-title">
+        <button class="modal-close" data-close-modal aria-label="Close">×</button>
+        <p class="eyebrow">RESCHEDULE</p><h2 id="move-task-title">Move task</h2>
+        <p class="modal-subtitle" id="move-task-help"></p>
+        <form id="move-task-form" class="form-stack">
+          <input type="hidden" name="task_id" value="" />
+          <div class="form-row">
+            <label>New date<input name="move_date" type="date" required /></label>
+            <label>Time<input name="move_time" type="time" /></label>
+          </div>
+          <p class="data-caption">Only this task moves. Other tasks in a repeating series keep their dates.</p>
+          <div class="modal-actions">
+            <button class="button button-secondary" type="button" data-close-modal>Cancel</button>
+            <button class="button button-primary" type="submit">Move task <span>→</span></button>
+          </div>
+          <div class="form-error" id="move-task-error" role="alert"></div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="scope-modal" hidden>
+      <section class="modal scope-modal" role="dialog" aria-modal="true" aria-labelledby="scope-title">
+        <button class="modal-close" data-close-modal aria-label="Close">×</button>
+        <p class="eyebrow" id="scope-kicker">REPEATING TASK</p>
+        <h2 id="scope-title">Choose what to change</h2>
+        <p class="modal-subtitle" id="scope-description"></p>
+        <div class="scope-options" id="scope-options"></div>
+        <div class="modal-actions"><button class="button button-secondary" type="button" data-close-modal>Cancel</button></div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="team-modal" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="team-modal-title">
+        <button class="modal-close" data-close-modal aria-label="Close">×</button>
+        <p class="eyebrow">STUDY TOGETHER</p><h2 id="team-modal-title">Create a team</h2>
+        <p class="modal-subtitle">Share tasks and keep your study group in one calm place.</p>
+        <form id="team-form" class="form-stack">
+          <label>Team name<input name="name" dir="auto" required maxlength="80" placeholder="e.g. Calculus study circle" /></label>
+          <label>Description <span class="optional-label">Optional</span><textarea name="description" dir="auto" rows="2" maxlength="500" placeholder="What are you working on together?"></textarea></label>
+          <p class="data-caption">A short join code is generated automatically so classmates can join.</p>
+          <div class="form-error" id="team-error" role="alert"></div>
+          <div class="modal-actions"><button class="button button-secondary" type="button" data-close-modal>Cancel</button><button class="button button-primary" type="submit">Create team <span>→</span></button></div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="team-join-modal" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="team-join-title">
+        <button class="modal-close" data-close-modal aria-label="Close">×</button>
+        <p class="eyebrow">JOIN A TEAM</p><h2 id="team-join-title">Enter a join code</h2>
+        <p class="modal-subtitle">Ask your team owner for the short code.</p>
+        <form id="team-join-form" class="form-stack">
+          <label>Join code<input name="code" dir="ltr" required maxlength="12" autocomplete="off" placeholder="e.g. A1B2C3D4" /></label>
+          <div class="form-error" id="team-join-error" role="alert"></div>
+          <div class="modal-actions"><button class="button button-secondary" type="button" data-close-modal>Cancel</button><button class="button button-primary" type="submit">Join team <span>→</span></button></div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="voice-modal" hidden>
+      <section class="modal voice-modal" role="dialog" aria-modal="true" aria-labelledby="voice-modal-title">
+        <button class="modal-close" data-close-modal aria-label="Close">×</button>
+        <p class="eyebrow">SPEAK IT, KEEP IT</p><h2 id="voice-modal-title">Record a voice note</h2>
+        <p class="modal-subtitle">Recordings stay in your private storage. Only you can play them.</p>
+        <div class="voice-recorder">
+          <div class="voice-timer" id="voice-timer" role="timer" aria-live="off">00:00</div>
+          <p class="voice-status" id="voice-status">Ready when you are.</p>
+          <div class="voice-controls">
+            <button class="button button-primary" type="button" data-action="voice-start" id="voice-start">● Start recording</button>
+            <button class="button button-secondary" type="button" data-action="voice-pause" id="voice-pause" hidden>Pause</button>
+            <button class="button button-secondary" type="button" data-action="voice-stop" id="voice-stop" hidden>Stop</button>
+            <button class="button button-secondary" type="button" data-action="voice-discard" id="voice-discard" hidden>Discard</button>
+          </div>
+          <audio id="voice-preview" controls hidden></audio>
+          <label>Title<input id="voice-title" dir="auto" maxlength="180" value="Voice note" /></label>
+          <label>Attach to note<select id="voice-note-link"></select></label>
+          <p class="data-caption" id="voice-help">Maximum recording length is 10 minutes.</p>
+          <div class="form-error" id="voice-error" role="alert"></div>
+          <div class="modal-actions">
+            <button class="button button-secondary" type="button" data-close-modal>Cancel</button>
+            <button class="button button-primary" type="button" data-action="voice-save" id="voice-save" disabled>Save voice note</button>
+          </div>
+        </div>
       </section>
     </div>
 
