@@ -1,12 +1,12 @@
 {
-  "id": "./",
+  "id": "/StudyZone/",
   "short_name": "Study Zone",
   "name": "Study Zone",
   "description": "Your personal student workspace to organize studying, manage tasks and deadlines, track focus sessions, and achieve your academic goals.",
   "lang": "en",
   "dir": "ltr",
-  "start_url": "./",
-  "scope": "./",
+  "start_url": "/StudyZone/",
+  "scope": "/StudyZone/",
   "background_color": "#071C18",
   "theme_color": "#0C4137",
   "display": "standalone",
@@ -14,25 +14,25 @@
   "orientation": "any",
   "icons": [
     {
-      "src": "./icons/icon-192.png",
+      "src": "/StudyZone/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./icons/icon-192-maskable.png",
+      "src": "/StudyZone/icons/icon-192-maskable.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "./icons/icon-512.png",
+      "src": "/StudyZone/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./icons/icon-512-maskable.png",
+      "src": "/StudyZone/icons/icon-512-maskable.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
