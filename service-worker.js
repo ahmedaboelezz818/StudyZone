@@ -1,11 +1,11 @@
-
-const CACHE_NAME = "studyzone-shell-v13";
+const CACHE_NAME = "studyzone-shell-v12";
 
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./supabase-config.js",
   "./manifest.json",
   "./icon.svg",
   "./favicon.svg",
@@ -14,15 +14,15 @@ const APP_SHELL = [
   "./icons/icon-192.png",
   "./icons/icon-192-maskable.png",
   "./icons/icon-512.png",
-  "./icons/icon-512-maskable.png"
+  "./icons/icon-512-maskable.png",
 ];
 
 const APP_SHELL_URLS = APP_SHELL.map(
-  (path) => new URL(path, self.registration.scope).href
+  (path) => new URL(path, self.registration.scope).href,
 );
 
 const APP_SHELL_PATHS = new Set(
-  APP_SHELL_URLS.map((url) => new URL(url).pathname)
+  APP_SHELL_URLS.map((url) => new URL(url).pathname),
 );
 
 // تثبيت التطبيق وتخزين الملفات الأساسية.
@@ -37,7 +37,7 @@ self.addEventListener("install", (event) => {
           try {
             const response = await fetch(url, {
               cache: "reload",
-              credentials: "same-origin"
+              credentials: "same-origin",
             });
 
             if (response.ok && response.type === "basic") {
@@ -48,12 +48,12 @@ self.addEventListener("install", (event) => {
           } catch (error) {
             console.warn("Study Zone: Asset unavailable:", url, error);
           }
-        })
+        }),
       );
 
       // لا نفعّل النسخة الجديدة تلقائيًا أثناء استخدام التطبيق.
       // يمكن طلب التفعيل من الواجهة برسالة SKIP_WAITING.
-    })()
+    })(),
   );
 });
 
@@ -66,15 +66,13 @@ self.addEventListener("activate", (event) => {
       await Promise.all(
         keys
           .filter(
-            (key) =>
-              key.startsWith("studyzone-shell-") &&
-              key !== CACHE_NAME
+            (key) => key.startsWith("studyzone-shell-") && key !== CACHE_NAME,
           )
-          .map((key) => caches.delete(key))
+          .map((key) => caches.delete(key)),
       );
 
       await self.clients.claim();
-    })()
+    })(),
   );
 });
 
@@ -93,7 +91,7 @@ self.addEventListener("push", (event) => {
     payload = event.data?.json() || {};
   } catch {
     payload = {
-      body: event.data?.text() || ""
+      body: event.data?.text() || "",
     };
   }
 
@@ -103,34 +101,19 @@ self.addEventListener("push", (event) => {
       : "Study Zone";
 
   const options = {
-    body:
-      typeof payload.body === "string"
-        ? payload.body.slice(0, 500)
-        : "",
-    icon: new URL(
-      "./icons/icon-192.png",
-      self.registration.scope
-    ).href,
-    badge: new URL(
-      "./icons/icon-192.png",
-      self.registration.scope
-    ).href,
+    body: typeof payload.body === "string" ? payload.body.slice(0, 500) : "",
+    icon: new URL("./icons/icon-192.png", self.registration.scope).href,
+    badge: new URL("./icons/icon-192.png", self.registration.scope).href,
     tag:
       typeof payload.tag === "string"
         ? payload.tag.slice(0, 120)
         : "study-zone-reminder",
-    renotify: true,
     data: {
-      url:
-        typeof payload.url === "string"
-          ? payload.url
-          : "./#tasks"
-    }
+      url: typeof payload.url === "string" ? payload.url : "./#tasks",
+    },
   };
 
-  event.waitUntil(
-    self.registration.showNotification(title, options)
-  );
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 
 // التعامل مع الضغط على الإشعار.
@@ -144,20 +127,17 @@ self.addEventListener("notificationclick", (event) => {
       try {
         targetUrl = new URL(
           event.notification.data?.url || "./#tasks",
-          self.registration.scope
+          self.registration.scope,
         );
       } catch {
-        targetUrl = new URL(
-          "./#tasks",
-          self.registration.scope
-        );
+        targetUrl = new URL("./#tasks", self.registration.scope);
       }
 
       // لا نسمح بفتح روابط خارج نطاق التطبيق.
       if (
         targetUrl.origin !== self.location.origin ||
         !targetUrl.pathname.startsWith(
-          new URL(self.registration.scope).pathname
+          new URL(self.registration.scope).pathname,
         )
       ) {
         return;
@@ -165,7 +145,7 @@ self.addEventListener("notificationclick", (event) => {
 
       const windows = await self.clients.matchAll({
         type: "window",
-        includeUncontrolled: true
+        includeUncontrolled: true,
       });
 
       for (const client of windows) {
@@ -179,7 +159,7 @@ self.addEventListener("notificationclick", (event) => {
       }
 
       return self.clients.openWindow(targetUrl.href);
-    })()
+    })(),
   );
 });
 
@@ -217,12 +197,12 @@ self.addEventListener("fetch", (event) => {
           const cache = await caches.open(CACHE_NAME);
 
           const cachedPage = await cache.match(
-            new URL("./index.html", self.registration.scope).href
+            new URL("./index.html", self.registration.scope).href,
           );
 
           return cachedPage || Response.error();
         }
-      })()
+      })(),
     );
 
     return;
@@ -259,6 +239,6 @@ self.addEventListener("fetch", (event) => {
       } catch {
         return cached || Response.error();
       }
-    })()
+    })(),
   );
 });

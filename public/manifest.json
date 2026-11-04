@@ -1,5 +1,5 @@
 {
-  "id": "study-zone",
+  "id": "./",
   "short_name": "Study Zone",
   "name": "Study Zone",
   "description": "Your personal student workspace to organize studying, manage tasks and deadlines, track focus sessions, and achieve your academic goals.",
@@ -10,10 +10,7 @@
   "background_color": "#071C18",
   "theme_color": "#0C4137",
   "display": "standalone",
-  "display_override": [
-    "standalone",
-    "minimal-ui"
-  ],
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "any",
   "icons": [
     {

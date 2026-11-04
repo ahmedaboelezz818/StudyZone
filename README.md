@@ -74,32 +74,14 @@ Guests can use the timer and see local completion feedback, but do not earn acco
 
 ## Install Study Zone
 
-The app includes `favicon.ico`, `favicon.svg`, `apple-touch-icon.png`, a Web App Manifest in `public/manifest.json`, and four branded PNG icons in `public/icons/`. The service worker caches only the static app shell and icons; it does not cache the Supabase client configuration, signed-in data, or API responses. Offline mode provides the cached shell, but network-backed data cannot be loaded or saved while disconnected. The included `server.js` serves the manifest and icon assets at the root URLs referenced by the app, and `vercel.json` adds the equivalent rewrites for the Vercel deployment. No build step or additional PWA plugin is required. Serve the app over HTTPS for installation (localhost is allowed for development).
+The app includes `favicon.ico`, `favicon.svg`, `apple-touch-icon.png`, a Web App Manifest in `public/manifest.webmanifest`, and four branded PNG icons in `public/icons/`. The service worker caches only the static app shell and icons; it does not cache the Supabase client configuration, signed-in data, or API responses. Offline mode provides the cached shell, but network-backed data cannot be loaded or saved while disconnected. The included `server.js` serves the manifest and icon assets at the root URLs referenced by the app. No build step or additional PWA plugin is required. Serve the app over HTTPS for installation (localhost is allowed for development).
 
-- **Android (Chrome, Edge, Samsung Internet, Opera, and other Chromium-based browsers):** Use the in-app Install app button and accept the browser prompt, or use the browser menu's Install app / Add to Home screen option when available. The Install button appears only when the browser can offer an install prompt; otherwise the app shows the manual instructions.
-- **Android (Firefox):** Open the Firefox menu and choose the install / Add to Home screen option if offered; otherwise follow the manual instructions below.
-- **iPhone/iPad (Safari and all iOS browsers):**
-
-  1. Open the site in Safari.
-  2. Tap Share.
-  3. Choose Add to Home Screen.
-  4. Confirm the add.
-
-  The in-app installer uses `beforeinstallprompt` when the browser supports it; on iOS the app detects the standalone-capable Safari environment and shows the manual Add to Home Screen instructions instead of a fake install button.
-
-- **Desktop (Chrome, Edge, Opera, and others):** Use the Install app prompt when supported; in browsers without a native install option the app shows the manual instructions. The install button is hidden while the app runs in standalone mode.
-
+- **Android:** In a supported browser, use the in-app Install app button and accept the browser prompt, or use the browser menu's Install app / Add to Home screen option when available.
+- **iPhone/iPad:** Open the site in Safari, tap Share, then Add to Home Screen.
+- **Windows/macOS:** Use the Install app prompt when supported. In Safari on macOS, use File > Add to Dock when available. Other browser menus and installation support vary.
 - Task notifications in the installed app come from the Web Push setup: enable task notifications from the Notifications page; the app requests permission and subscribes via the service worker. Delivery while closed still requires OS/browser push support, the scheduled Edge Function, VAPID configuration, and a reachable HTTPS origin.
 
 The service worker caches only the versioned static app-shell files and branded icons. It does not cache requests to application data endpoints or other dynamic same-origin URLs. When an update is ready, use the in-app update notice to activate it and reload. Offline access is limited to the cached shell; Supabase and other network-backed features still require a connection.
-
-## Notification sounds and alerts
-
-- Focus (Pomodoro) sounds live in the Focus timer settings: focus start, focus end, and break end sounds, plus sound volume (0-100), sound duration (3/5/10/15 seconds), and a repeat option for the completion sound.
-- Task and reminder alert sounds live in the Notifications settings: task reminder sound, sound volume, sound duration, and repeat options, with a Preview button per sound.
-- Alert playback is synthesized with the Web Audio API through an internal alert engine; no external audio service is used. The engine resumes the audio context after user interaction, stops sources immediately when an alert is stopped or snoozed, and repeats the sound only while the repeat option is enabled.
-- Focus completion plays the configured end sound and may repeat it until the user snoozes or acknowledges it; starting a new phase stops the previous alert. Break completion plays the configured break end sound.
-- Push notifications keep a stable tag and `renotify` behavior in the service worker; the OS/browser controls the final sound and notification behavior. The app does not force device silent/DND modes or system notification volume from JavaScript.
 
 ## Notes
 
@@ -111,3 +93,4 @@ The service worker caches only the versioned static app-shell files and branded 
 - The `team_task_comments` table is created by the migration, but the team comment UI is not wired yet.
 - Recurring-series changes use separate owner-scoped updates. A network failure partway through a series update can leave some occurrences updated; there is no transactional series RPC yet.
 - No automated browser test suite exists in the repository. Verification for this round was limited to static checks (`node --check`), ID/wiring audits, and a local server smoke test; authenticated RLS behavior still needs testing in a real Supabase project.
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
