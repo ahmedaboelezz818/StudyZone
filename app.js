@@ -6688,6 +6688,36 @@
     });
   });
 
+  
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", async () => {
+    try {
+      const registration = await navigator.serviceWorker.register(
+        "./service-worker.js",
+        { scope: "./" }
+      );
+
+      console.log("Study Zone PWA registered:", registration.scope);
+
+      registration.addEventListener("updatefound", () => {
+        const worker = registration.installing;
+
+        worker?.addEventListener("statechange", () => {
+          if (
+            worker.state === "installed" &&
+            navigator.serviceWorker.controller
+          ) {
+            console.log("A new Study Zone version is available.");
+          }
+        });
+      });
+    } catch (error) {
+      console.error("Study Zone PWA registration failed:", error);
+    }
+  });
+}
+
+
   const storedTheme = localStorage.getItem("studyflow.theme");
   if (storedTheme === "light") document.documentElement.dataset.theme = "light";
   document.getElementById("footer-year").textContent = new Date().getFullYear();
