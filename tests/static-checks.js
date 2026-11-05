@@ -39,15 +39,15 @@ check("Task date buckets exist", app.includes("buckets.overdue") && app.includes
 check("Rich text sanitizer exists", app.includes("function sanitizeRichText("));
 check("Autosave exists", app.includes("function scheduleNoteSave(") && app.includes("function saveNoteNow("));
 check("MediaRecorder recording exists", app.includes("new window.MediaRecorder("));
-check("Private voice upload exists", app.includes('from("voice-notes").upload('));
+check("Private voice upload exists", /\.from\(\s*["']voice-notes["']\s*\)\s*\.upload\(/.test(app));
 check("Notification sound exists", app.includes("function playNotificationSound("));
 check("Task notification enable action exists", app.includes("function enableTaskNotifications("));
 check("Do-not-disturb exists", app.includes("function isDoNotDisturbActive("));
 check("Notification preferences form exists", app.includes('id="notification-prefs-form"'));
-check("Team creation exists", app.includes('from("teams").insert('));
+check("Team creation exists", /\.from\(\s*["']teams["']\s*\)\s*\.insert\(/.test(app));
 check("Team join RPC exists", app.includes('rpc("join_team"'));
 check("No service-role key assignment in browser files", !/service_role\s*[:=]/i.test(app + html + read("supabase-config.js")) && !/serviceRole/i.test(app + html + read("supabase-config.js")));
-check("Service worker cache was bumped", sw.includes("studyzone-shell-v13"));
+check("Service worker cache was bumped", sw.includes("studyzone-shell-v16"));
 
 check("Web app manifest keeps standalone display", /"display"\s*:\s*"standalone"/.test(manifest));
 check("Web app manifest has a start url and scope", /"start_url"\s*:/.test(manifest) && /"scope"\s*:/.test(manifest));
@@ -64,6 +64,7 @@ check("App computes install state", app.includes("function getPwaInstallState"))
 check("App plays synthesized alert sounds", app.includes("function playAlertSound"));
 check("App previews alert sounds", app.includes("function previewAlertSound"));
 check("App snoozes active alerts", app.includes("function snoozeActiveAlert"));
+check("Alert sounds hard-stop after the configured duration", app.includes("alertAudioStopHandle") && app.includes("playSeconds") && app.includes("oscillator.stop(toneEnd)"));
 check("App stores task sound preferences", app.includes('taskSound: "task-reminder"'));
 check("App stores pomodoro sound preferences", app.includes("startSound: \"focus-start\""));
 check("Service worker push uses renotify with tag", sw.includes("renotify: true"));

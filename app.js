@@ -3,51 +3,218 @@
 
   const config = window.studyFlowSupabaseConfig || {};
   const configured = Boolean(config.url && config.anonKey);
-  const supabase = configured && window.supabase?.createClient
-    ? window.supabase.createClient(config.url, config.anonKey)
-    : null;
+  const supabase =
+    configured && window.supabase?.createClient
+      ? window.supabase.createClient(config.url, config.anonKey)
+      : null;
   let subjects = [
-    { id: "subject-calculus", name: "Calculus II", color: "#06D6A0", credits: 4, progress: 72 },
-    { id: "subject-algorithms", name: "Algorithms", color: "#75CDB1", credits: 3, progress: 81 },
-    { id: "subject-biology", name: "Biology", color: "#9ECDAF", credits: 3, progress: 64 },
-    { id: "subject-history", name: "History", color: "#C1D79D", credits: 2, progress: 55 },
+    {
+      id: "subject-calculus",
+      name: "Calculus II",
+      color: "#06D6A0",
+      credits: 4,
+      progress: 72,
+    },
+    {
+      id: "subject-algorithms",
+      name: "Algorithms",
+      color: "#75CDB1",
+      credits: 3,
+      progress: 81,
+    },
+    {
+      id: "subject-biology",
+      name: "Biology",
+      color: "#9ECDAF",
+      credits: 3,
+      progress: 64,
+    },
+    {
+      id: "subject-history",
+      name: "History",
+      color: "#C1D79D",
+      credits: 2,
+      progress: 55,
+    },
   ];
   const seededTasks = [
-    { id: "demo-task-1", title: "Discrete math problem set", subject_id: "subject-algorithms", subject: "Algorithms", due_at: todayAt(17, 30), priority: "high", status: "in_progress", estimated_minutes: 130 },
-    { id: "demo-task-2", title: "Biology flashcards review", subject_id: "subject-biology", subject: "Biology", due_at: tomorrowAt(9), priority: "medium", status: "not_started", estimated_minutes: 75 },
-    { id: "demo-task-3", title: "History essay outline", subject_id: "subject-history", subject: "History", due_at: dayAtOffset(2, 16), priority: "urgent", status: "in_progress", estimated_minutes: 105 },
-    { id: "demo-task-4", title: "Calculus revision quiz", subject_id: "subject-calculus", subject: "Calculus II", due_at: dayAtOffset(3, 20), priority: "low", status: "completed", estimated_minutes: 45 },
+    {
+      id: "demo-task-1",
+      title: "Discrete math problem set",
+      subject_id: "subject-algorithms",
+      subject: "Algorithms",
+      due_at: todayAt(17, 30),
+      priority: "high",
+      status: "in_progress",
+      estimated_minutes: 130,
+    },
+    {
+      id: "demo-task-2",
+      title: "Biology flashcards review",
+      subject_id: "subject-biology",
+      subject: "Biology",
+      due_at: tomorrowAt(9),
+      priority: "medium",
+      status: "not_started",
+      estimated_minutes: 75,
+    },
+    {
+      id: "demo-task-3",
+      title: "History essay outline",
+      subject_id: "subject-history",
+      subject: "History",
+      due_at: dayAtOffset(2, 16),
+      priority: "urgent",
+      status: "in_progress",
+      estimated_minutes: 105,
+    },
+    {
+      id: "demo-task-4",
+      title: "Calculus revision quiz",
+      subject_id: "subject-calculus",
+      subject: "Calculus II",
+      due_at: dayAtOffset(3, 20),
+      priority: "low",
+      status: "completed",
+      estimated_minutes: 45,
+    },
   ];
   let activity = [
-    { day: "Mon", hours: 2.8 }, { day: "Tue", hours: 3.4 }, { day: "Wed", hours: 2.5 },
-    { day: "Thu", hours: 4.1 }, { day: "Fri", hours: 3.7 }, { day: "Sat", hours: 5.2 }, { day: "Sun", hours: 2.1 },
+    { day: "Mon", hours: 2.8 },
+    { day: "Tue", hours: 3.4 },
+    { day: "Wed", hours: 2.5 },
+    { day: "Thu", hours: 4.1 },
+    { day: "Fri", hours: 3.7 },
+    { day: "Sat", hours: 5.2 },
+    { day: "Sun", hours: 2.1 },
   ];
   let goals = [
-    { title: "Finish revision pack", progress: 78, due: "5 days", detail: "Review key topics before the assessment" },
-    { title: "Keep weekly study rhythm", progress: 86, due: "2 days", detail: "Reach 12 focused hours this week" },
-    { title: "Submit essay draft", progress: 64, due: "1 week", detail: "Complete the outline and first draft" },
+    {
+      title: "Finish revision pack",
+      progress: 78,
+      due: "5 days",
+      detail: "Review key topics before the assessment",
+    },
+    {
+      title: "Keep weekly study rhythm",
+      progress: 86,
+      due: "2 days",
+      detail: "Reach 12 focused hours this week",
+    },
+    {
+      title: "Submit essay draft",
+      progress: 64,
+      due: "1 week",
+      detail: "Complete the outline and first draft",
+    },
   ];
   let schedule = [
-    { day: "Monday", time: "08:00", title: "Limits and derivatives", subject: "Calculus II", length: "90 min" },
-    { day: "Tuesday", time: "17:00", title: "Graphs + shortest path", subject: "Algorithms", length: "105 min" },
-    { day: "Wednesday", time: "19:00", title: "Cell structure review", subject: "Biology", length: "75 min" },
-    { day: "Thursday", time: "15:30", title: "Essay drafting sprint", subject: "History", length: "90 min" },
+    {
+      day: "Monday",
+      time: "08:00",
+      title: "Limits and derivatives",
+      subject: "Calculus II",
+      length: "90 min",
+    },
+    {
+      day: "Tuesday",
+      time: "17:00",
+      title: "Graphs + shortest path",
+      subject: "Algorithms",
+      length: "105 min",
+    },
+    {
+      day: "Wednesday",
+      time: "19:00",
+      title: "Cell structure review",
+      subject: "Biology",
+      length: "75 min",
+    },
+    {
+      day: "Thursday",
+      time: "15:30",
+      title: "Essay drafting sprint",
+      subject: "History",
+      length: "90 min",
+    },
   ];
   const achievementCatalog = [
-    { code: "first-task", name: "First Task", description: "Complete your first task.", symbol: "✓", reward: 10 },
-    { code: "focus-starter", name: "Focus Starter", description: "Complete your first verified focus session.", symbol: "◷", reward: 15 },
-    { code: "focus-master", name: "Focus Master", description: "Complete 10 verified focus sessions.", symbol: "✦", reward: 50 },
-    { code: "deadline-hero", name: "Deadline Hero", description: "Complete 10 tasks with deadlines.", symbol: "◇", reward: 50 },
-    { code: "study-streak", name: "Study Streak", description: "Build a 7-day activity streak.", symbol: "↗", reward: 40 },
-    { code: "consistency-champion", name: "Consistency Champion", description: "Build a 30-day activity streak.", symbol: "✧", reward: 150 },
-    { code: "level-5", name: "Rising Scholar", description: "Reach level 5.", symbol: "★", reward: 50 },
-    { code: "level-10", name: "Study Champion", description: "Reach level 10.", symbol: "♛", reward: 100 },
-    { code: "level-20", name: "Master Strategist", description: "Reach level 20.", symbol: "✪", reward: 200 },
-    { code: "level-50", name: "Study Legend", description: "Reach level 50.", symbol: "♜", reward: 500 },
+    {
+      code: "first-task",
+      name: "First Task",
+      description: "Complete your first task.",
+      symbol: "✓",
+      reward: 10,
+    },
+    {
+      code: "focus-starter",
+      name: "Focus Starter",
+      description: "Complete your first verified focus session.",
+      symbol: "◷",
+      reward: 15,
+    },
+    {
+      code: "focus-master",
+      name: "Focus Master",
+      description: "Complete 10 verified focus sessions.",
+      symbol: "✦",
+      reward: 50,
+    },
+    {
+      code: "deadline-hero",
+      name: "Deadline Hero",
+      description: "Complete 10 tasks with deadlines.",
+      symbol: "◇",
+      reward: 50,
+    },
+    {
+      code: "study-streak",
+      name: "Study Streak",
+      description: "Build a 7-day activity streak.",
+      symbol: "↗",
+      reward: 40,
+    },
+    {
+      code: "consistency-champion",
+      name: "Consistency Champion",
+      description: "Build a 30-day activity streak.",
+      symbol: "✧",
+      reward: 150,
+    },
+    {
+      code: "level-5",
+      name: "Rising Scholar",
+      description: "Reach level 5.",
+      symbol: "★",
+      reward: 50,
+    },
+    {
+      code: "level-10",
+      name: "Study Champion",
+      description: "Reach level 10.",
+      symbol: "♛",
+      reward: 100,
+    },
+    {
+      code: "level-20",
+      name: "Master Strategist",
+      description: "Reach level 20.",
+      symbol: "✪",
+      reward: 200,
+    },
+    {
+      code: "level-50",
+      name: "Study Legend",
+      description: "Reach level 50.",
+      symbol: "♜",
+      reward: 500,
+    },
   ];
   let examResults = [
-    { subject: "Algorithms", score: 88 }, { subject: "Calculus II", score: 92 },
-    { subject: "Biology", score: 84 }, { subject: "History", score: 78 },
+    { subject: "Algorithms", score: 88 },
+    { subject: "Calculus II", score: 92 },
+    { subject: "Biology", score: 84 },
+    { subject: "History", score: 78 },
   ];
   let sampleFiles = [
     { name: "calculus-derivatives.pdf", type: "PDF", subject: "Calculus II" },
@@ -55,7 +222,11 @@
     { name: "biology-diagrams.png", type: "Image", subject: "Biology" },
   ];
   let sampleNotes = [
-    { title: "Core theorem summary", subject: "Algorithms", updated: "2 hours ago" },
+    {
+      title: "Core theorem summary",
+      subject: "Algorithms",
+      updated: "2 hours ago",
+    },
     { title: "Cell structure recall", subject: "Biology", updated: "Today" },
     { title: "Essay thesis points", subject: "History", updated: "Yesterday" },
   ];
@@ -93,19 +264,49 @@
   });
   let focusSettings = { ...defaultFocusSettings };
   const notificationPrefsKey = "studyzone.notification-prefs.v1";
-  let notificationPrefs = { sound: true, dnd: false, start: "22:00", end: "07:00", taskSound: "task-reminder", taskVolume: 80, taskDuration: 5, taskRepeat: false };
+  let notificationPrefs = {
+    sound: true,
+    dnd: false,
+    start: "22:00",
+    end: "07:00",
+    taskSound: "task-reminder",
+    taskVolume: 80,
+    taskDuration: 5,
+    taskRepeat: false,
+  };
   let notificationsPrimed = false;
   try {
-    const storedNotificationPrefs = JSON.parse(localStorage.getItem(notificationPrefsKey) || "null");
-    if (storedNotificationPrefs && typeof storedNotificationPrefs === "object") {
+    const storedNotificationPrefs = JSON.parse(
+      localStorage.getItem(notificationPrefsKey) || "null",
+    );
+    if (
+      storedNotificationPrefs &&
+      typeof storedNotificationPrefs === "object"
+    ) {
       notificationPrefs = {
         sound: storedNotificationPrefs.sound !== false,
         dnd: storedNotificationPrefs.dnd === true,
-        start: /^\d{2}:\d{2}$/.test(storedNotificationPrefs.start || "") ? storedNotificationPrefs.start : "22:00",
-        end: /^\d{2}:\d{2}$/.test(storedNotificationPrefs.end || "") ? storedNotificationPrefs.end : "07:00",
-        taskSound: ALERT_SOUNDS.some((sound) => sound.id === storedNotificationPrefs.taskSound) ? storedNotificationPrefs.taskSound : "task-reminder",
-        taskVolume: [0, 10, 25, 50, 75, 100].includes(Number(storedNotificationPrefs.taskVolume)) ? Number(storedNotificationPrefs.taskVolume) : 80,
-        taskDuration: [3, 5, 10, 15].includes(Number(storedNotificationPrefs.taskDuration)) ? Number(storedNotificationPrefs.taskDuration) : 5,
+        start: /^\d{2}:\d{2}$/.test(storedNotificationPrefs.start || "")
+          ? storedNotificationPrefs.start
+          : "22:00",
+        end: /^\d{2}:\d{2}$/.test(storedNotificationPrefs.end || "")
+          ? storedNotificationPrefs.end
+          : "07:00",
+        taskSound: ALERT_SOUNDS.some(
+          (sound) => sound.id === storedNotificationPrefs.taskSound,
+        )
+          ? storedNotificationPrefs.taskSound
+          : "task-reminder",
+        taskVolume: [0, 10, 25, 50, 75, 100].includes(
+          Number(storedNotificationPrefs.taskVolume),
+        )
+          ? Number(storedNotificationPrefs.taskVolume)
+          : 80,
+        taskDuration: [3, 5, 10, 15].includes(
+          Number(storedNotificationPrefs.taskDuration),
+        )
+          ? Number(storedNotificationPrefs.taskDuration)
+          : 5,
         taskRepeat: storedNotificationPrefs.taskRepeat === true,
       };
     }
@@ -137,78 +338,183 @@
   const focusRecordSavesInFlight = new Set();
   const focusText = {
     en: {
-      eyebrow: "MAKE TIME FOR WHAT MATTERS", title: "Focus", subtitle: "A quieter space for your next study session.",
-      settings: "Timer settings", focus: "Focus", shortBreak: "Short break", longBreak: "Long break",
-      cycle: "Pomodoro cycle", stayFocused: "Stay focused", takeBreak: "Take a mindful break",
-      focusHint: "One thing at a time. You’re making progress.", breakHint: "Step away, stretch, and let your mind reset.",
-      next: "Next", subject: "Study subject", chooseSubject: "Choose a subject", task: "Link a task", noTask: "No task linked",
-      distraction: "Distraction-free", exitDistraction: "Exit focus mode", start: "Start", pause: "Pause",
-      resume: "Resume", reset: "Reset", skip: "Skip session", ready: "Ready when you are",
-      paused: "Session paused", complete: "Session complete", focusTimeToday: "Focus today",
-      completedToday: "Sessions today", weeklyHours: "Focus this week", streak: "Daily streak",
-      totalCycles: "Focus cycles", weeklyChart: "Focus this week", sessionHistory: "Recent sessions",
-      noHistory: "No completed focus sessions yet", noHistoryHint: "Your completed focus blocks will appear here.",
-      settingsTitle: "Timer settings", durations: "Session lengths", focusDuration: "Focus duration",
-      shortDuration: "Short break", longDuration: "Long break", longInterval: "Long break after",
-      sessions: "focus sessions", behavior: "Session behavior", autoFocus: "Auto-start focus sessions",
-      autoBreaks: "Auto-start breaks", sound: "Completion sound", browserNotifications: "Browser notifications",
-      showSeconds: "Show seconds on the flip clock", saveSettings: "Save settings", restoreDefaults: "Restore defaults",
-      focusStartSound: "Focus start sound", focusEndSound: "Focus end sound", breakEndSound: "Break end sound",
-      soundVolume: "Sound volume", soundDuration: "Sound duration", soundRepeat: "Repeat completion sound",
+      eyebrow: "MAKE TIME FOR WHAT MATTERS",
+      title: "Focus",
+      subtitle: "A quieter space for your next study session.",
+      settings: "Timer settings",
+      focus: "Focus",
+      shortBreak: "Short break",
+      longBreak: "Long break",
+      cycle: "Pomodoro cycle",
+      stayFocused: "Stay focused",
+      takeBreak: "Take a mindful break",
+      focusHint: "One thing at a time. You’re making progress.",
+      breakHint: "Step away, stretch, and let your mind reset.",
+      next: "Next",
+      subject: "Study subject",
+      chooseSubject: "Choose a subject",
+      task: "Link a task",
+      noTask: "No task linked",
+      distraction: "Distraction-free",
+      exitDistraction: "Exit focus mode",
+      start: "Start",
+      pause: "Pause",
+      resume: "Resume",
+      reset: "Reset",
+      skip: "Skip session",
+      ready: "Ready when you are",
+      paused: "Session paused",
+      complete: "Session complete",
+      focusTimeToday: "Focus today",
+      completedToday: "Sessions today",
+      weeklyHours: "Focus this week",
+      streak: "Daily streak",
+      totalCycles: "Focus cycles",
+      weeklyChart: "Focus this week",
+      sessionHistory: "Recent sessions",
+      noHistory: "No completed focus sessions yet",
+      noHistoryHint: "Your completed focus blocks will appear here.",
+      settingsTitle: "Timer settings",
+      durations: "Session lengths",
+      focusDuration: "Focus duration",
+      shortDuration: "Short break",
+      longDuration: "Long break",
+      longInterval: "Long break after",
+      sessions: "focus sessions",
+      behavior: "Session behavior",
+      autoFocus: "Auto-start focus sessions",
+      autoBreaks: "Auto-start breaks",
+      sound: "Completion sound",
+      browserNotifications: "Browser notifications",
+      showSeconds: "Show seconds on the flip clock",
+      saveSettings: "Save settings",
+      restoreDefaults: "Restore defaults",
+      focusStartSound: "Focus start sound",
+      focusEndSound: "Focus end sound",
+      breakEndSound: "Break end sound",
+      soundVolume: "Sound volume",
+      soundDuration: "Sound duration",
+      soundRepeat: "Repeat completion sound",
       soundPreview: "Preview sound",
-      settingsSaved: "Focus settings saved.", settingsError: "Could not save your focus settings.",
-      invalidSettings: "Enter valid session lengths between 1 and 180 minutes and an interval between 2 and 12.",
+      settingsSaved: "Focus settings saved.",
+      settingsError: "Could not save your focus settings.",
+      invalidSettings:
+        "Enter valid session lengths between 1 and 180 minutes and an interval between 2 and 12.",
       notificationsUnsupported: "Browser notifications are not supported here.",
-      notificationsDenied: "Notification permission was denied. You can enable it in your browser settings.",
-      notificationReady: "Browser notifications enabled while Study Zone is open.",
+      notificationsDenied:
+        "Notification permission was denied. You can enable it in your browser settings.",
+      notificationReady:
+        "Browser notifications enabled while Study Zone is open.",
       focusCompleted: "Focus session complete. Take a short break.",
       focusCompletedTitle: "Focus session complete!",
       cycleCompletedTitle: "Pomodoro cycle complete!",
       focusRewardDetail: "Focused for {duration} · {count} completed sessions",
       breakCompleted: "Break complete. You’re ready for another focus session.",
-      sessionSaved: "Focus session saved.", sessionError: "Could not save focus session.",
-      dataError: "Focus history could not be loaded.", today: "Today", yesterday: "Yesterday",
-      mins: "min", hours: "h", minutes: "minutes", thisCycle: "Cycle",
-      notSavedGuest: "Guest focus history is saved in this browser. Sign in to sync it across devices.",
-      databaseNote: "Signed-in session history and timer settings are saved to your private Supabase account.",
-      pending: "Saving session…", hourChart: "hours", emptySubject: "Independent study",
+      sessionSaved: "Focus session saved.",
+      sessionError: "Could not save focus session.",
+      dataError: "Focus history could not be loaded.",
+      today: "Today",
+      yesterday: "Yesterday",
+      mins: "min",
+      hours: "h",
+      minutes: "minutes",
+      thisCycle: "Cycle",
+      notSavedGuest:
+        "Guest focus history is saved in this browser. Sign in to sync it across devices.",
+      databaseNote:
+        "Signed-in session history and timer settings are saved to your private Supabase account.",
+      pending: "Saving session…",
+      hourChart: "hours",
+      emptySubject: "Independent study",
     },
     ar: {
-      eyebrow: "خصص وقتًا لما يهمك", title: "التركيز", subtitle: "مساحة هادئة لجلسة الدراسة القادمة.",
-      settings: "إعدادات المؤقت", focus: "تركيز", shortBreak: "استراحة قصيرة", longBreak: "استراحة طويلة",
-      cycle: "دورة بومودورو", stayFocused: "حافظ على تركيزك", takeBreak: "استمتع باستراحة هادئة",
-      focusHint: "مهمة واحدة في كل مرة. أنت تحرز تقدمًا.", breakHint: "ابتعد قليلًا وتمدد ودع ذهنك يستعيد نشاطه.",
-      next: "التالي", subject: "المادة الدراسية", chooseSubject: "اختر مادة", task: "اربط بمهمة", noTask: "لا توجد مهمة مرتبطة",
-      distraction: "وضع التركيز", exitDistraction: "إنهاء وضع التركيز", start: "ابدأ", pause: "إيقاف مؤقت",
-      resume: "استئناف", reset: "إعادة ضبط", skip: "تخطَّ الجلسة", ready: "ابدأ عندما تكون مستعدًا",
-      paused: "الجلسة متوقفة مؤقتًا", complete: "اكتملت الجلسة", focusTimeToday: "وقت التركيز اليوم",
-      completedToday: "جلسات اليوم", weeklyHours: "تركيز هذا الأسبوع", streak: "أيام التركيز المتتالية",
-      totalCycles: "دورات التركيز", weeklyChart: "تركيز هذا الأسبوع", sessionHistory: "الجلسات الأخيرة",
-      noHistory: "لا توجد جلسات تركيز مكتملة بعد", noHistoryHint: "ستظهر هنا جلسات التركيز التي أكملتها.",
-      settingsTitle: "إعدادات المؤقت", durations: "مدة الجلسات", focusDuration: "مدة التركيز",
-      shortDuration: "الاستراحة القصيرة", longDuration: "الاستراحة الطويلة", longInterval: "الاستراحة الطويلة بعد",
-      sessions: "جلسات تركيز", behavior: "سلوك الجلسات", autoFocus: "بدء جلسات التركيز تلقائيًا",
-      autoBreaks: "بدء الاستراحات تلقائيًا", sound: "صوت عند اكتمال الجلسة", browserNotifications: "إشعارات المتصفح",
-      showSeconds: "عرض الثواني في الساعة القلّابة", saveSettings: "حفظ الإعدادات", restoreDefaults: "استعادة الافتراضية",
-      focusStartSound: "صوت بداية التركيز", focusEndSound: "صوت نهاية التركيز", breakEndSound: "صوت نهاية الاستراحة",
-      soundVolume: "مستوى صوت المؤقت", soundDuration: "مدة صوت المؤقت", soundRepeat: "تكرار صوت اكتمال الجلسة",
+      eyebrow: "خصص وقتًا لما يهمك",
+      title: "التركيز",
+      subtitle: "مساحة هادئة لجلسة الدراسة القادمة.",
+      settings: "إعدادات المؤقت",
+      focus: "تركيز",
+      shortBreak: "استراحة قصيرة",
+      longBreak: "استراحة طويلة",
+      cycle: "دورة بومودورو",
+      stayFocused: "حافظ على تركيزك",
+      takeBreak: "استمتع باستراحة هادئة",
+      focusHint: "مهمة واحدة في كل مرة. أنت تحرز تقدمًا.",
+      breakHint: "ابتعد قليلًا وتمدد ودع ذهنك يستعيد نشاطه.",
+      next: "التالي",
+      subject: "المادة الدراسية",
+      chooseSubject: "اختر مادة",
+      task: "اربط بمهمة",
+      noTask: "لا توجد مهمة مرتبطة",
+      distraction: "وضع التركيز",
+      exitDistraction: "إنهاء وضع التركيز",
+      start: "ابدأ",
+      pause: "إيقاف مؤقت",
+      resume: "استئناف",
+      reset: "إعادة ضبط",
+      skip: "تخطَّ الجلسة",
+      ready: "ابدأ عندما تكون مستعدًا",
+      paused: "الجلسة متوقفة مؤقتًا",
+      complete: "اكتملت الجلسة",
+      focusTimeToday: "وقت التركيز اليوم",
+      completedToday: "جلسات اليوم",
+      weeklyHours: "تركيز هذا الأسبوع",
+      streak: "أيام التركيز المتتالية",
+      totalCycles: "دورات التركيز",
+      weeklyChart: "تركيز هذا الأسبوع",
+      sessionHistory: "الجلسات الأخيرة",
+      noHistory: "لا توجد جلسات تركيز مكتملة بعد",
+      noHistoryHint: "ستظهر هنا جلسات التركيز التي أكملتها.",
+      settingsTitle: "إعدادات المؤقت",
+      durations: "مدة الجلسات",
+      focusDuration: "مدة التركيز",
+      shortDuration: "الاستراحة القصيرة",
+      longDuration: "الاستراحة الطويلة",
+      longInterval: "الاستراحة الطويلة بعد",
+      sessions: "جلسات تركيز",
+      behavior: "سلوك الجلسات",
+      autoFocus: "بدء جلسات التركيز تلقائيًا",
+      autoBreaks: "بدء الاستراحات تلقائيًا",
+      sound: "صوت عند اكتمال الجلسة",
+      browserNotifications: "إشعارات المتصفح",
+      showSeconds: "عرض الثواني في الساعة القلّابة",
+      saveSettings: "حفظ الإعدادات",
+      restoreDefaults: "استعادة الافتراضية",
+      focusStartSound: "صوت بداية التركيز",
+      focusEndSound: "صوت نهاية التركيز",
+      breakEndSound: "صوت نهاية الاستراحة",
+      soundVolume: "مستوى صوت المؤقت",
+      soundDuration: "مدة صوت المؤقت",
+      soundRepeat: "تكرار صوت اكتمال الجلسة",
       soundPreview: "تجربة الصوت",
-      settingsSaved: "تم حفظ إعدادات التركيز.", settingsError: "تعذر حفظ إعدادات التركيز.",
-      invalidSettings: "أدخل مددًا صحيحة بين دقيقة و١٨٠ دقيقة، وفاصلًا بين جلستين و١٢ جلسة.",
+      settingsSaved: "تم حفظ إعدادات التركيز.",
+      settingsError: "تعذر حفظ إعدادات التركيز.",
+      invalidSettings:
+        "أدخل مددًا صحيحة بين دقيقة و١٨٠ دقيقة، وفاصلًا بين جلستين و١٢ جلسة.",
       notificationsUnsupported: "إشعارات المتصفح غير مدعومة هنا.",
-      notificationsDenied: "تم رفض إذن الإشعارات. يمكنك تفعيله من إعدادات المتصفح.",
+      notificationsDenied:
+        "تم رفض إذن الإشعارات. يمكنك تفعيله من إعدادات المتصفح.",
       notificationReady: "إشعارات المتصفح مفعلة أثناء فتح Study Zone.",
       focusCompleted: "اكتملت جلسة التركيز. حان وقت استراحة قصيرة.",
       focusCompletedTitle: "اكتملت جلسة التركيز!",
       cycleCompletedTitle: "اكتملت دورة بومودورو!",
       focusRewardDetail: "تركيز لمدة {duration} · {count} جلسات مكتملة",
       breakCompleted: "انتهت الاستراحة. أنت مستعد لجلسة تركيز جديدة.",
-      sessionSaved: "تم حفظ جلسة التركيز.", sessionError: "تعذر حفظ جلسة التركيز.",
-      dataError: "تعذر تحميل سجل التركيز.", today: "اليوم", yesterday: "أمس",
-      mins: "د", hours: "س", minutes: "دقيقة", thisCycle: "الدورة",
-      notSavedGuest: "يُحفظ سجل التركيز للضيف على هذا الجهاز. سجّل الدخول لمزامنته بين أجهزتك.",
-      databaseNote: "يُحفظ سجل الجلسات وإعدادات المؤقت في حسابك الخاص على Supabase.",
-      pending: "جارٍ حفظ الجلسة…", hourChart: "ساعات", emptySubject: "دراسة مستقلة",
+      sessionSaved: "تم حفظ جلسة التركيز.",
+      sessionError: "تعذر حفظ جلسة التركيز.",
+      dataError: "تعذر تحميل سجل التركيز.",
+      today: "اليوم",
+      yesterday: "أمس",
+      mins: "د",
+      hours: "س",
+      minutes: "دقيقة",
+      thisCycle: "الدورة",
+      notSavedGuest:
+        "يُحفظ سجل التركيز للضيف على هذا الجهاز. سجّل الدخول لمزامنته بين أجهزتك.",
+      databaseNote:
+        "يُحفظ سجل الجلسات وإعدادات المؤقت في حسابك الخاص على Supabase.",
+      pending: "جارٍ حفظ الجلسة…",
+      hourChart: "ساعات",
+      emptySubject: "دراسة مستقلة",
     },
   };
   let session = null;
@@ -224,14 +530,20 @@
   let adminUsersRequest = 0;
   const adminUsersPageSize = 25;
   let userNotifications = [];
-  let dailyReminderPreference = { enabled: false, local_time: "09:00", timezone: "UTC" };
+  let dailyReminderPreference = {
+    enabled: false,
+    local_time: "09:00",
+    timezone: "UTC",
+  };
   let rewardSummary = null;
   let earnedAchievements = [];
   const rewardCounterValues = new Map();
   const savedMotionLevel = localStorage.getItem("studyflow.motion");
   let motionLevel = ["full", "reduced", "off"].includes(savedMotionLevel)
     ? savedMotionLevel
-    : localStorage.getItem("studyflow.animations") === "off" ? "off" : "full";
+    : localStorage.getItem("studyflow.animations") === "off"
+      ? "off"
+      : "full";
   let animationsEnabled = motionLevel !== "off";
   let searchTerm = "";
   let statusFilter = "all";
@@ -239,7 +551,11 @@
   let deadlineFilter = "all";
   let deadlineSort = "due";
   let deadlineView = "list";
-  let deadlineMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  let deadlineMonth = new Date(
+    new Date().getFullYear(),
+    new Date().getMonth(),
+    1,
+  );
   let selectedDeadlineDate = dateKey(new Date());
   let editingDeadlineId = null;
   let deadlinesLoading = false;
@@ -248,7 +564,8 @@
   const localNotesKey = "studyzone.notes.v1";
   let taskViewMode = "day";
   let taskViewDate = startOfLocalDay(new Date());
-  let taskShowCompleted = localStorage.getItem("studyzone.show-completed") !== "false";
+  let taskShowCompleted =
+    localStorage.getItem("studyzone.show-completed") !== "false";
   let taskEditingId = null;
   let pendingSeriesAction = null;
   let recurrenceSupported = true;
@@ -261,7 +578,12 @@
   let noteSaveTimer = null;
   let noteSaveStatus = "idle";
   let noteEditorElement = null;
-  let taskSectionState = { overdue: true, today: true, nodate: true, completed: true };
+  let taskSectionState = {
+    overdue: true,
+    today: true,
+    nodate: true,
+    completed: true,
+  };
 
   let teams = [];
   let teamMembers = [];
@@ -290,8 +612,11 @@
   let voiceMimeType = "";
   let voiceDurationSeconds = 0;
   try {
-    const storedTaskView = JSON.parse(localStorage.getItem(taskDayStorageKey) || "null");
-    if (storedTaskView?.mode === "all" || storedTaskView?.mode === "day") taskViewMode = storedTaskView.mode;
+    const storedTaskView = JSON.parse(
+      localStorage.getItem(taskDayStorageKey) || "null",
+    );
+    if (storedTaskView?.mode === "all" || storedTaskView?.mode === "day")
+      taskViewMode = storedTaskView.mode;
   } catch (error) {
     console.warn("Could not restore the saved task view.", error);
   }
@@ -299,69 +624,249 @@
 
   const deadlineText = {
     en: {
-      eyebrow: "STAY A STEP AHEAD", title: "Deadlines", subtitle: "Keep track of everything you need to finish.",
-      add: "Add deadline", total: "Total deadlines", upcoming: "Upcoming", overdue: "Overdue", completed: "Completed",
-      search: "Search deadlines", all: "All", filterUpcoming: "Upcoming", filterOverdue: "Overdue", filterCompleted: "Completed",
-      dueDate: "Due date", priority: "Priority", recentlyAdded: "Recently added", list: "List view", calendar: "Calendar view",
-      due: "Due", remaining: "left", tomorrow: "Due tomorrow", today: "Due today", overdueBy: "Overdue by", day: "day", days: "days",
-      hour: "hour", hours: "hours", minute: "minute", minutes: "minutes", pending: "Pending", statusCompleted: "Completed", statusOverdue: "Overdue",
-      noDeadlines: "No deadlines yet", noDeadlinesHint: "Add the dates you need to remember. They’ll stay in your account.",
-      noResults: "No matching deadlines", noResultsHint: "Try a different search or filter.", showing: "Showing", deadline: "deadline", deadlines: "deadlines",
-      noDate: "No date selected", noDateHint: "Choose a calendar day to see its deadlines.", noDateItems: "Nothing due on this day.",
-      monthLabel: "Calendar month", previous: "Previous month", next: "Next month", currentMonth: "This month",
-      modalAdd: "Add deadline", modalEdit: "Edit deadline", modalHelp: "Keep the important details and due time together.",
-      titleLabel: "Deadline title", titlePlaceholder: "e.g. Submit research summary", description: "Description", optional: "Optional",
-      descriptionPlaceholder: "Add helpful details", subject: "Subject", independent: "Independent study", low: "Low", medium: "Medium", high: "High", urgent: "Urgent",
-      date: "Due date", time: "Due time", reminder: "Reminder", noReminder: "No reminder", minBefore: "minutes before", hourBefore: "1 hour before", dayBefore: "1 day before",
-      cancel: "Cancel", save: "Save deadline", saving: "Saving…", close: "Close", deleteConfirm: "Delete this deadline? This cannot be undone.",
-      validationTitle: "Enter a deadline title.", validationDate: "Choose a due date.", validationPast: "The due date must be in the future.",
-      saveSuccess: "Deadline saved.", updateSuccess: "Deadline updated.", deleteSuccess: "Deadline deleted.",
-      completeSuccess: "Deadline completed.", reopenSuccess: "Deadline reopened.", loadError: "Could not load deadlines.",
-      saveError: "Could not save this deadline.", deleteError: "Could not delete the deadline.", edit: "Edit", delete: "Delete",
-      priorityLabel: "Priority", reminderUnavailable: "Run the deadline migration to enable saved reminders.",
-      reminderNote: "Reminders are saved with your deadline. Delivery requires the scheduled Supabase function.",
-      sampleNote: "Guest preview data is stored in this browser. Sign in to sync deadlines across devices.",
+      eyebrow: "STAY A STEP AHEAD",
+      title: "Deadlines",
+      subtitle: "Keep track of everything you need to finish.",
+      add: "Add deadline",
+      total: "Total deadlines",
+      upcoming: "Upcoming",
+      overdue: "Overdue",
+      completed: "Completed",
+      search: "Search deadlines",
+      all: "All",
+      filterUpcoming: "Upcoming",
+      filterOverdue: "Overdue",
+      filterCompleted: "Completed",
+      dueDate: "Due date",
+      priority: "Priority",
+      recentlyAdded: "Recently added",
+      list: "List view",
+      calendar: "Calendar view",
+      due: "Due",
+      remaining: "left",
+      tomorrow: "Due tomorrow",
+      today: "Due today",
+      overdueBy: "Overdue by",
+      day: "day",
+      days: "days",
+      hour: "hour",
+      hours: "hours",
+      minute: "minute",
+      minutes: "minutes",
+      pending: "Pending",
+      statusCompleted: "Completed",
+      statusOverdue: "Overdue",
+      noDeadlines: "No deadlines yet",
+      noDeadlinesHint:
+        "Add the dates you need to remember. They’ll stay in your account.",
+      noResults: "No matching deadlines",
+      noResultsHint: "Try a different search or filter.",
+      showing: "Showing",
+      deadline: "deadline",
+      deadlines: "deadlines",
+      noDate: "No date selected",
+      noDateHint: "Choose a calendar day to see its deadlines.",
+      noDateItems: "Nothing due on this day.",
+      monthLabel: "Calendar month",
+      previous: "Previous month",
+      next: "Next month",
+      currentMonth: "This month",
+      modalAdd: "Add deadline",
+      modalEdit: "Edit deadline",
+      modalHelp: "Keep the important details and due time together.",
+      titleLabel: "Deadline title",
+      titlePlaceholder: "e.g. Submit research summary",
+      description: "Description",
+      optional: "Optional",
+      descriptionPlaceholder: "Add helpful details",
+      subject: "Subject",
+      independent: "Independent study",
+      low: "Low",
+      medium: "Medium",
+      high: "High",
+      urgent: "Urgent",
+      date: "Due date",
+      time: "Due time",
+      reminder: "Reminder",
+      noReminder: "No reminder",
+      minBefore: "minutes before",
+      hourBefore: "1 hour before",
+      dayBefore: "1 day before",
+      cancel: "Cancel",
+      save: "Save deadline",
+      saving: "Saving…",
+      close: "Close",
+      deleteConfirm: "Delete this deadline? This cannot be undone.",
+      validationTitle: "Enter a deadline title.",
+      validationDate: "Choose a due date.",
+      validationPast: "The due date must be in the future.",
+      saveSuccess: "Deadline saved.",
+      updateSuccess: "Deadline updated.",
+      deleteSuccess: "Deadline deleted.",
+      completeSuccess: "Deadline completed.",
+      reopenSuccess: "Deadline reopened.",
+      loadError: "Could not load deadlines.",
+      saveError: "Could not save this deadline.",
+      deleteError: "Could not delete the deadline.",
+      edit: "Edit",
+      delete: "Delete",
+      priorityLabel: "Priority",
+      reminderUnavailable:
+        "Run the deadline migration to enable saved reminders.",
+      reminderNote:
+        "Reminders are saved with your deadline. Delivery requires the scheduled Supabase function.",
+      sampleNote:
+        "Guest preview data is stored in this browser. Sign in to sync deadlines across devices.",
       emptySubject: "No subjects yet",
       daysShort: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
-      months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+      months: [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+      ],
     },
     ar: {
-      eyebrow: "رتّب أولوياتك", title: "المواعيد النهائية", subtitle: "تابع كل ما تحتاج إلى إنجازه في الوقت المناسب.",
-      add: "أضف موعدًا", total: "كل المواعيد", upcoming: "القادمة", overdue: "المتأخرة", completed: "المكتملة",
-      search: "ابحث في المواعيد", all: "الكل", filterUpcoming: "القادمة", filterOverdue: "متأخرة", filterCompleted: "مكتملة",
-      dueDate: "تاريخ الاستحقاق", priority: "الأولوية", recentlyAdded: "الأحدث إضافة", list: "عرض القائمة", calendar: "عرض التقويم",
-      due: "الموعد", remaining: "متبقية", tomorrow: "موعدها غدًا", today: "موعدها اليوم", overdueBy: "متأخر منذ", day: "يوم", days: "أيام",
-      hour: "ساعة", hours: "ساعات", minute: "دقيقة", minutes: "دقائق", pending: "قيد الانتظار", statusCompleted: "مكتمل", statusOverdue: "متأخر",
-      noDeadlines: "لا توجد مواعيد بعد", noDeadlinesHint: "أضف المواعيد التي تريد تذكّرها، وستبقى محفوظة في حسابك.",
-      noResults: "لا توجد مواعيد مطابقة", noResultsHint: "جرّب تغيير البحث أو عوامل التصفية.", showing: "عرض", deadline: "موعد", deadlines: "مواعيد",
-      noDate: "لم يُحدَّد يوم", noDateHint: "اختر يومًا من التقويم لعرض مواعيده.", noDateItems: "لا توجد مواعيد لهذا اليوم.",
-      monthLabel: "شهر التقويم", previous: "الشهر السابق", next: "الشهر التالي", currentMonth: "هذا الشهر",
-      modalAdd: "إضافة موعد", modalEdit: "تعديل الموعد", modalHelp: "أضف تفاصيل الموعد وتاريخه لتبقى كلها في مكان واحد.",
-      titleLabel: "عنوان الموعد", titlePlaceholder: "مثال: تسليم ملخص البحث", description: "الوصف", optional: "اختياري",
-      descriptionPlaceholder: "أضف تفاصيل تساعدك", subject: "المادة", independent: "دراسة مستقلة", low: "منخفضة", medium: "متوسطة", high: "عالية", urgent: "عاجلة",
-      date: "تاريخ الاستحقاق", time: "وقت الاستحقاق", reminder: "التذكير", noReminder: "بلا تذكير", minBefore: "دقيقة قبل الموعد", hourBefore: "قبل ساعة", dayBefore: "قبل يوم",
-      cancel: "إلغاء", save: "حفظ الموعد", saving: "جارٍ الحفظ…", close: "إغلاق", deleteConfirm: "هل تريد حذف هذا الموعد؟ لا يمكن التراجع عن ذلك.",
-      validationTitle: "أدخل عنوان الموعد.", validationDate: "اختر تاريخ الاستحقاق.", validationPast: "يجب أن يكون الموعد في المستقبل.",
-      saveSuccess: "تم حفظ الموعد.", updateSuccess: "تم تحديث الموعد.", deleteSuccess: "تم حذف الموعد.",
-      completeSuccess: "تم إنجاز الموعد.", reopenSuccess: "تمت إعادة فتح الموعد.", loadError: "تعذّر تحميل المواعيد.",
-      saveError: "تعذّر حفظ الموعد.", deleteError: "تعذّر حذف الموعد.", edit: "تعديل", delete: "حذف",
-      priorityLabel: "الأولوية", reminderUnavailable: "شغّل ترحيل المواعيد لتفعيل حفظ التذكيرات.",
-      reminderNote: "يُحفظ التذكير مع الموعد. يتطلب إرسال التنبيه تفعيل وظيفة Supabase مجدولة.",
-      sampleNote: "تُحفظ بيانات المعاينة على هذا الجهاز. سجّل الدخول لمزامنة مواعيدك بين الأجهزة.",
+      eyebrow: "رتّب أولوياتك",
+      title: "المواعيد النهائية",
+      subtitle: "تابع كل ما تحتاج إلى إنجازه في الوقت المناسب.",
+      add: "أضف موعدًا",
+      total: "كل المواعيد",
+      upcoming: "القادمة",
+      overdue: "المتأخرة",
+      completed: "المكتملة",
+      search: "ابحث في المواعيد",
+      all: "الكل",
+      filterUpcoming: "القادمة",
+      filterOverdue: "متأخرة",
+      filterCompleted: "مكتملة",
+      dueDate: "تاريخ الاستحقاق",
+      priority: "الأولوية",
+      recentlyAdded: "الأحدث إضافة",
+      list: "عرض القائمة",
+      calendar: "عرض التقويم",
+      due: "الموعد",
+      remaining: "متبقية",
+      tomorrow: "موعدها غدًا",
+      today: "موعدها اليوم",
+      overdueBy: "متأخر منذ",
+      day: "يوم",
+      days: "أيام",
+      hour: "ساعة",
+      hours: "ساعات",
+      minute: "دقيقة",
+      minutes: "دقائق",
+      pending: "قيد الانتظار",
+      statusCompleted: "مكتمل",
+      statusOverdue: "متأخر",
+      noDeadlines: "لا توجد مواعيد بعد",
+      noDeadlinesHint:
+        "أضف المواعيد التي تريد تذكّرها، وستبقى محفوظة في حسابك.",
+      noResults: "لا توجد مواعيد مطابقة",
+      noResultsHint: "جرّب تغيير البحث أو عوامل التصفية.",
+      showing: "عرض",
+      deadline: "موعد",
+      deadlines: "مواعيد",
+      noDate: "لم يُحدَّد يوم",
+      noDateHint: "اختر يومًا من التقويم لعرض مواعيده.",
+      noDateItems: "لا توجد مواعيد لهذا اليوم.",
+      monthLabel: "شهر التقويم",
+      previous: "الشهر السابق",
+      next: "الشهر التالي",
+      currentMonth: "هذا الشهر",
+      modalAdd: "إضافة موعد",
+      modalEdit: "تعديل الموعد",
+      modalHelp: "أضف تفاصيل الموعد وتاريخه لتبقى كلها في مكان واحد.",
+      titleLabel: "عنوان الموعد",
+      titlePlaceholder: "مثال: تسليم ملخص البحث",
+      description: "الوصف",
+      optional: "اختياري",
+      descriptionPlaceholder: "أضف تفاصيل تساعدك",
+      subject: "المادة",
+      independent: "دراسة مستقلة",
+      low: "منخفضة",
+      medium: "متوسطة",
+      high: "عالية",
+      urgent: "عاجلة",
+      date: "تاريخ الاستحقاق",
+      time: "وقت الاستحقاق",
+      reminder: "التذكير",
+      noReminder: "بلا تذكير",
+      minBefore: "دقيقة قبل الموعد",
+      hourBefore: "قبل ساعة",
+      dayBefore: "قبل يوم",
+      cancel: "إلغاء",
+      save: "حفظ الموعد",
+      saving: "جارٍ الحفظ…",
+      close: "إغلاق",
+      deleteConfirm: "هل تريد حذف هذا الموعد؟ لا يمكن التراجع عن ذلك.",
+      validationTitle: "أدخل عنوان الموعد.",
+      validationDate: "اختر تاريخ الاستحقاق.",
+      validationPast: "يجب أن يكون الموعد في المستقبل.",
+      saveSuccess: "تم حفظ الموعد.",
+      updateSuccess: "تم تحديث الموعد.",
+      deleteSuccess: "تم حذف الموعد.",
+      completeSuccess: "تم إنجاز الموعد.",
+      reopenSuccess: "تمت إعادة فتح الموعد.",
+      loadError: "تعذّر تحميل المواعيد.",
+      saveError: "تعذّر حفظ الموعد.",
+      deleteError: "تعذّر حذف الموعد.",
+      edit: "تعديل",
+      delete: "حذف",
+      priorityLabel: "الأولوية",
+      reminderUnavailable: "شغّل ترحيل المواعيد لتفعيل حفظ التذكيرات.",
+      reminderNote:
+        "يُحفظ التذكير مع الموعد. يتطلب إرسال التنبيه تفعيل وظيفة Supabase مجدولة.",
+      sampleNote:
+        "تُحفظ بيانات المعاينة على هذا الجهاز. سجّل الدخول لمزامنة مواعيدك بين الأجهزة.",
       emptySubject: "لا توجد مواد بعد",
-      daysShort: ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"],
-      months: ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"],
+      daysShort: [
+        "الأحد",
+        "الإثنين",
+        "الثلاثاء",
+        "الأربعاء",
+        "الخميس",
+        "الجمعة",
+        "السبت",
+      ],
+      months: [
+        "يناير",
+        "فبراير",
+        "مارس",
+        "أبريل",
+        "مايو",
+        "يونيو",
+        "يوليو",
+        "أغسطس",
+        "سبتمبر",
+        "أكتوبر",
+        "نوفمبر",
+        "ديسمبر",
+      ],
     },
   };
   const savedLanguage = localStorage.getItem("studyflow.language");
-  let appLanguage = savedLanguage === "ar" || savedLanguage === "en"
-    ? savedLanguage
-    : navigator.language?.toLowerCase().startsWith("ar") ? "ar" : "en";
+  let appLanguage =
+    savedLanguage === "ar" || savedLanguage === "en"
+      ? savedLanguage
+      : navigator.language?.toLowerCase().startsWith("ar")
+        ? "ar"
+        : "en";
 
   function shouldAnimate() {
-    return animationsEnabled
-      && document.visibilityState === "visible"
-      && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    return (
+      animationsEnabled &&
+      document.visibilityState === "visible" &&
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    );
   }
 
   function shouldUseFullMotion() {
@@ -394,8 +899,10 @@
     Admin: "الإدارة",
     "Admin dashboard": "لوحة إدارة النظام",
     "Registered users": "المستخدمون المسجلون",
-    "Review registered accounts and their sign-in status.": "راجع الحسابات المسجلة وحالة تسجيل الدخول.",
-    "This private list is visible only to authorized administrators.": "هذه القائمة خاصة بالمديرين المصرح لهم فقط.",
+    "Review registered accounts and their sign-in status.":
+      "راجع الحسابات المسجلة وحالة تسجيل الدخول.",
+    "This private list is visible only to authorized administrators.":
+      "هذه القائمة خاصة بالمديرين المصرح لهم فقط.",
     "Search by name or email": "ابحث بالاسم أو البريد الإلكتروني",
     Search: "بحث",
     Refresh: "تحديث",
@@ -451,18 +958,20 @@
     "Choose weekdays": "اختيار أيام الأسبوع",
     "Repeat on": "التكرار في",
     "Repeat until": "تكرار حتى",
-    "Choose an end date within the next year. Each occurrence is saved as its own task.": "اختر تاريخ انتهاء خلال السنة القادمة. يُحفظ كل موعد كمهمة مستقلة.",
-    "Mon": "الإثنين",
-    "Tue": "الثلاثاء",
-    "Wed": "الأربعاء",
-    "Thu": "الخميس",
-    "Fri": "الجمعة",
-    "Sat": "السبت",
-    "Sun": "الأحد",
+    "Choose an end date within the next year. Each occurrence is saved as its own task.":
+      "اختر تاريخ انتهاء خلال السنة القادمة. يُحفظ كل موعد كمهمة مستقلة.",
+    Mon: "الإثنين",
+    Tue: "الثلاثاء",
+    Wed: "الأربعاء",
+    Thu: "الخميس",
+    Fri: "الجمعة",
+    Sat: "السبت",
+    Sun: "الأحد",
     "Save task": "حفظ المهمة",
     "KEEP IT MOVING": "واصل التقدم",
     "Add deadline": "إضافة موعد نهائي",
-    "Keep the important details and due time together.": "اجمع تفاصيل الموعد وتاريخه في مكان واحد.",
+    "Keep the important details and due time together.":
+      "اجمع تفاصيل الموعد وتاريخه في مكان واحد.",
     "Deadline title": "عنوان الموعد",
     "e.g. Submit research summary": "مثال: تسليم ملخص البحث",
     Description: "الوصف",
@@ -478,7 +987,8 @@
     "Save deadline": "حفظ الموعد",
     "YOUR STUDY LIFE, ORGANIZED": "حياتك الدراسية، منظمة",
     "Welcome to Study Zone": "مرحبًا بك في Study Zone",
-    "Connect Supabase to create an account or sign in.": "اربط Supabase لإنشاء حساب أو تسجيل الدخول.",
+    "Connect Supabase to create an account or sign in.":
+      "اربط Supabase لإنشاء حساب أو تسجيل الدخول.",
     "Sign in": "تسجيل الدخول",
     "Create account": "إنشاء حساب",
     "Your name": "اسمك",
@@ -486,11 +996,13 @@
     Password: "كلمة المرور",
     "At least 6 characters": "٦ أحرف على الأقل",
     "Sign out": "تسجيل الخروج",
-    "Your password is handled securely by Supabase Auth.": "تُدار كلمة مرورك بأمان عبر خدمة Supabase Auth.",
+    "Your password is handled securely by Supabase Auth.":
+      "تُدار كلمة مرورك بأمان عبر خدمة Supabase Auth.",
     "Choose language": "اختر اللغة",
     "Toggle light theme": "تبديل السمة الفاتحة",
     "Motion & celebrations": "الحركة والاحتفالات",
-    "Choose how much motion Study Zone uses.": "اختر مستوى الحركة في Study Zone.",
+    "Choose how much motion Study Zone uses.":
+      "اختر مستوى الحركة في Study Zone.",
     "Full Motion": "حركة كاملة",
     "Layered transitions and celebrations": "انتقالات واحتفالات متكاملة",
     "Reduced Motion": "حركة مخففة",
@@ -498,10 +1010,11 @@
     "Motion Off": "إيقاف الحركة",
     "Disable nonessential animation": "إيقاف الحركات غير الضرورية",
     "Animation level": "مستوى الحركة",
-    "You’re offline. Network-backed data and sync are unavailable; changes may not be saved.": "أنت غير متصل بالإنترنت. البيانات والمزامنة عبر الشبكة غير متاحة؛ قد لا تُحفظ التغييرات.",
+    "You’re offline. Network-backed data and sync are unavailable; changes may not be saved.":
+      "أنت غير متصل بالإنترنت. البيانات والمزامنة عبر الشبكة غير متاحة؛ قد لا تُحفظ التغييرات.",
     "Settings saved.": "تم حفظ الإعدادات.",
     "Language changed.": "تم تغيير اللغة.",
-    "Unlocked": "تم الفتح",
+    Unlocked: "تم الفتح",
     "Connect your account for real rewards": "اربط حسابك لعرض مكافآتك الفعلية",
     "Based on verified activity": "بناءً على النشاط الموثق",
     "tasks finished": " مهام مكتملة",
@@ -529,15 +1042,18 @@
     "Deadline Hero": "بطل المواعيد",
     "Complete 10 tasks with deadlines.": "أنجز ١٠ مهام لها مواعيد نهائية.",
     "Study Streak": "سلسلة الدراسة",
-    "Build a 7-day activity streak.": "حافظ على نشاط دراسي لمدة ٧ أيام متتالية.",
+    "Build a 7-day activity streak.":
+      "حافظ على نشاط دراسي لمدة ٧ أيام متتالية.",
     "Consistency Champion": "بطل الاستمرارية",
-    "Build a 30-day activity streak.": "حافظ على نشاط دراسي لمدة ٣٠ يومًا متتاليًا.",
+    "Build a 30-day activity streak.":
+      "حافظ على نشاط دراسي لمدة ٣٠ يومًا متتاليًا.",
     "Sign in to earn secure rewards.": "سجّل الدخول لكسب المكافآت بأمان.",
-    "Rewards load after applying the latest Supabase migration.": "ستظهر المكافآت بعد تطبيق آخر تحديث لقاعدة Supabase.",
+    "Rewards load after applying the latest Supabase migration.":
+      "ستظهر المكافآت بعد تطبيق آخر تحديث لقاعدة Supabase.",
     "Earned achievements": "الإنجازات المكتسبة",
     "No achievements unlocked yet.": "لم تُفتح إنجازات بعد.",
-    "Level": "المستوى",
-    "XP": "نقطة خبرة",
+    Level: "المستوى",
+    XP: "نقطة خبرة",
     "Progress to next level": "التقدم نحو المستوى التالي",
     "Completed tasks": "المهام المكتملة",
     "Focus sessions": "جلسات التركيز",
@@ -547,7 +1063,7 @@
     "You've reached a new study milestone.": "لقد وصلت إلى محطة دراسية جديدة.",
     "Install app": "تثبيت التطبيق",
     "Install Study Zone": "تثبيت Study Zone",
-    "Done": "تم",
+    Done: "تم",
     "A new version is available.": "يتوفر إصدار جديد.",
     "Update now": "حدّث الآن",
     "App installed.": "تم تثبيت التطبيق.",
@@ -563,8 +1079,10 @@
     "STUDY STREAK": "أيام الدراسة المتتالية",
     " · best this term": " · الأفضل هذا الفصل",
     "Personal best · ": "أفضل إنجاز · ",
-    "Add a subject to start tracking course progress.": "أضف مادة لمتابعة تقدمك الدراسي.",
-    "A clear plan makes room for your best work.": "الخطة الواضحة تهيئ لك أفضل إنجاز.",
+    "Add a subject to start tracking course progress.":
+      "أضف مادة لمتابعة تقدمك الدراسي.",
+    "A clear plan makes room for your best work.":
+      "الخطة الواضحة تهيئ لك أفضل إنجاز.",
     "Study rhythm": "وتيرة الدراسة",
     "Sample hours from the past week": "ساعات تجريبية من الأسبوع الماضي",
     "View analytics →": "عرض التحليلات ←",
@@ -584,10 +1102,12 @@
     "Tasks →": "المهام ←",
     "Explore your study materials": "استكشف موادك الدراسية",
     "Files →": "الملفات ←",
-    "Preview figures are sample data until you connect your Supabase project.": "الأرقام المعروضة تجريبية حتى تربط مشروع Supabase.",
+    "Preview figures are sample data until you connect your Supabase project.":
+      "الأرقام المعروضة تجريبية حتى تربط مشروع Supabase.",
     TASKBOARD: "لوحة المهام",
     "Tasks & deadlines": "المهام والمواعيد النهائية",
-    "Keep assignments, priorities, and due dates in one calm place.": "نظّم واجباتك وأولوياتك ومواعيدها في مكان واحد.",
+    "Keep assignments, priorities, and due dates in one calm place.":
+      "نظّم واجباتك وأولوياتك ومواعيدها في مكان واحد.",
     "Search tasks": "ابحث في المهام",
     "Filter task status": "تصفية حالة المهام",
     "All tasks": "كل المهام",
@@ -599,10 +1119,12 @@
     Complete: "إنجاز",
     Delete: "حذف",
     "No tasks found": "لم يتم العثور على مهام",
-    "Try another search or add your next task.": "جرّب بحثًا آخر أو أضف مهمتك التالية.",
+    "Try another search or add your next task.":
+      "جرّب بحثًا آخر أو أضف مهمتك التالية.",
     "Your tasks": "مهامك",
     " tasks remaining": " مهام متبقية",
-    "Tasks are stored in this browser in preview mode. Signed-in accounts use Supabase.": "تُحفظ المهام في هذا المتصفح في وضع المعاينة، وتُزامن مع Supabase بعد تسجيل الدخول.",
+    "Tasks are stored in this browser in preview mode. Signed-in accounts use Supabase.":
+      "تُحفظ المهام في هذا المتصفح في وضع المعاينة، وتُزامن مع Supabase بعد تسجيل الدخول.",
     "Independent study": "دراسة مستقلة",
     "Discrete math problem set": "مجموعة مسائل الرياضيات المتقطعة",
     "Biology flashcards review": "مراجعة بطاقات الأحياء",
@@ -613,43 +1135,58 @@
     "Filter task status": "تصفية حالة المهام",
     "Add a task": "إضافة مهمة",
     "WEEK AT A GLANCE": "أسبوعك بنظرة سريعة",
-    "Make a realistic plan, then give yourself room to adapt.": "ضع خطة واقعية واترك مساحة للتغيير.",
+    "Make a realistic plan, then give yourself room to adapt.":
+      "ضع خطة واقعية واترك مساحة للتغيير.",
     "Plan a block": "إضافة جلسة",
     "This week": "هذا الأسبوع",
     "Planned sessions · preview": "الجلسات المخططة · معاينة",
     "Open day": "يوم متاح",
     "No study blocks planned.": "لا توجد جلسات دراسية مخططة.",
     "Planned vs. actual": "المخطط مقابل الفعلي",
-    "Compare time blocks with completed focus sessions": "قارن الجلسات المخططة بجلسات التركيز المكتملة",
+    "Compare time blocks with completed focus sessions":
+      "قارن الجلسات المخططة بجلسات التركيز المكتملة",
     "planned this week": "مخطط هذا الأسبوع",
-    "5.1 hours logged in this sample week": "سُجلت ٥٫١ ساعات في هذا الأسبوع التجريبي",
+    "5.1 hours logged in this sample week":
+      "سُجلت ٥٫١ ساعات في هذا الأسبوع التجريبي",
     "Planning tip": "نصيحة للتخطيط",
-    "Leave a little breathing room between study blocks. A flexible plan is easier to keep than a perfect one.": "اترك وقتًا للراحة بين الجلسات. فالخطة المرنة أسهل التزامًا من الخطة المثالية.",
+    "Leave a little breathing room between study blocks. A flexible plan is easier to keep than a perfect one.":
+      "اترك وقتًا للراحة بين الجلسات. فالخطة المرنة أسهل التزامًا من الخطة المثالية.",
     "YOUR COURSES": "موادك الدراسية",
-    "A quick view of your courses, credits, and learning progress.": "نظرة سريعة على موادك وساعاتها وتقدمك الدراسي.",
+    "A quick view of your courses, credits, and learning progress.":
+      "نظرة سريعة على موادك وساعاتها وتقدمك الدراسي.",
     "Add subject": "إضافة مادة",
     credits: "ساعات معتمدة",
-    "Keep your notes, tasks, and study sessions connected to this course.": "اربط ملاحظاتك ومهامك وجلساتك الدراسية بهذه المادة.",
+    "Keep your notes, tasks, and study sessions connected to this course.":
+      "اربط ملاحظاتك ومهامك وجلساتك الدراسية بهذه المادة.",
     "Learning progress": "التقدم الدراسي",
     "No subjects yet": "لا توجد مواد بعد",
-    "Add your first course to start organizing your study workspace.": "أضف مادتك الأولى لتنظيم مساحة دراستك.",
-    "Subject details loaded from your account. Course progress appears as you log study sessions.": "تم تحميل المواد من حسابك. سيظهر تقدمك عند تسجيل جلسات الدراسة.",
-    "Preview content. Subject management will be backed by your Supabase database.": "محتوى تجريبي. ستُدار المواد عبر قاعدة بيانات Supabase.",
+    "Add your first course to start organizing your study workspace.":
+      "أضف مادتك الأولى لتنظيم مساحة دراستك.",
+    "Subject details loaded from your account. Course progress appears as you log study sessions.":
+      "تم تحميل المواد من حسابك. سيظهر تقدمك عند تسجيل جلسات الدراسة.",
+    "Preview content. Subject management will be backed by your Supabase database.":
+      "محتوى تجريبي. ستُدار المواد عبر قاعدة بيانات Supabase.",
     "STUDY MATERIALS": "المواد الدراسية",
     "Your files": "ملفاتك",
     "A tidy home for resources from every course.": "مكان منظم لمراجع كل مادة.",
     "Upload file": "رفع ملف",
     "Course resources": "مراجع المقرر",
-    "Organize future uploads by subject and folder.": "نظّم ملفاتك حسب المادة والمجلد.",
-    "Sample file cards are for layout preview. Storage uploads require a private Supabase bucket.": "الملفات المعروضة تجريبية. يتطلب رفع الملفات إعداد مساحة تخزين خاصة في Supabase.",
+    "Organize future uploads by subject and folder.":
+      "نظّم ملفاتك حسب المادة والمجلد.",
+    "Sample file cards are for layout preview. Storage uploads require a private Supabase bucket.":
+      "الملفات المعروضة تجريبية. يتطلب رفع الملفات إعداد مساحة تخزين خاصة في Supabase.",
     "YOUR KNOWLEDGE VAULT": "مستودع معرفتك",
-    "Capture what matters and find it when you need it.": "دوّن ما يهمك واعثر عليه وقت الحاجة.",
+    "Capture what matters and find it when you need it.":
+      "دوّن ما يهمك واعثر عليه وقت الحاجة.",
     "New note": "ملاحظة جديدة",
     Updated: "تم التحديث",
-    "A place for your key ideas, examples, and questions to revisit later.": "مساحة لأفكارك وأمثلتك وأسئلتك المهمة للعودة إليها لاحقًا.",
-    "Sample content only. Notes can be stored in your private Supabase workspace.": "محتوى تجريبي. يمكن حفظ ملاحظاتك في مساحة Supabase الخاصة بك.",
+    "A place for your key ideas, examples, and questions to revisit later.":
+      "مساحة لأفكارك وأمثلتك وأسئلتك المهمة للعودة إليها لاحقًا.",
+    "Sample content only. Notes can be stored in your private Supabase workspace.":
+      "محتوى تجريبي. يمكن حفظ ملاحظاتك في مساحة Supabase الخاصة بك.",
     "YOUR STUDY PATTERNS": "أنماط دراستك",
-    "Understand your study habits without losing sight of the bigger picture.": "افهم عادات دراستك مع الحفاظ على نظرتك الشاملة.",
+    "Understand your study habits without losing sight of the bigger picture.":
+      "افهم عادات دراستك مع الحفاظ على نظرتك الشاملة.",
     "Analytics date range": "النطاق الزمني للتحليلات",
     "Last 7 days": "آخر ٧ أيام",
     "Last 30 days": "آخر ٣٠ يومًا",
@@ -670,48 +1207,61 @@
     "Score by subject": "النتيجة حسب المادة",
     "Scores shown are sample content only.": "النتائج المعروضة تجريبية فقط.",
     "How to read these numbers": "كيفية قراءة هذه الأرقام",
-    "Study time is summed from completed focus sessions. Task completion is completed tasks divided by all tasks in the selected range. Connect your database to replace the preview with your records.": "يُحسب وقت الدراسة من جلسات التركيز المكتملة. ونسبة إنجاز المهام هي المهام المكتملة مقسومة على إجمالي المهام في الفترة المحددة. اربط قاعدة بياناتك لعرض سجلاتك الفعلية.",
+    "Study time is summed from completed focus sessions. Task completion is completed tasks divided by all tasks in the selected range. Connect your database to replace the preview with your records.":
+      "يُحسب وقت الدراسة من جلسات التركيز المكتملة. ونسبة إنجاز المهام هي المهام المكتملة مقسومة على إجمالي المهام في الفترة المحددة. اربط قاعدة بياناتك لعرض سجلاتك الفعلية.",
     "MILESTONES THAT MATTER": "إنجازات تستحق الاحتفاء",
-    "Turn the semester into small, achievable steps.": "حوّل الفصل الدراسي إلى خطوات صغيرة قابلة للإنجاز.",
+    "Turn the semester into small, achievable steps.":
+      "حوّل الفصل الدراسي إلى خطوات صغيرة قابلة للإنجاز.",
     "Create a goal": "إنشاء هدف",
-    "LEFT": "متبقية",
-    "Preview goals. Your own goals will be stored per-user after connecting Supabase.": "أهداف تجريبية. ستُحفظ أهدافك في حسابك بعد ربط Supabase.",
+    LEFT: "متبقية",
+    "Preview goals. Your own goals will be stored per-user after connecting Supabase.":
+      "أهداف تجريبية. ستُحفظ أهدافك في حسابك بعد ربط Supabase.",
     "EXAM TRACKER": "متابعة الاختبارات",
-    "Keep upcoming assessments and your progress in one view.": "تابع اختباراتك القادمة وتقدمك في مكان واحد.",
+    "Keep upcoming assessments and your progress in one view.":
+      "تابع اختباراتك القادمة وتقدمك في مكان واحد.",
     "Add exam": "إضافة اختبار",
     "PAST RESULT · SAMPLE": "نتيجة سابقة · تجريبية",
     "Recorded exam score preview": "معاينة نتيجة اختبار مسجلة",
     "Upcoming assessments": "الاختبارات القادمة",
     "No upcoming exams connected": "لا توجد اختبارات قادمة مرتبطة",
-    "Add your real exam dates after connecting the database.": "أضف مواعيد اختباراتك بعد ربط قاعدة البيانات.",
+    "Add your real exam dates after connecting the database.":
+      "أضف مواعيد اختباراتك بعد ربط قاعدة البيانات.",
     MILESTONES: "محطات الإنجاز",
-    "Celebrate consistency and progress, not just perfect days.": "احتفِ بالاستمرار والتقدم، لا بالأيام المثالية فقط.",
+    "Celebrate consistency and progress, not just perfect days.":
+      "احتفِ بالاستمرار والتقدم، لا بالأيام المثالية فقط.",
     "Unlocked in sample data": "مفتوح في البيانات التجريبية",
     "Keep going to unlock": "واصل التقدم لفتحه",
     "Your progress level": "مستوى تقدمك",
     "sample XP": "نقاط خبرة تجريبية",
-    "XP and rewards must be granted by trusted database operations, never directly from the browser.": "يجب منح نقاط الخبرة والمكافآت عبر عمليات قاعدة بيانات موثوقة، وليس مباشرة من المتصفح.",
+    "XP and rewards must be granted by trusted database operations, never directly from the browser.":
+      "يجب منح نقاط الخبرة والمكافآت عبر عمليات قاعدة بيانات موثوقة، وليس مباشرة من المتصفح.",
     UPDATES: "التحديثات",
-    "A quiet place for reminders, milestones, and important updates.": "مساحة هادئة للتذكيرات والإنجازات والتحديثات المهمة.",
+    "A quiet place for reminders, milestones, and important updates.":
+      "مساحة هادئة للتذكيرات والإنجازات والتحديثات المهمة.",
     "Mark all read": "تحديد الكل كمقروء",
     "All caught up": "أنت على اطلاع بكل جديد",
     "Sign in to sync notifications": "سجّل الدخول لمزامنة الإشعارات",
-    "Deadline reminders will appear here when generated.": "ستظهر تذكيرات المواعيد هنا عند إنشائها.",
-    "Your private deadline notifications are attached to your account.": "إشعارات مواعيدك الخاصة مرتبطة بحسابك.",
+    "Deadline reminders will appear here when generated.":
+      "ستظهر تذكيرات المواعيد هنا عند إنشائها.",
+    "Your private deadline notifications are attached to your account.":
+      "إشعارات مواعيدك الخاصة مرتبطة بحسابك.",
     "YOUR ACCOUNT": "حسابك",
     "Your academic workspace, at a glance.": "نظرة سريعة على مساحة دراستك.",
     Level: "المستوى",
     "Day streak": "أيام متتالية",
     "Academic profile": "الملف الدراسي",
-    "Personal details stay private to your account": "بياناتك الشخصية خاصة بحسابك",
+    "Personal details stay private to your account":
+      "بياناتك الشخصية خاصة بحسابك",
     Program: "البرنامج الدراسي",
     "Computer Science · sample profile": "علوم الحاسب · ملف تجريبي",
     "Current term": "الفصل الحالي",
-    "Fall term · update in your profile": "فصل الخريف · عدّل بياناتك في الملف الشخصي",
+    "Fall term · update in your profile":
+      "فصل الخريف · عدّل بياناتك في الملف الشخصي",
     Timezone: "المنطقة الزمنية",
     "Edit profile": "تعديل الملف الشخصي",
     "MAKE IT YOURS": "خصص تجربتك",
-    "Tune Study Zone to the way you like to work.": "اضبط Study Zone بما يناسب أسلوب عملك.",
+    "Tune Study Zone to the way you like to work.":
+      "اضبط Study Zone بما يناسب أسلوب عملك.",
     Appearance: "المظهر",
     "Dark theme": "السمة الداكنة",
     "Designed for focus, day or night": "مصممة للتركيز ليلًا ونهارًا",
@@ -719,26 +1269,34 @@
     "Official Study Zone color palette": "لوحة ألوان Study Zone الرسمية",
     Language: "اللغة",
     "Display language": "لغة العرض",
-    "Deadlines appear in the selected language.": "تُعرض المواعيد باللغة المحددة.",
+    "Deadlines appear in the selected language.":
+      "تُعرض المواعيد باللغة المحددة.",
     Reminders: "التذكيرات",
     "Task reminders": "تذكيرات المهام",
     "Upcoming deadlines": "المواعيد القادمة",
     "Study nudges": "تذكيرات الدراسة",
     "Gentle focus reminders": "تذكيرات لطيفة للتركيز",
     "Daily study check-in": "تذكير يومي بالدراسة",
-    "Review your open tasks once a day, even when Study Zone is closed.": "راجع مهامك المفتوحة مرة يوميًا، حتى عند إغلاق Study Zone.",
+    "Review your open tasks once a day, even when Study Zone is closed.":
+      "راجع مهامك المفتوحة مرة يوميًا، حتى عند إغلاق Study Zone.",
     "Enable push reminders": "تفعيل الإشعارات الفورية",
     "Reminder time": "وقت التذكير",
     "Uses this device’s timezone.": "يستخدم المنطقة الزمنية لهذا الجهاز.",
     "Save reminder": "حفظ التذكير",
-    "Get a daily task check-in plus deadline and achievement notifications, even when Study Zone is closed.": "احصل على تذكير يومي بالمهام وإشعارات المواعيد والإنجازات حتى عند إغلاق Study Zone.",
-    "Push reminders need notification permission and the server setup described in README.md.": "تتطلب الإشعارات الفورية إذن الإشعارات وإعداد الخادم الموضح في README.md.",
-    "Sign in to configure daily reminders.": "سجّل الدخول لإعداد التذكيرات اليومية.",
-    "Choose a profile photo from your device": "اختر صورة الملف الشخصي من جهازك",
+    "Get a daily task check-in plus deadline and achievement notifications, even when Study Zone is closed.":
+      "احصل على تذكير يومي بالمهام وإشعارات المواعيد والإنجازات حتى عند إغلاق Study Zone.",
+    "Push reminders need notification permission and the server setup described in README.md.":
+      "تتطلب الإشعارات الفورية إذن الإشعارات وإعداد الخادم الموضح في README.md.",
+    "Sign in to configure daily reminders.":
+      "سجّل الدخول لإعداد التذكيرات اليومية.",
+    "Choose a profile photo from your device":
+      "اختر صورة الملف الشخصي من جهازك",
     "PNG, JPEG, or WebP · up to 2 MB": "PNG أو JPEG أو WebP · حتى ٢ ميجابايت",
     "Could not save your reminder.": "تعذّر حفظ التذكير.",
-    "Notification permission is required to enable daily push reminders.": "يلزم السماح بالإشعارات لتفعيل التذكير اليومي.",
-    "Daily push is not configured yet. Ask your administrator to finish the VAPID setup.": "لم يتم إعداد الإشعارات اليومية بعد. اطلب من المسؤول إكمال إعداد VAPID.",
+    "Notification permission is required to enable daily push reminders.":
+      "يلزم السماح بالإشعارات لتفعيل التذكير اليومي.",
+    "Daily push is not configured yet. Ask your administrator to finish the VAPID setup.":
+      "لم يتم إعداد الإشعارات اليومية بعد. اطلب من المسؤول إكمال إعداد VAPID.",
     "Reminder saved.": "تم حفظ التذكير.",
     "Profile photo uploaded.": "تم رفع صورة الملف الشخصي.",
     "Reach level 5.": "وصل إلى المستوى ٥.",
@@ -749,20 +1307,25 @@
     "Study Champion": "بطل الدراسة",
     "Master Strategist": "استراتيجي متمكن",
     "Study Legend": "أسطورة الدراسة",
-    "Reward": "المكافأة",
+    Reward: "المكافأة",
     "Data & privacy": "البيانات والخصوصية",
     "Account data": "بيانات الحساب",
-    "Stored in your private Supabase account when configured": "تُحفظ في حساب Supabase الخاص بك بعد الإعداد",
+    "Stored in your private Supabase account when configured":
+      "تُحفظ في حساب Supabase الخاص بك بعد الإعداد",
     "Service keys": "مفاتيح الخدمة",
-    "Only the public anon key belongs in this browser config.": "يُسمح بوضع المفتاح العام anon فقط في إعدادات المتصفح.",
+    "Only the public anon key belongs in this browser config.":
+      "يُسمح بوضع المفتاح العام anon فقط في إعدادات المتصفح.",
     ADMINISTRATION: "إدارة النظام",
-    "Protected operational metrics and account administration.": "مؤشرات التشغيل المحمية وإدارة الحسابات.",
+    "Protected operational metrics and account administration.":
+      "مؤشرات التشغيل المحمية وإدارة الحسابات.",
     "Checking administrator access…": "جارٍ التحقق من صلاحية المدير…",
     "Administrator access denied.": "تم رفض صلاحية الوصول إلى لوحة الإدارة.",
     "Could not verify administrator access.": "تعذّر التحقق من صلاحية المدير.",
     "Administrator access verified.": "تم التحقق من صلاحية المدير.",
-    "No administrative services are connected yet.": "لم يتم ربط أدوات الإدارة بعد.",
-    "The admin role is verified by Supabase for your signed-in account.": "تحقّق Supabase من صلاحية المدير لحسابك المسجّل.",
+    "No administrative services are connected yet.":
+      "لم يتم ربط أدوات الإدارة بعد.",
+    "The admin role is verified by Supabase for your signed-in account.":
+      "تحقّق Supabase من صلاحية المدير لحسابك المسجّل.",
     "REGISTERED USERS": "المستخدمون المسجلون",
     " Configure a protected server query": " أعد إعداد استعلام خادم محمي",
     "ACTIVE SESSIONS": "الجلسات النشطة",
@@ -771,8 +1334,10 @@
     Protected: "محمي",
     " No admin endpoint configured": " لم يتم إعداد واجهة الإدارة",
     "Access control": "التحكم في الوصول",
-    "The database uses a non-user-editable profile role field and row-level policies. Add an Edge Function or trusted server for any cross-user administration or suspension feature.": "تستخدم قاعدة البيانات دورًا للملف الشخصي لا يستطيع المستخدم تعديله وسياسات على مستوى الصفوف. أضف وظيفة Edge أو خادمًا موثوقًا لأي إدارة بين المستخدمين أو لتعليق الحسابات.",
-    "Sample study hours over the last seven days": "ساعات دراسة تجريبية خلال الأيام السبعة الماضية",
+    "The database uses a non-user-editable profile role field and row-level policies. Add an Edge Function or trusted server for any cross-user administration or suspension feature.":
+      "تستخدم قاعدة البيانات دورًا للملف الشخصي لا يستطيع المستخدم تعديله وسياسات على مستوى الصفوف. أضف وظيفة Edge أو خادمًا موثوقًا لأي إدارة بين المستخدمين أو لتعليق الحسابات.",
+    "Sample study hours over the last seven days":
+      "ساعات دراسة تجريبية خلال الأيام السبعة الماضية",
     "Could not load tasks.": "تعذّر تحميل المهام.",
     "Could not save this task.": "تعذّر حفظ هذه المهمة.",
     "Could not update task:": "تعذّر تحديث المهمة:",
@@ -791,7 +1356,8 @@
     "Signed out.": "تم تسجيل الخروج.",
     "Your account is ready.": "حسابك جاهز.",
     "Welcome back.": "مرحبًا بعودتك.",
-    "Check your email to confirm your new account.": "تحقق من بريدك الإلكتروني لتأكيد حسابك الجديد.",
+    "Check your email to confirm your new account.":
+      "تحقق من بريدك الإلكتروني لتأكيد حسابك الجديد.",
     "Small steps. Meaningful progress.": "خطوات صغيرة، وتقدم ملموس.",
     "Plan a block": "إضافة جلسة",
     "New task": "مهمة جديدة",
@@ -800,8 +1366,10 @@
     "New note": "ملاحظة جديدة",
     "Create a goal": "إنشاء هدف",
     "Add exam": "إضافة اختبار",
-    "Set SUPABASE_URL and SUPABASE_ANON_KEY in supabase-config.js to enable sign-in.": "أضف SUPABASE_URL وSUPABASE_ANON_KEY إلى supabase-config.js لتفعيل تسجيل الدخول.",
-    "Language saved on this device, but account sync failed:": "تم حفظ اللغة على هذا الجهاز، لكن تعذرت مزامنتها مع الحساب:",
+    "Set SUPABASE_URL and SUPABASE_ANON_KEY in supabase-config.js to enable sign-in.":
+      "أضف SUPABASE_URL وSUPABASE_ANON_KEY إلى supabase-config.js لتفعيل تسجيل الدخول.",
+    "Language saved on this device, but account sync failed:":
+      "تم حفظ اللغة على هذا الجهاز، لكن تعذرت مزامنتها مع الحساب:",
     "Could not load subjects:": "تعذّر تحميل المواد:",
     "Could not load tasks:": "تعذّر تحميل المهام:",
     "Could not load notifications:": "تعذّر تحميل الإشعارات:",
@@ -811,21 +1379,35 @@
     "Invalid login credentials": "بيانات تسجيل الدخول غير صحيحة.",
     "User already registered": "هذا البريد الإلكتروني مسجل بالفعل.",
     "Email not confirmed": "لم يتم تأكيد البريد الإلكتروني بعد.",
-    "Password should be at least 6 characters": "يجب ألا تقل كلمة المرور عن ٦ أحرف.",
+    "Password should be at least 6 characters":
+      "يجب ألا تقل كلمة المرور عن ٦ أحرف.",
     "Failed to fetch": "تعذر الاتصال بالخادم. تحقق من اتصالك بالإنترنت.",
-    "Authentication failed": "تعذّر تسجيل الدخول. تحقق من بياناتك وحاول مجددًا.",
-    "Delete this deadline? This cannot be undone.": "هل تريد حذف هذا الموعد؟ لا يمكن التراجع عن ذلك.",
-    "This is a local preview. Add your Supabase project details to enable authentication.": "هذه معاينة محلية. أضف بيانات مشروع Supabase لتفعيل تسجيل الدخول.",
-    "Sign in to sync your private study workspace.": "سجّل الدخول لمزامنة مساحة دراستك الخاصة.",
-    "Your password is handled securely by Supabase Auth.": "تُدار كلمة مرورك بأمان عبر خدمة Supabase Auth.",
-    "Add your Supabase URL and public anon key in supabase-config.js and allow the SDK to load": "أضف رابط Supabase ومفتاح anon العام إلى supabase-config.js وتأكد من تحميل مكتبة SDK.",
-    "Study planning is a preview; scheduling is not implemented, so nothing was saved.": "مخطط الدراسة للمعاينة؛ إنشاء الجلسات غير منفذ، ولم يُحفظ أي شيء.",
-    "Subject management is not implemented yet; no subject was created.": "إدارة المواد غير منفذة حاليًا؛ لم تُضف أي مادة.",
-    "File uploads are unavailable; storage upload is not implemented, so no file was uploaded.": "رفع الملفات غير متاح؛ آلية الرفع غير منفذة، ولم يُرفع أي ملف.",
-    "Notes are a preview; note editing is not implemented, so nothing was saved.": "الملاحظات للمعاينة؛ تحرير الملاحظات غير منفذ، ولم يُحفظ أي شيء.",
-    "Goals are a preview; goal creation is not implemented, so no goal was saved.": "الأهداف للمعاينة؛ إنشاء الأهداف غير منفذ، ولم يُحفظ أي هدف.",
-    "Exam tracking is not implemented yet; no exam or result was saved.": "متابعة الاختبارات غير منفذة حاليًا؛ لم يُحفظ أي اختبار أو نتيجة.",
-    "Notification read state will sync after connecting your account.": "ستُزامن حالة قراءة الإشعارات بعد ربط حسابك.",
+    "Authentication failed":
+      "تعذّر تسجيل الدخول. تحقق من بياناتك وحاول مجددًا.",
+    "Delete this deadline? This cannot be undone.":
+      "هل تريد حذف هذا الموعد؟ لا يمكن التراجع عن ذلك.",
+    "This is a local preview. Add your Supabase project details to enable authentication.":
+      "هذه معاينة محلية. أضف بيانات مشروع Supabase لتفعيل تسجيل الدخول.",
+    "Sign in to sync your private study workspace.":
+      "سجّل الدخول لمزامنة مساحة دراستك الخاصة.",
+    "Your password is handled securely by Supabase Auth.":
+      "تُدار كلمة مرورك بأمان عبر خدمة Supabase Auth.",
+    "Add your Supabase URL and public anon key in supabase-config.js and allow the SDK to load":
+      "أضف رابط Supabase ومفتاح anon العام إلى supabase-config.js وتأكد من تحميل مكتبة SDK.",
+    "Study planning is a preview; scheduling is not implemented, so nothing was saved.":
+      "مخطط الدراسة للمعاينة؛ إنشاء الجلسات غير منفذ، ولم يُحفظ أي شيء.",
+    "Subject management is not implemented yet; no subject was created.":
+      "إدارة المواد غير منفذة حاليًا؛ لم تُضف أي مادة.",
+    "File uploads are unavailable; storage upload is not implemented, so no file was uploaded.":
+      "رفع الملفات غير متاح؛ آلية الرفع غير منفذة، ولم يُرفع أي ملف.",
+    "Notes are a preview; note editing is not implemented, so nothing was saved.":
+      "الملاحظات للمعاينة؛ تحرير الملاحظات غير منفذ، ولم يُحفظ أي شيء.",
+    "Goals are a preview; goal creation is not implemented, so no goal was saved.":
+      "الأهداف للمعاينة؛ إنشاء الأهداف غير منفذ، ولم يُحفظ أي هدف.",
+    "Exam tracking is not implemented yet; no exam or result was saved.":
+      "متابعة الاختبارات غير منفذة حاليًا؛ لم يُحفظ أي اختبار أو نتيجة.",
+    "Notification read state will sync after connecting your account.":
+      "ستُزامن حالة قراءة الإشعارات بعد ربط حسابك.",
     "No subjects yet": "لا توجد مواد بعد",
     "Independent study": "دراسة مستقلة",
     "Calculus II": "التفاضل والتكامل ٢",
@@ -851,7 +1433,8 @@
     "Cell structure review": "مراجعة تركيب الخلية",
     "Essay drafting sprint": "جلسة مكثفة لكتابة المقال",
     "Finish revision pack": "إنهاء حزمة المراجعة",
-    "Review key topics before the assessment": "مراجعة الموضوعات الأساسية قبل الاختبار",
+    "Review key topics before the assessment":
+      "مراجعة الموضوعات الأساسية قبل الاختبار",
     "Keep weekly study rhythm": "حافظ على وتيرة الدراسة الأسبوعية",
     "Reach 12 focused hours this week": "أنجز ١٢ ساعة تركيز هذا الأسبوع",
     "Submit essay draft": "تسليم مسودة المقال",
@@ -888,106 +1471,255 @@
     if (appLanguage === "ar") {
       const arabicQuantity = (value, forms) => {
         const number = Number(value);
-        const form = number === 1 ? forms.one : number === 2 ? forms.two : number >= 3 && number <= 10 ? forms.few : forms.many;
+        const form =
+          number === 1
+            ? forms.one
+            : number === 2
+              ? forms.two
+              : number >= 3 && number <= 10
+                ? forms.few
+                : forms.many;
         return `${new Intl.NumberFormat("ar-EG").format(number)} ${form}`;
       };
       if (interfaceText[text]) return interfaceText[text];
-      if (interfaceText[trimmed]) return text.replace(trimmed, interfaceText[trimmed]);
+      if (interfaceText[trimmed])
+        return text.replace(trimmed, interfaceText[trimmed]);
       const iconButton = trimmed.match(/^([＋↑])\s*(.+)$/);
       if (iconButton && interfaceText[iconButton[2]]) {
-        return text.replace(trimmed, `${iconButton[1]} ${interfaceText[iconButton[2]]}`);
+        return text.replace(
+          trimmed,
+          `${iconButton[1]} ${interfaceText[iconButton[2]]}`,
+        );
       }
-      const greeting = trimmed.match(/^Good (morning|afternoon|evening), (.+)\.$/);
-      if (greeting) return text.replace(trimmed, `${interfaceText[`Good ${greeting[1]}`]}، ${greeting[2]}.`);
-      const chartTooltip = trimmed.match(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun): ([\d.]+) hours?$/);
+      const greeting = trimmed.match(
+        /^Good (morning|afternoon|evening), (.+)\.$/,
+      );
+      if (greeting)
+        return text.replace(
+          trimmed,
+          `${interfaceText[`Good ${greeting[1]}`]}، ${greeting[2]}.`,
+        );
+      const chartTooltip = trimmed.match(
+        /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun): ([\d.]+) hours?$/,
+      );
       if (chartTooltip) {
         const day = interfaceText[chartTooltip[1]];
-        const hours = new Intl.NumberFormat("ar-EG", { maximumFractionDigits: 1 }).format(Number(chartTooltip[2]));
+        const hours = new Intl.NumberFormat("ar-EG", {
+          maximumFractionDigits: 1,
+        }).format(Number(chartTooltip[2]));
         return text.replace(trimmed, `${day}: ${hours} ساعة`);
       }
       const hours = trimmed.match(/^([\d,.]+)h$/);
-      if (hours) return text.replace(trimmed, `${new Intl.NumberFormat("ar-EG", { maximumFractionDigits: 1 }).format(Number(hours[1].replace(",", "")))} س`);
+      if (hours)
+        return text.replace(
+          trimmed,
+          `${new Intl.NumberFormat("ar-EG", { maximumFractionDigits: 1 }).format(Number(hours[1].replace(",", "")))} س`,
+        );
       const duration = trimmed.match(/^([\d,.]+) min$/);
       if (duration) {
         const number = Number(duration[1].replace(",", ""));
-        return text.replace(trimmed, `${new Intl.NumberFormat("ar-EG").format(number)} ${number === 1 ? "دقيقة" : "دقيقة"}`);
+        return text.replace(
+          trimmed,
+          `${new Intl.NumberFormat("ar-EG").format(number)} ${number === 1 ? "دقيقة" : "دقيقة"}`,
+        );
       }
       const timeDuration = trimmed.match(/^(\d{1,2}:\d{2}) · (\d+) min$/);
       if (timeDuration) {
-        const time = timeDuration[1].replace(/\d/g, (digit) => new Intl.NumberFormat("ar-EG").format(Number(digit)));
-        return text.replace(trimmed, `${time} · ${new Intl.NumberFormat("ar-EG").format(Number(timeDuration[2]))} دقيقة`);
+        const time = timeDuration[1].replace(/\d/g, (digit) =>
+          new Intl.NumberFormat("ar-EG").format(Number(digit)),
+        );
+        return text.replace(
+          trimmed,
+          `${time} · ${new Intl.NumberFormat("ar-EG").format(Number(timeDuration[2]))} دقيقة`,
+        );
       }
       const xp = trimmed.match(/^(.*?)((?:[\d,.]+)) (sample )?XP$/);
       if (xp) {
-        const points = new Intl.NumberFormat("ar-EG").format(Number(xp[2].replace(",", "")));
-        return text.replace(trimmed, `${xp[1]}${points} ${xp[3] ? "نقطة خبرة تجريبية" : "نقطة خبرة"}`);
+        const points = new Intl.NumberFormat("ar-EG").format(
+          Number(xp[2].replace(",", "")),
+        );
+        return text.replace(
+          trimmed,
+          `${xp[1]}${points} ${xp[3] ? "نقطة خبرة تجريبية" : "نقطة خبرة"}`,
+        );
       }
       const daysLeft = trimmed.match(/^(\d+) DAYS LEFT$/);
-      if (daysLeft) return text.replace(trimmed, `متبقي ${arabicQuantity(daysLeft[1], { one: "يوم واحد", two: "يومان", few: "أيام", many: "يوم" })}`);
+      if (daysLeft)
+        return text.replace(
+          trimmed,
+          `متبقي ${arabicQuantity(daysLeft[1], { one: "يوم واحد", two: "يومان", few: "أيام", many: "يوم" })}`,
+        );
       const weeksLeft = trimmed.match(/^(\d+) WEEK LEFT$/);
-      if (weeksLeft) return text.replace(trimmed, `متبقي ${arabicQuantity(weeksLeft[1], { one: "أسبوع واحد", two: "أسبوعان", few: "أسابيع", many: "أسبوع" })}`);
+      if (weeksLeft)
+        return text.replace(
+          trimmed,
+          `متبقي ${arabicQuantity(weeksLeft[1], { one: "أسبوع واحد", two: "أسبوعان", few: "أسابيع", many: "أسبوع" })}`,
+        );
       const shortWeeks = trimmed.match(/^(\d+) weeks?$/);
-      if (shortWeeks) return text.replace(trimmed, `${new Intl.NumberFormat("ar-EG").format(Number(shortWeeks[1]))} ${Number(shortWeeks[1]) === 1 ? "أسبوع" : "أسابيع"}`);
+      if (shortWeeks)
+        return text.replace(
+          trimmed,
+          `${new Intl.NumberFormat("ar-EG").format(Number(shortWeeks[1]))} ${Number(shortWeeks[1]) === 1 ? "أسبوع" : "أسابيع"}`,
+        );
       const sampleXp = trimmed.match(/^([\d,.]+) sample XP$/);
-      if (sampleXp) return text.replace(trimmed, `${new Intl.NumberFormat("ar-EG").format(Number(sampleXp[1].replace(",", "")))} نقطة خبرة تجريبية`);
+      if (sampleXp)
+        return text.replace(
+          trimmed,
+          `${new Intl.NumberFormat("ar-EG").format(Number(sampleXp[1].replace(",", "")))} نقطة خبرة تجريبية`,
+        );
       const fileType = trimmed.match(/^(.+) · (PDF|Notes|Image)$/);
       if (fileType) {
-        const type = { PDF: "PDF", Notes: "ملاحظات", Image: "صورة" }[fileType[2]];
+        const type = { PDF: "PDF", Notes: "ملاحظات", Image: "صورة" }[
+          fileType[2]
+        ];
         return text.replace(trimmed, `${fileType[1]} · ${type}`);
       }
-      const numeric = preserveNumeric ? null : trimmed.match(/^([+-]?\d[\d,.]*(?:\/\d[\d,.]*)?)(%)?$/);
+      const numeric = preserveNumeric
+        ? null
+        : trimmed.match(/^([+-]?\d[\d,.]*(?:\/\d[\d,.]*)?)(%)?$/);
       if (numeric) {
-        const localized = numeric[1].replace(/\d/g, (digit) => new Intl.NumberFormat("ar-EG").format(Number(digit)));
+        const localized = numeric[1].replace(/\d/g, (digit) =>
+          new Intl.NumberFormat("ar-EG").format(Number(digit)),
+        );
         return text.replace(trimmed, `${localized}${numeric[2] ? "٪" : ""}`);
       }
-      const relativeTime = trimmed.match(/^Updated (Today|Yesterday|\d+ hours? ago)$/);
+      const relativeTime = trimmed.match(
+        /^Updated (Today|Yesterday|\d+ hours? ago)$/,
+      );
       if (relativeTime) {
-        const value = relativeTime[1] === "Today" ? "اليوم"
-          : relativeTime[1] === "Yesterday" ? "أمس"
-            : relativeTime[1].replace(/^(\d+) hours? ago$/, (_, count) => {
-              const number = Number(count);
-              if (number === 1) return "قبل ساعة";
-              if (number === 2) return "قبل ساعتين";
-              return `قبل ${new Intl.NumberFormat("ar-EG").format(number)} ساعات`;
-            });
+        const value =
+          relativeTime[1] === "Today"
+            ? "اليوم"
+            : relativeTime[1] === "Yesterday"
+              ? "أمس"
+              : relativeTime[1].replace(/^(\d+) hours? ago$/, (_, count) => {
+                  const number = Number(count);
+                  if (number === 1) return "قبل ساعة";
+                  if (number === 2) return "قبل ساعتين";
+                  return `قبل ${new Intl.NumberFormat("ar-EG").format(number)} ساعات`;
+                });
         return text.replace(trimmed, `تم التحديث ${value}`);
       }
       const remainingShort = trimmed.match(/^(\d+) left ·$/);
-      if (remainingShort) return text.replace(trimmed, `متبقي ${new Intl.NumberFormat("ar-EG").format(Number(remainingShort[1]))} ·`);
+      if (remainingShort)
+        return text.replace(
+          trimmed,
+          `متبقي ${new Intl.NumberFormat("ar-EG").format(Number(remainingShort[1]))} ·`,
+        );
       const shortDays = trimmed.match(/^(\d+) days?$/);
-      if (shortDays) return text.replace(trimmed, arabicQuantity(shortDays[1], { one: "يوم واحد", two: "يومان", few: "أيام", many: "يوم" }));
+      if (shortDays)
+        return text.replace(
+          trimmed,
+          arabicQuantity(shortDays[1], {
+            one: "يوم واحد",
+            two: "يومان",
+            few: "أيام",
+            many: "يوم",
+          }),
+        );
       const blockCount = trimmed.match(/^(\d+) blocks?$/);
-      if (blockCount) return text.replace(trimmed, arabicQuantity(blockCount[1], { one: "جلسة واحدة", two: "جلستان", few: "جلسات", many: "جلسة" }));
+      if (blockCount)
+        return text.replace(
+          trimmed,
+          arabicQuantity(blockCount[1], {
+            one: "جلسة واحدة",
+            two: "جلستان",
+            few: "جلسات",
+            many: "جلسة",
+          }),
+        );
       const remainingTasks = trimmed.match(/^(\d+) tasks remaining$/);
-      if (remainingTasks) return text.replace(trimmed, `${arabicQuantity(remainingTasks[1], { one: "مهمة", two: "مهمتان", few: "مهام", many: "مهمة" })} متبقية`);
+      if (remainingTasks)
+        return text.replace(
+          trimmed,
+          `${arabicQuantity(remainingTasks[1], { one: "مهمة", two: "مهمتان", few: "مهام", many: "مهمة" })} متبقية`,
+        );
       const creditCount = trimmed.match(/^(\d+) credits$/);
-      if (creditCount) return text.replace(trimmed, arabicQuantity(creditCount[1], { one: "ساعة معتمدة", two: "ساعتان معتمدتان", few: "ساعات معتمدة", many: "ساعة معتمدة" }));
+      if (creditCount)
+        return text.replace(
+          trimmed,
+          arabicQuantity(creditCount[1], {
+            one: "ساعة معتمدة",
+            two: "ساعتان معتمدتان",
+            few: "ساعات معتمدة",
+            many: "ساعة معتمدة",
+          }),
+        );
       const taskDays = trimmed.match(/^(\d+) days? left$/);
-      if (taskDays) return text.replace(trimmed, `متبقي ${arabicQuantity(taskDays[1], { one: "يوم واحد", two: "يومان", few: "أيام", many: "يوم" })}`);
+      if (taskDays)
+        return text.replace(
+          trimmed,
+          `متبقي ${arabicQuantity(taskDays[1], { one: "يوم واحد", two: "يومان", few: "أيام", many: "يوم" })}`,
+        );
       const level = trimmed.match(/^Level (\d+)$/);
-      if (level) return text.replace(trimmed, `المستوى ${new Intl.NumberFormat("ar-EG").format(Number(level[1]))}`);
+      if (level)
+        return text.replace(
+          trimmed,
+          `المستوى ${new Intl.NumberFormat("ar-EG").format(Number(level[1]))}`,
+        );
       const signedIn = trimmed.match(/^Signed in as (.+)$/);
-      if (signedIn) return text.replace(trimmed, `تم تسجيل الدخول باسم ${signedIn[1]}`);
-      const languageSync = trimmed.match(/^Language saved on this device, but account sync failed:?\s*(.*)$/);
-      if (languageSync) return text.replace(trimmed, `تم حفظ اللغة على هذا الجهاز، لكن تعذرت مزامنتها مع الحساب.${languageSync[1] ? ` ${languageSync[1]}` : ""}`);
+      if (signedIn)
+        return text.replace(trimmed, `تم تسجيل الدخول باسم ${signedIn[1]}`);
+      const languageSync = trimmed.match(
+        /^Language saved on this device, but account sync failed:?\s*(.*)$/,
+      );
+      if (languageSync)
+        return text.replace(
+          trimmed,
+          `تم حفظ اللغة على هذا الجهاز، لكن تعذرت مزامنتها مع الحساب.${languageSync[1] ? ` ${languageSync[1]}` : ""}`,
+        );
       const signOutError = trimmed.match(/^Could not sign out:?\s*(.*)$/);
-      if (signOutError) return text.replace(trimmed, `تعذّر تسجيل الخروج.${signOutError[1] ? ` ${signOutError[1]}` : ""}`);
-      const sessionError = trimmed.match(/^Could not restore session:?\s*(.*)$/);
-      if (sessionError) return text.replace(trimmed, `تعذّرت استعادة الجلسة.${sessionError[1] ? ` ${sessionError[1]}` : ""}`);
+      if (signOutError)
+        return text.replace(
+          trimmed,
+          `تعذّر تسجيل الخروج.${signOutError[1] ? ` ${signOutError[1]}` : ""}`,
+        );
+      const sessionError = trimmed.match(
+        /^Could not restore session:?\s*(.*)$/,
+      );
+      if (sessionError)
+        return text.replace(
+          trimmed,
+          `تعذّرت استعادة الجلسة.${sessionError[1] ? ` ${sessionError[1]}` : ""}`,
+        );
       const updated = trimmed.match(/^Updated (.+)$/);
       if (updated) return text.replace(trimmed, `تم التحديث ${updated[1]}`);
-      const after = trimmed.match(/^Could not (load|save|update|delete|restore) (.+?)(?::)?(.*)$/);
+      const after = trimmed.match(
+        /^Could not (load|save|update|delete|restore) (.+?)(?::)?(.*)$/,
+      );
       if (after) {
-        const action = { load: "تحميل", save: "حفظ", update: "تحديث", delete: "حذف", restore: "استعادة" }[after[1]];
-        const subject = { subjects: "المواد", tasks: "المهام", task: "المهمة", notifications: "الإشعارات", session: "الجلسة", "focus session": "جلسة التركيز", "focus settings": "إعدادات التركيز", "this task": "هذه المهمة", "the deadline": "الموعد" }[after[2].trim()] || after[2].trim();
+        const action = {
+          load: "تحميل",
+          save: "حفظ",
+          update: "تحديث",
+          delete: "حذف",
+          restore: "استعادة",
+        }[after[1]];
+        const subject =
+          {
+            subjects: "المواد",
+            tasks: "المهام",
+            task: "المهمة",
+            notifications: "الإشعارات",
+            session: "الجلسة",
+            "focus session": "جلسة التركيز",
+            "focus settings": "إعدادات التركيز",
+            "this task": "هذه المهمة",
+            "the deadline": "الموعد",
+          }[after[2].trim()] || after[2].trim();
         const detail = after[3] ? translateUiText(after[3]) : "";
         return text.replace(trimmed, `تعذّر ${action} ${subject}${detail}`);
       }
       const deleteTask = trimmed.match(/^Delete "(.+)"\?$/);
-      if (deleteTask) return text.replace(trimmed, `هل تريد حذف "${deleteTask[1]}"؟`);
+      if (deleteTask)
+        return text.replace(trimmed, `هل تريد حذف "${deleteTask[1]}"؟`);
       const actionForTask = trimmed.match(/^(Complete|Reopen|Delete) (.+)$/);
       if (actionForTask) {
-        const action = { Complete: "إنجاز", Reopen: "إعادة فتح", Delete: "حذف" }[actionForTask[1]];
+        const action = {
+          Complete: "إنجاز",
+          Reopen: "إعادة فتح",
+          Delete: "حذف",
+        }[actionForTask[1]];
         return text.replace(trimmed, `${action} ${actionForTask[2]}`);
       }
       return text;
@@ -998,36 +1730,62 @@
   function translateInterface() {
     document.documentElement.lang = appLanguage;
     document.documentElement.dir = appLanguage === "ar" ? "rtl" : "ltr";
-    document.title = appLanguage === "ar" ? "Study Zone — حياتك الدراسية، منظمة" : "Study Zone — Your Study Life, Organized";
+    document.title =
+      appLanguage === "ar"
+        ? "Study Zone — حياتك الدراسية، منظمة"
+        : "Study Zone — Your Study Life, Organized";
     const description = document.querySelector('meta[name="description"]');
-    if (description) description.content = appLanguage === "ar" ? "Study Zone — حياتك الدراسية، منظمة." : "Study Zone — Your Study Life, Organized.";
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    if (description)
+      description.content =
+        appLanguage === "ar"
+          ? "Study Zone — حياتك الدراسية، منظمة."
+          : "Study Zone — Your Study Life, Organized.";
+    const walker = document.createTreeWalker(
+      document.body,
+      NodeFilter.SHOW_TEXT,
+    );
     let node;
     while ((node = walker.nextNode())) {
       if (node.parentElement?.closest("script,style,textarea")) continue;
-      if (!originalTextNodes.has(node)) originalTextNodes.set(node, node.nodeValue);
+      if (!originalTextNodes.has(node))
+        originalTextNodes.set(node, node.nodeValue);
       const source = originalTextNodes.get(node);
-      const preserveNumeric = Boolean(node.parentElement?.closest('[dir="auto"],[data-ltr]'));
-      node.nodeValue = appLanguage === "ar" && !node.parentElement?.closest("#flip-clock")
-        ? translateUiText(source, { preserveNumeric })
-        : source;
+      const preserveNumeric = Boolean(
+        node.parentElement?.closest('[dir="auto"],[data-ltr]'),
+      );
+      node.nodeValue =
+        appLanguage === "ar" && !node.parentElement?.closest("#flip-clock")
+          ? translateUiText(source, { preserveNumeric })
+          : source;
     }
-    document.querySelectorAll("input[placeholder],textarea[placeholder],[aria-label],[title]").forEach((element) => {
-      if (!originalAttributes.has(element)) originalAttributes.set(element, new Map());
-      const originals = originalAttributes.get(element);
-      for (const attribute of ["placeholder", "aria-label", "title"]) {
-        if (!element.hasAttribute(attribute)) continue;
-        if (!originals.has(attribute)) originals.set(attribute, element.getAttribute(attribute));
-        const source = originals.get(attribute);
-        element.setAttribute(attribute, appLanguage === "ar" ? translateUiText(source) : source);
-      }
-    });
+    document
+      .querySelectorAll(
+        "input[placeholder],textarea[placeholder],[aria-label],[title]",
+      )
+      .forEach((element) => {
+        if (!originalAttributes.has(element))
+          originalAttributes.set(element, new Map());
+        const originals = originalAttributes.get(element);
+        for (const attribute of ["placeholder", "aria-label", "title"]) {
+          if (!element.hasAttribute(attribute)) continue;
+          if (!originals.has(attribute))
+            originals.set(attribute, element.getAttribute(attribute));
+          const source = originals.get(attribute);
+          element.setAttribute(
+            attribute,
+            appLanguage === "ar" ? translateUiText(source) : source,
+          );
+        }
+      });
     updatePwaInstallButton();
     refreshPwaInstructions();
   }
 
   function isStandaloneMode() {
-    return Boolean(window.matchMedia?.("(display-mode: standalone)").matches) || window.navigator.standalone === true;
+    return (
+      Boolean(window.matchMedia?.("(display-mode: standalone)").matches) ||
+      window.navigator.standalone === true
+    );
   }
 
   function isIosDevice() {
@@ -1035,8 +1793,12 @@
     const platform = userAgentData?.platform || window.navigator.platform || "";
     const userAgent = window.navigator.userAgent || "";
     const touchPlatform = window.navigator.platform || "";
-    const isAppleTouchDevice = Boolean(touchPlatform) && /mac|iphone|ipad|ipod/i.test(String(touchPlatform)) && (window.navigator.maxTouchPoints || 0) > 1;
-    if (userAgentData?.platform) return /ios|iphone|ipad|ipod/i.test(String(userAgentData.platform));
+    const isAppleTouchDevice =
+      Boolean(touchPlatform) &&
+      /mac|iphone|ipad|ipod/i.test(String(touchPlatform)) &&
+      (window.navigator.maxTouchPoints || 0) > 1;
+    if (userAgentData?.platform)
+      return /ios|iphone|ipad|ipod/i.test(String(userAgentData.platform));
     if (/iphone|ipad|ipod/i.test(userAgent)) return true;
     if (isAppleTouchDevice) return true;
     return false;
@@ -1049,18 +1811,25 @@
   function getPwaInstallInstructions() {
     const userAgent = navigator.userAgent || "";
     const isIos = isIosDevice();
-    const isSafari = /safari/i.test(userAgent)
-      && !/(chrome|crios|android|edg|opr|firefox|fxios)/i.test(userAgent);
+    const isSafari =
+      /safari/i.test(userAgent) &&
+      !/(chrome|crios|android|edg|opr|firefox|fxios)/i.test(userAgent);
     const isMacSafari = navigator.platform?.includes("Mac") && isSafari;
     if (appLanguage === "ar") {
-      if (isIos) return "على iPhone أو iPad: افتح الصفحة في Safari، واضغط «مشاركة»، ثم اختر «إضافة إلى الشاشة الرئيسية». تختلف الخطوات حسب إصدار النظام.";
-      if (isMacSafari) return "على Safari في Mac: من قائمة ملف اختر «إضافة إلى Dock». يعتمد ذلك على إصدار Safari وmacOS.";
-      if (/android/i.test(userAgent)) return "على Android: استخدم قائمة المتصفح واختر «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية» إذا ظهر الخيار. يختلف الدعم حسب المتصفح ومتطلباته.";
+      if (isIos)
+        return "على iPhone أو iPad: افتح الصفحة في Safari، واضغط «مشاركة»، ثم اختر «إضافة إلى الشاشة الرئيسية». تختلف الخطوات حسب إصدار النظام.";
+      if (isMacSafari)
+        return "على Safari في Mac: من قائمة ملف اختر «إضافة إلى Dock». يعتمد ذلك على إصدار Safari وmacOS.";
+      if (/android/i.test(userAgent))
+        return "على Android: استخدم قائمة المتصفح واختر «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية» إذا ظهر الخيار. يختلف الدعم حسب المتصفح ومتطلباته.";
       return "استخدم قائمة المتصفح واختر «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية» إذا ظهر الخيار. تختلف إمكانية التثبيت حسب المتصفح والجهاز.";
     }
-    if (isIos) return "On iPhone or iPad: open this page in Safari, tap Share, then choose Add to Home Screen. The exact steps vary by iOS version.";
-    if (isMacSafari) return "In Safari on Mac, choose File > Add to Dock. Availability depends on your Safari and macOS versions.";
-    if (/android/i.test(userAgent)) return "On Android, open the browser menu and choose Install app or Add to Home screen if offered. Support varies by browser and its requirements.";
+    if (isIos)
+      return "On iPhone or iPad: open this page in Safari, tap Share, then choose Add to Home Screen. The exact steps vary by iOS version.";
+    if (isMacSafari)
+      return "In Safari on Mac, choose File > Add to Dock. Availability depends on your Safari and macOS versions.";
+    if (/android/i.test(userAgent))
+      return "On Android, open the browser menu and choose Install app or Add to Home screen if offered. Support varies by browser and its requirements.";
     return "Use your browser menu and choose Install app or Add to Home screen if offered. Installation options vary by browser and device.";
   }
 
@@ -1090,9 +1859,14 @@
     const instructions = document.getElementById("pwa-install-instructions");
     const description = document.getElementById("pwa-install-description");
     if (description) {
-      description.textContent = getPwaInstallState() === "installed"
-        ? (appLanguage === "ar" ? "Study Zone جاهز على هذا الجهاز الآن." : "Study Zone is ready on this device now.")
-        : (appLanguage === "ar" ? "مساحة دراسة واحدة تنظّم مهمتك ومواعيدك وجلسات تركيزك." : "One calm workspace that keeps your tasks, deadlines, and focus sessions organized.");
+      description.textContent =
+        getPwaInstallState() === "installed"
+          ? appLanguage === "ar"
+            ? "Study Zone جاهز على هذا الجهاز الآن."
+            : "Study Zone is ready on this device now."
+          : appLanguage === "ar"
+            ? "مساحة دراسة واحدة تنظّم مهمتك ومواعيدك وجلسات تركيزك."
+            : "One calm workspace that keeps your tasks, deadlines, and focus sessions organized.";
     }
     if (instructions) instructions.textContent = getPwaInstallInstructions();
   }
@@ -1168,9 +1942,17 @@
   }
 
   function escapeHtml(value) {
-    return String(value ?? "").replace(/[&<>"']/g, (char) => ({
-      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-    })[char]);
+    return String(value ?? "").replace(
+      /[&<>"']/g,
+      (char) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[char],
+    );
   }
 
   function readLocalTasks() {
@@ -1178,7 +1960,8 @@
       const saved = localStorage.getItem(storageKey);
       if (!saved) return seededTasks.map((task) => ({ ...task }));
       const parsed = JSON.parse(saved);
-      if (!Array.isArray(parsed)) throw new Error("Stored task data is invalid.");
+      if (!Array.isArray(parsed))
+        throw new Error("Stored task data is invalid.");
       return parsed;
     } catch (error) {
       console.error("Could not read saved tasks.", error);
@@ -1199,11 +1982,13 @@
     return sampleNotes.map((note, index) => ({
       id: `local-note-${index + 1}`,
       title: note.title,
-      content: `<p>${escapeHtml(note.title === "Core theorem summary"
-        ? "A shortest path is only as good as the weights you give it. Revisit Dijkstra's assumptions before the next problem set."
-        : note.title === "Cell structure recall"
-          ? "Mitochondria: ATP production. Ribosomes: protein synthesis. Nucleus: stores genetic material."
-          : "Thesis: progress in the discipline came from small, repeatable experiments rather than one big breakthrough.")}</p>`,
+      content: `<p>${escapeHtml(
+        note.title === "Core theorem summary"
+          ? "A shortest path is only as good as the weights you give it. Revisit Dijkstra's assumptions before the next problem set."
+          : note.title === "Cell structure recall"
+            ? "Mitochondria: ATP production. Ribosomes: protein synthesis. Nucleus: stores genetic material."
+            : "Thesis: progress in the discipline came from small, repeatable experiments rather than one big breakthrough.",
+      )}</p>`,
       subject_id: "",
       subject: note.subject,
       is_favorite: index === 0,
@@ -1226,11 +2011,19 @@
   }
 
   function initials(name) {
-    return String(name || "Student").trim().split(/\s+/).slice(0, 2).map((part) => part[0] || "").join("").toUpperCase();
+    return String(name || "Student")
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part[0] || "")
+      .join("")
+      .toUpperCase();
   }
 
   function subjectName(id) {
-    return subjects.find((subject) => subject.id === id)?.name || "Independent study";
+    return (
+      subjects.find((subject) => subject.id === id)?.name || "Independent study"
+    );
   }
 
   function formatDue(value) {
@@ -1242,15 +2035,28 @@
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
     const locale = appLanguage === "ar" ? "ar-EG" : "en";
-    const prefix = isToday ? (appLanguage === "ar" ? "اليوم" : "Today")
-      : date.toDateString() === tomorrow.toDateString() ? (appLanguage === "ar" ? "غدًا" : "Tomorrow")
-        : date.toLocaleDateString(locale, { weekday: "short", month: "short", day: "numeric" });
+    const prefix = isToday
+      ? appLanguage === "ar"
+        ? "اليوم"
+        : "Today"
+      : date.toDateString() === tomorrow.toDateString()
+        ? appLanguage === "ar"
+          ? "غدًا"
+          : "Tomorrow"
+        : date.toLocaleDateString(locale, {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+          });
     return `${prefix} · ${date.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })}`;
   }
 
   function setConnectionState(text, connected) {
     const status = document.getElementById("connection-state");
-    status.replaceChildren(document.createElement("i"), document.createTextNode(text));
+    status.replaceChildren(
+      document.createElement("i"),
+      document.createTextNode(text),
+    );
     status.classList.toggle("connected", Boolean(connected));
     translateInterface();
   }
@@ -1271,36 +2077,58 @@
     const toast = document.createElement("div");
     toast.className = "toast reward-toast";
     const label = document.createElement("span");
-    label.textContent = appLanguage === "ar" ? "مكافأة التقدم" : "Progress reward";
+    label.textContent =
+      appLanguage === "ar" ? "مكافأة التقدم" : "Progress reward";
     const points = document.createElement("strong");
     points.dir = "ltr";
     points.textContent = `+${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(amount)} XP`;
     toast.append(label, points);
     region.append(toast);
     window.setTimeout(() => toast.remove(), 4200);
-    if (shouldAnimate()) toast.animate(
-      [{ opacity: 0, transform: "translateY(8px) scale(.98)" }, { opacity: 1, transform: "translateY(0) scale(1)" }],
-      { duration: motionLevel === "reduced" ? 150 : 260, easing: "cubic-bezier(.2,.7,.2,1)" },
-    );
+    if (shouldAnimate())
+      toast.animate(
+        [
+          { opacity: 0, transform: "translateY(8px) scale(.98)" },
+          { opacity: 1, transform: "translateY(0) scale(1)" },
+        ],
+        {
+          duration: motionLevel === "reduced" ? 150 : 260,
+          easing: "cubic-bezier(.2,.7,.2,1)",
+        },
+      );
   }
 
-  function openCelebration(title, description, amount = 0, isUserContent = false) {
+  function openCelebration(
+    title,
+    description,
+    amount = 0,
+    isUserContent = false,
+  ) {
     const modal = document.getElementById("celebration-modal");
-    document.getElementById("celebration-title").textContent = translateUiText(title);
-    document.getElementById("celebration-description").textContent = isUserContent ? description : translateUiText(description);
+    document.getElementById("celebration-title").textContent =
+      translateUiText(title);
+    document.getElementById("celebration-description").textContent =
+      isUserContent ? description : translateUiText(description);
     const xp = document.getElementById("celebration-xp");
     xp.dir = "ltr";
     xp.hidden = amount <= 0;
-    xp.textContent = amount > 0
-      ? `+${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(amount)} XP`
-      : "";
+    xp.textContent =
+      amount > 0
+        ? `+${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(amount)} XP`
+        : "";
     modal.hidden = false;
     if (shouldAnimate()) {
       const offset = motionLevel === "reduced" ? 4 : 14;
-      const scale = motionLevel === "reduced" ? .99 : .96;
+      const scale = motionLevel === "reduced" ? 0.99 : 0.96;
       modal.querySelector(".celebration-modal").animate(
-        [{ opacity: 0, transform: `translateY(${offset}px) scale(${scale})` }, { opacity: 1, transform: "translateY(0) scale(1)" }],
-        { duration: motionLevel === "reduced" ? 160 : 320, easing: "cubic-bezier(.2,.7,.2,1)" },
+        [
+          { opacity: 0, transform: `translateY(${offset}px) scale(${scale})` },
+          { opacity: 1, transform: "translateY(0) scale(1)" },
+        ],
+        {
+          duration: motionLevel === "reduced" ? 160 : 320,
+          easing: "cubic-bezier(.2,.7,.2,1)",
+        },
       );
       if (shouldUseFullMotion()) launchConfetti();
     }
@@ -1312,13 +2140,21 @@
   }
 
   function animateRewardCounters() {
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
     document.querySelectorAll("[data-reward-counter]").forEach((counter) => {
       const key = counter.dataset.rewardCounter;
       const target = Number(counter.dataset.counterValue);
       const previous = rewardCounterValues.get(key);
       rewardCounterValues.set(key, target);
-      if (!Number.isFinite(target) || previous === target || !shouldAnimate() || reduceMotion) return;
+      if (
+        !Number.isFinite(target) ||
+        previous === target ||
+        !shouldAnimate() ||
+        reduceMotion
+      )
+        return;
       const startValue = previous ?? 0;
       const start = performance.now();
       const duration = motionLevel === "reduced" ? 180 : 420;
@@ -1326,7 +2162,9 @@
         const progress = Math.min(1, (now - start) / duration);
         const eased = 1 - (1 - progress) ** 3;
         const value = Math.round(startValue + (target - startValue) * eased);
-        counter.textContent = new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(value);
+        counter.textContent = new Intl.NumberFormat(
+          appLanguage === "ar" ? "ar-EG" : "en",
+        ).format(value);
         if (progress < 1) requestAnimationFrame(update);
       };
       requestAnimationFrame(update);
@@ -1341,61 +2179,122 @@
     const colors = ["#06D6A0", "#E6FBF6", "#75CDB1"];
     for (let index = 0; index < 24; index += 1) {
       const particle = document.createElement("i");
-      particle.style.setProperty("--particle-x", `${Math.round(Math.random() * 100)}vw`);
-      particle.style.setProperty("--particle-y", `${Math.round(20 + Math.random() * 60)}vh`);
-      particle.style.setProperty("--particle-delay", `${Math.random() * 180}ms`);
-      particle.style.setProperty("--particle-color", colors[index % colors.length]);
+      particle.style.setProperty(
+        "--particle-x",
+        `${Math.round(Math.random() * 100)}vw`,
+      );
+      particle.style.setProperty(
+        "--particle-y",
+        `${Math.round(20 + Math.random() * 60)}vh`,
+      );
+      particle.style.setProperty(
+        "--particle-delay",
+        `${Math.random() * 180}ms`,
+      );
+      particle.style.setProperty(
+        "--particle-color",
+        colors[index % colors.length],
+      );
       layer.append(particle);
     }
     document.body.append(layer);
     window.setTimeout(() => layer.remove(), 1500);
   }
 
-  async function refreshRewardSummary({ celebrate = false, previous = rewardSummary } = {}) {
+  async function refreshRewardSummary({
+    celebrate = false,
+    previous = rewardSummary,
+  } = {}) {
     if (!supabase || !session) {
       rewardSummary = null;
       earnedAchievements = [];
       return null;
     }
     const [summaryResult, achievementsResult] = await Promise.all([
-      supabase.from("user_xp").select("total_xp,level,current_streak,best_streak").eq("user_id", session.user.id).maybeSingle(),
-      supabase.from("user_achievements").select("earned_at,achievements(code,name,description,xp_reward)")
-        .eq("user_id", session.user.id).order("earned_at", { ascending: false }),
+      supabase
+        .from("user_xp")
+        .select("total_xp,level,current_streak,best_streak")
+        .eq("user_id", session.user.id)
+        .maybeSingle(),
+      supabase
+        .from("user_achievements")
+        .select("earned_at,achievements(code,name,description,xp_reward)")
+        .eq("user_id", session.user.id)
+        .order("earned_at", { ascending: false }),
     ]);
     if (summaryResult.error || achievementsResult.error) {
       const error = summaryResult.error || achievementsResult.error;
-      console.error("Could not load Study Zone rewards. Apply the secure study rewards migration if it has not been applied.", error);
+      console.error(
+        "Could not load Study Zone rewards. Apply the secure study rewards migration if it has not been applied.",
+        error,
+      );
       rewardSummary = null;
       earnedAchievements = [];
       updateStreakSidebar();
-      if (session) showToast("Rewards load after applying the latest Supabase migration.");
+      if (session)
+        showToast("Rewards load after applying the latest Supabase migration.");
       return null;
     }
     const oldSummary = previous;
-    const oldCodes = new Set(earnedAchievements.map((item) => item.achievements?.code).filter(Boolean));
-    rewardSummary = summaryResult.data || { total_xp: 0, level: 1, current_streak: 0, best_streak: 0 };
+    const oldCodes = new Set(
+      earnedAchievements.map((item) => item.achievements?.code).filter(Boolean),
+    );
+    rewardSummary = summaryResult.data || {
+      total_xp: 0,
+      level: 1,
+      current_streak: 0,
+      best_streak: 0,
+    };
     earnedAchievements = achievementsResult.data || [];
-    updateStreakSidebar(Boolean(oldSummary && Number(rewardSummary.current_streak) > Number(oldSummary.current_streak)));
+    updateStreakSidebar(
+      Boolean(
+        oldSummary &&
+        Number(rewardSummary.current_streak) >
+          Number(oldSummary.current_streak),
+      ),
+    );
 
     if (celebrate && oldSummary) {
-      const xpGained = Math.max(0, Number(rewardSummary.total_xp) - Number(oldSummary.total_xp));
+      const xpGained = Math.max(
+        0,
+        Number(rewardSummary.total_xp) - Number(oldSummary.total_xp),
+      );
       showRewardToast(xpGained);
       if (Number(rewardSummary.level) > Number(oldSummary.level)) {
-        openCelebration("Level up!", "You've reached a new study milestone.", xpGained);
+        openCelebration(
+          "Level up!",
+          "You've reached a new study milestone.",
+          xpGained,
+        );
       } else {
-        const newAchievement = earnedAchievements.find((item) => !oldCodes.has(item.achievements?.code));
+        const newAchievement = earnedAchievements.find(
+          (item) => !oldCodes.has(item.achievements?.code),
+        );
         if (newAchievement?.achievements) {
-          openCelebration(newAchievement.achievements.name || "Achievement unlocked!", newAchievement.achievements.description || "Your progress is adding up.", Number(newAchievement.achievements.xp_reward) || 0);
+          openCelebration(
+            newAchievement.achievements.name || "Achievement unlocked!",
+            newAchievement.achievements.description ||
+              "Your progress is adding up.",
+            Number(newAchievement.achievements.xp_reward) || 0,
+          );
         } else if (xpGained > 0) {
           const newStreak = Number(rewardSummary.current_streak);
           const oldStreak = Number(oldSummary.current_streak);
-          if ([7, 14, 30, 100].some((milestone) => oldStreak < milestone && newStreak >= milestone)) {
-            openCelebration("Study Streak", "You're building a great study streak!");
+          if (
+            [7, 14, 30, 100].some(
+              (milestone) => oldStreak < milestone && newStreak >= milestone,
+            )
+          ) {
+            openCelebration(
+              "Study Streak",
+              "You're building a great study streak!",
+            );
           }
         }
       }
     }
-    if (["dashboard", "profile", "achievements"].includes(currentPage)) scheduleRender();
+    if (["dashboard", "profile", "achievements"].includes(currentPage))
+      scheduleRender();
     return rewardSummary;
   }
 
@@ -1413,13 +2312,24 @@
       return;
     }
     const count = Number(rewardSummary.current_streak);
-    const dayLabel = appLanguage === "ar"
-      ? count === 1 ? "يوم" : count === 2 ? "يومان" : "أيام"
-      : count === 1 ? "day" : "days";
+    const dayLabel =
+      appLanguage === "ar"
+        ? count === 1
+          ? "يوم"
+          : count === 2
+            ? "يومان"
+            : "أيام"
+        : count === 1
+          ? "day"
+          : "days";
     element.textContent = `${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(count)} ${dayLabel}`;
     if (animate && shouldAnimate()) {
       element.animate(
-        [{ transform: "scale(.86)", color: "var(--secondary)" }, { transform: "scale(1.12)", color: "var(--accent)" }, { transform: "scale(1)", color: "var(--polar)" }],
+        [
+          { transform: "scale(.86)", color: "var(--secondary)" },
+          { transform: "scale(1.12)", color: "var(--accent)" },
+          { transform: "scale(1)", color: "var(--polar)" },
+        ],
         { duration: 360, easing: "cubic-bezier(.2,.7,.2,1)" },
       );
     }
@@ -1444,61 +2354,124 @@
     const right = 12;
     const top = 14;
     const bottom = 25;
-    const max = Math.max(6, Math.ceil(Math.max(0, ...chartActivity.map((item) => item.hours)) / 2) * 2);
+    const max = Math.max(
+      6,
+      Math.ceil(Math.max(0, ...chartActivity.map((item) => item.hours)) / 2) *
+        2,
+    );
     const plotWidth = width - left - right;
     const plotHeight = height - top - bottom;
-    const localizedActivity = appLanguage === "ar"
-      ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => chartActivity.find((item) => item.day === day))
-      : chartActivity;
+    const localizedActivity =
+      appLanguage === "ar"
+        ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) =>
+            chartActivity.find((item) => item.day === day),
+          )
+        : chartActivity;
     const points = localizedActivity.filter(Boolean).map((item, index) => ({
-      x: appLanguage === "ar"
-        ? width - right - (plotWidth * index) / (localizedActivity.length - 1)
-        : left + (plotWidth * index) / (localizedActivity.length - 1),
+      x:
+        appLanguage === "ar"
+          ? width - right - (plotWidth * index) / (localizedActivity.length - 1)
+          : left + (plotWidth * index) / (localizedActivity.length - 1),
       y: top + plotHeight * (1 - item.hours / max),
       ...item,
     }));
-    const line = points.map((point, index) => `${index ? "L" : "M"}${point.x},${point.y}`).join(" ");
+    const line = points
+      .map((point, index) => `${index ? "L" : "M"}${point.x},${point.y}`)
+      .join(" ");
     const areaPath = `${line} L${points.at(-1).x},${top + plotHeight} L${points[0].x},${top + plotHeight} Z`;
-    const yLines = [0, 2, 4, 6].map((value) => {
-      const y = top + plotHeight * (1 - value / max);
-      const localizedValue = new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(value);
-      return `<line class="chart-gridline" x1="${left}" x2="${width - right}" y1="${y}" y2="${y}"/><text class="chart-label" x="${appLanguage === "ar" ? width - 18 : 0}" text-anchor="${appLanguage === "ar" ? "end" : "start"}" y="${y + 3}">${localizedValue}${appLanguage === "ar" ? "س" : "h"}</text>`;
-    }).join("");
-    const dots = points.map((point) => {
-      const day = appLanguage === "ar" ? interfaceText[point.day] : point.day;
-      const hours = new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en", { maximumFractionDigits: 1 }).format(point.hours);
-      return `<circle class="chart-dot" cx="${point.x}" cy="${point.y}" r="3.5"><title>${day}: ${hours} ${appLanguage === "ar" ? "ساعة" : "hours"}</title></circle>`;
-    }).join("");
-    const labels = points.map((point) => `<text class="chart-label" text-anchor="middle" x="${point.x}" y="${height - 4}">${appLanguage === "ar" ? interfaceText[point.day] : point.day}</text>`).join("");
-    const ariaLabel = appLanguage === "ar" ? "ساعات الدراسة خلال الأيام السبعة الماضية" : session ? "Verified focus time over the last seven days" : "Sample study hours over the last seven days";
+    const yLines = [0, 2, 4, 6]
+      .map((value) => {
+        const y = top + plotHeight * (1 - value / max);
+        const localizedValue = new Intl.NumberFormat(
+          appLanguage === "ar" ? "ar-EG" : "en",
+        ).format(value);
+        return `<line class="chart-gridline" x1="${left}" x2="${width - right}" y1="${y}" y2="${y}"/><text class="chart-label" x="${appLanguage === "ar" ? width - 18 : 0}" text-anchor="${appLanguage === "ar" ? "end" : "start"}" y="${y + 3}">${localizedValue}${appLanguage === "ar" ? "س" : "h"}</text>`;
+      })
+      .join("");
+    const dots = points
+      .map((point) => {
+        const day = appLanguage === "ar" ? interfaceText[point.day] : point.day;
+        const hours = new Intl.NumberFormat(
+          appLanguage === "ar" ? "ar-EG" : "en",
+          { maximumFractionDigits: 1 },
+        ).format(point.hours);
+        return `<circle class="chart-dot" cx="${point.x}" cy="${point.y}" r="3.5"><title>${day}: ${hours} ${appLanguage === "ar" ? "ساعة" : "hours"}</title></circle>`;
+      })
+      .join("");
+    const labels = points
+      .map(
+        (point) =>
+          `<text class="chart-label" text-anchor="middle" x="${point.x}" y="${height - 4}">${appLanguage === "ar" ? interfaceText[point.day] : point.day}</text>`,
+      )
+      .join("");
+    const ariaLabel =
+      appLanguage === "ar"
+        ? "ساعات الدراسة خلال الأيام السبعة الماضية"
+        : session
+          ? "Verified focus time over the last seven days"
+          : "Sample study hours over the last seven days";
     return `<div class="chart-area"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel}"><defs><linearGradient id="chart-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#06D6A0" stop-opacity=".21"/><stop offset="100%" stop-color="#06D6A0" stop-opacity="0"/></linearGradient></defs>${yLines}<path class="chart-area-fill" d="${areaPath}"/><path class="chart-line" pathLength="1" d="${line}"/>${dots}${labels}</svg></div>`;
   }
 
   function dashboardPage() {
     const todayKey = dateKey(new Date());
     const openTasks = tasks.filter((task) => task.status !== "completed");
-    const overdueTasks = openTasks.filter((task) => {
-      const endKey = taskEndKey(task);
-      return endKey && endKey < todayKey;
-    }).sort(sortTasksByPlan);
+    const overdueTasks = openTasks
+      .filter((task) => {
+        const endKey = taskEndKey(task);
+        return endKey && endKey < todayKey;
+      })
+      .sort(sortTasksByPlan);
     const overdueIds = new Set(overdueTasks.map((task) => task.id));
     const todayTasks = openTasks
-      .filter((task) => !overdueIds.has(task.id) && taskOccursOnKey(task, todayKey))
+      .filter(
+        (task) => !overdueIds.has(task.id) && taskOccursOnKey(task, todayKey),
+      )
       .sort(sortTasksByPlan);
-    const completedToday = tasks.filter((task) => task.status === "completed" && taskOccursOnKey(task, todayKey));
+    const completedToday = tasks.filter(
+      (task) => task.status === "completed" && taskOccursOnKey(task, todayKey),
+    );
     const totalToday = todayTasks.length + completedToday.length;
-    const progress = totalToday ? Math.round((completedToday.length / totalToday) * 100) : 0;
-    const firstName = (accountProfile?.display_name || session?.user?.user_metadata?.full_name || (session ? "there" : "Student")).trim().split(/\s+/)[0];
+    const progress = totalToday
+      ? Math.round((completedToday.length / totalToday) * 100)
+      : 0;
+    const firstName = (
+      accountProfile?.display_name ||
+      session?.user?.user_metadata?.full_name ||
+      (session ? "there" : "Student")
+    )
+      .trim()
+      .split(/\s+/)[0];
     const hour = new Date().getHours();
-    const greeting = appLanguage === "ar"
-      ? hour < 12 ? "صباح الخير" : hour < 18 ? "مرحبًا" : "مساء الخير"
-      : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-    const dayLabelText = new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { weekday: "long", month: "long", day: "numeric" }).format(new Date());
-    const formattedNumber = (value) => new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(value);
+    const greeting =
+      appLanguage === "ar"
+        ? hour < 12
+          ? "صباح الخير"
+          : hour < 18
+            ? "مرحبًا"
+            : "مساء الخير"
+        : hour < 12
+          ? "Good morning"
+          : hour < 18
+            ? "Good afternoon"
+            : "Good evening";
+    const dayLabelText = new Intl.DateTimeFormat(
+      appLanguage === "ar" ? "ar-EG" : "en",
+      { weekday: "long", month: "long", day: "numeric" },
+    ).format(new Date());
+    const formattedNumber = (value) =>
+      new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(
+        value,
+      );
     const focusStats = getFocusStats();
     const focusMinutes = Math.floor(focusStats.todaySeconds / 60);
     const nextDeadline = tasks
-      .filter((task) => task.status !== "completed" && task.due_at && new Date(task.due_at) > new Date())
+      .filter(
+        (task) =>
+          task.status !== "completed" &&
+          task.due_at &&
+          new Date(task.due_at) > new Date(),
+      )
       .sort((a, b) => new Date(a.due_at) - new Date(b.due_at))[0];
     const statGrid = `<div class="grid stats-grid">
       ${statCard("TODAY'S TASKS", `${formattedNumber(completedToday.length)}<small>/${formattedNumber(totalToday)}</small>`, progress ? ` ${progress}% complete` : " Add your first task", "✓", progress ? "● " : "")}
@@ -1506,7 +2479,9 @@
       ${statCard("FOCUS TODAY", `${formattedNumber(focusMinutes)}<small> min</small>`, ` ${formattedNumber(focusStats.todaySessions)} sessions`, "◷")}
       ${statCard("STUDY STREAK", rewardSummary ? `${rewardCounterMarkup("streak", rewardSummary.current_streak)} days` : "—", rewardSummary ? ` Level ${formattedNumber(Number(rewardSummary.level) || 1)}` : " Sign in to track it", "↗")}
     </div>`;
-    const taskRowForDashboard = (task) => `<div class="dashboard-task ${task.status === "completed" ? "completed" : ""}">
+    const taskRowForDashboard = (
+      task,
+    ) => `<div class="dashboard-task ${task.status === "completed" ? "completed" : ""}">
       <button class="task-check ${task.status === "completed" ? "checked" : ""}" data-action="toggle-task" data-id="${escapeHtml(task.id)}" aria-label="${task.status === "completed" ? "Reopen" : "Complete"} ${escapeHtml(task.title)}">${task.status === "completed" ? "✓" : ""}</button>
       <button class="dashboard-task-main" data-action="task-edit" data-id="${escapeHtml(task.id)}">
         <strong dir="auto">${escapeHtml(task.title)}</strong>
@@ -1515,26 +2490,67 @@
       <span class="priority ${escapeHtml(task.priority || "medium")}">${escapeHtml(deadlineText[appLanguage][task.priority] || "medium")}</span>
     </div>`;
     const todaysList = todayTasks.slice(0, 6).map(taskRowForDashboard).join("");
-    const overdueList = overdueTasks.slice(0, 3).map(taskRowForDashboard).join("");
+    const overdueList = overdueTasks
+      .slice(0, 3)
+      .map(taskRowForDashboard)
+      .join("");
     const latestNotes = notes
       .slice()
-      .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))
+      .sort(
+        (a, b) =>
+          new Date(b.updated_at || b.created_at || 0) -
+          new Date(a.updated_at || a.created_at || 0),
+      )
       .slice(0, 3);
-    const noteRows = latestNotes.map((note) => `<button class="dashboard-note" data-action="note-open" data-id="${escapeHtml(note.id)}">
+    const noteRows = latestNotes
+      .map(
+        (
+          note,
+        ) => `<button class="dashboard-note" data-action="note-open" data-id="${escapeHtml(note.id)}">
       <span class="dashboard-note-dot" style="background:${escapeHtml(noteColor(note))}"></span>
       <span><strong dir="auto">${escapeHtml(note.title || "Untitled note")}</strong><small dir="auto">${escapeHtml(notePlainText(note).slice(0, 80) || "Empty note")}</small></span>
       <time>${escapeHtml(new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { month: "short", day: "numeric" }).format(new Date(note.updated_at || note.created_at || Date.now())))}</time>
-    </button>`).join("");
-    const goalRows = goals.slice(0, 3).map((goal) => `<div class="dashboard-goal"><div class="goal-topline"><strong>${escapeHtml(goal.title)}</strong><span>${escapeHtml(goal.due || "")}</span></div><div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, Math.max(0, goal.progress || 0))}%"></div></div><div class="goal-bottomline"><span>${escapeHtml(goal.detail || goal.details || "")}</span><span>${Math.round(goal.progress || 0)}%</span></div></div>`).join("");
-    const badges = earnedAchievements.slice(0, 3).map((item) => {
-      const achievement = Array.isArray(item.achievements) ? item.achievements[0] : item.achievements;
-      const catalog = achievementCatalog.find((entry) => entry.code === achievement?.code);
-      if (!achievement) return "";
-      return `<div class="achievement-row"><span class="achievement-icon">${catalog?.symbol || "✦"}</span><div><strong>${escapeHtml(achievement.name || catalog?.name || "Achievement unlocked!")}</strong><small>${escapeHtml(achievement.description || catalog?.description || "")}</small></div></div>`;
-    }).join("") || `<div class="empty-state">${session ? "No achievements unlocked yet." : "Sign in to earn secure rewards."}</div>`;
-    const subjectRows = subjects.map((subject) => `<div class="subject-row"><span class="subject-row-name">${escapeHtml(subject.name)}</span><div class="progress-track"><div class="progress-fill" style="width:${subject.progress ?? 0}%"></div></div><span class="subject-row-value">${subject.progress == null ? "—" : `${subject.progress}%`}</span></div>`).join("") || `<div class="empty-state">Add a subject to start tracking course progress.</div>`;
-    return `${pageHeading(dayLabelText.toUpperCase(), `${greeting}, ${escapeHtml(firstName)}.`, appLanguage === "ar" ? "هذه مهام اليوم فقط — ابدأ بخطوة واحدة." : "Here is today, and nothing else. Start with one step.",
-      `<div class="dashboard-heading-actions"><button class="button button-secondary" data-navigate="focus">◷ ${appLanguage === "ar" ? "ابدأ التركيز" : "Start focus"}</button><button class="button button-primary" data-action="new-task" data-date="${todayKey}">＋ ${appLanguage === "ar" ? "مهمة جديدة" : "New task"}</button></div>`)}
+    </button>`,
+      )
+      .join("");
+    const goalRows = goals
+      .slice(0, 3)
+      .map(
+        (goal) =>
+          `<div class="dashboard-goal"><div class="goal-topline"><strong>${escapeHtml(goal.title)}</strong><span>${escapeHtml(goal.due || "")}</span></div><div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, Math.max(0, goal.progress || 0))}%"></div></div><div class="goal-bottomline"><span>${escapeHtml(goal.detail || goal.details || "")}</span><span>${Math.round(goal.progress || 0)}%</span></div></div>`,
+      )
+      .join("");
+    const badges =
+      earnedAchievements
+        .slice(0, 3)
+        .map((item) => {
+          const achievement = Array.isArray(item.achievements)
+            ? item.achievements[0]
+            : item.achievements;
+          const catalog = achievementCatalog.find(
+            (entry) => entry.code === achievement?.code,
+          );
+          if (!achievement) return "";
+          return `<div class="achievement-row"><span class="achievement-icon">${catalog?.symbol || "✦"}</span><div><strong>${escapeHtml(achievement.name || catalog?.name || "Achievement unlocked!")}</strong><small>${escapeHtml(achievement.description || catalog?.description || "")}</small></div></div>`;
+        })
+        .join("") ||
+      `<div class="empty-state">${session ? "No achievements unlocked yet." : "Sign in to earn secure rewards."}</div>`;
+    const subjectRows =
+      subjects
+        .map(
+          (subject) =>
+            `<div class="subject-row"><span class="subject-row-name">${escapeHtml(subject.name)}</span><div class="progress-track"><div class="progress-fill" style="width:${subject.progress ?? 0}%"></div></div><span class="subject-row-value">${subject.progress == null ? "—" : `${subject.progress}%`}</span></div>`,
+        )
+        .join("") ||
+      `<div class="empty-state">Add a subject to start tracking course progress.</div>`;
+    return `${pageHeading(
+      dayLabelText.toUpperCase(),
+      `${greeting}, ${escapeHtml(firstName)}.`,
+      appLanguage === "ar"
+        ? "هذه مهام اليوم فقط — ابدأ بخطوة واحدة."
+        : "Here is today, and nothing else. Start with one step.",
+      `<div class="dashboard-heading-actions"><button class="button button-secondary" data-navigate="focus">◷ ${appLanguage === "ar" ? "ابدأ التركيز" : "Start focus"}</button><button class="button button-primary" data-action="new-task" data-date="${todayKey}">＋ ${appLanguage === "ar" ? "مهمة جديدة" : "New task"}</button></div>`,
+    )}
       ${statGrid}
       <div class="grid dashboard-grid">
         <section class="panel">${panelHeading(appLanguage === "ar" ? "مهام اليوم" : "Today's tasks", appLanguage === "ar" ? `${todayTasks.length} مفتوحة · ${completedToday.length} مكتملة` : `${todayTasks.length} open · ${completedToday.length} done`, `<button class="panel-link" data-navigate="tasks">${appLanguage === "ar" ? "كل المهام ←" : "All tasks →"}</button>`)}
@@ -1577,7 +2593,9 @@
   }
 
   function parseLocalDateKey(key) {
-    const [year, month, day] = String(key || "").split("-").map(Number);
+    const [year, month, day] = String(key || "")
+      .split("-")
+      .map(Number);
     if (!year || !month || !day) return null;
     const date = new Date(year, month - 1, day);
     return Number.isNaN(date.getTime()) ? null : date;
@@ -1590,7 +2608,8 @@
     if (!startValue || !endValue) return null;
     const start = startOfLocalDay(new Date(startValue));
     const end = startOfLocalDay(new Date(endValue));
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()))
+      return null;
     return start <= end ? { start, end } : { start: end, end: start };
   }
 
@@ -1608,7 +2627,9 @@
   function taskSeries(task) {
     if (!task) return [];
     if (!task.recurrence_group_id) return [task];
-    const group = tasks.filter((item) => item.recurrence_group_id === task.recurrence_group_id);
+    const group = tasks.filter(
+      (item) => item.recurrence_group_id === task.recurrence_group_id,
+    );
     return group.length ? group : [task];
   }
 
@@ -1617,7 +2638,9 @@
     if (scope === "all") return group.map((item) => item.id);
     if (scope === "future") {
       const anchor = taskEndKey(task) || dateKey(new Date());
-      return group.filter((item) => (taskEndKey(item) || "") >= anchor).map((item) => item.id);
+      return group
+        .filter((item) => (taskEndKey(item) || "") >= anchor)
+        .map((item) => item.id);
     }
     return [task.id];
   }
@@ -1630,15 +2653,20 @@
     const aTime = aRange ? aRange.end.getTime() : Number.POSITIVE_INFINITY;
     const bTime = bRange ? bRange.end.getTime() : Number.POSITIVE_INFINITY;
     if (aTime !== bTime) return aTime - bTime;
-    const priority = (priorityRank[a.priority] ?? 2) - (priorityRank[b.priority] ?? 2);
+    const priority =
+      (priorityRank[a.priority] ?? 2) - (priorityRank[b.priority] ?? 2);
     if (priority !== 0) return priority;
-    return String(a.title || "").localeCompare(String(b.title || ""), appLanguage === "ar" ? "ar" : "en");
+    return String(a.title || "").localeCompare(
+      String(b.title || ""),
+      appLanguage === "ar" ? "ar" : "en",
+    );
   }
 
   function openTaskCountForDay(key) {
     const todayKey = dateKey(new Date());
     return tasks.filter((task) => {
-      if (task.status === "completed" || !taskOccursOnKey(task, key)) return false;
+      if (task.status === "completed" || !taskOccursOnKey(task, key))
+        return false;
       const endKey = taskEndKey(task);
       return !(endKey && endKey < todayKey);
     }).length;
@@ -1649,11 +2677,18 @@
     const date = new Date(task.due_at);
     if (Number.isNaN(date.getTime())) return "";
     if (date.getHours() === 23 && date.getMinutes() === 59) return "";
-    return new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { hour: "numeric", minute: "2-digit" }).format(date);
+    return new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", {
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
   }
 
   function formatTaskDayLabel(date) {
-    return new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { weekday: "short", month: "short", day: "numeric" }).format(date);
+    return new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    }).format(date);
   }
 
   function taskDueLabel(task, { includeDate = false } = {}) {
@@ -1661,8 +2696,10 @@
     if (!range) return translateUiText("No due date");
     const timeValue = formatTaskTime(task);
     const multiDay = dateKey(range.start) !== dateKey(range.end);
-    if (multiDay) return `${formatTaskDayLabel(range.start)} → ${formatTaskDayLabel(range.end)}`;
-    if (includeDate) return `${formatTaskDayLabel(range.end)}${timeValue ? ` · ${timeValue}` : ""}`;
+    if (multiDay)
+      return `${formatTaskDayLabel(range.start)} → ${formatTaskDayLabel(range.end)}`;
+    if (includeDate)
+      return `${formatTaskDayLabel(range.end)}${timeValue ? ` · ${timeValue}` : ""}`;
     return timeValue || (appLanguage === "ar" ? "طوال اليوم" : "All day");
   }
 
@@ -1677,7 +2714,8 @@
     const repeating = task.recurrence_group_id
       ? `<span class="task-repeat" title="${appLanguage === "ar" ? "مهمة متكررة" : "Repeating task"}">↻</span>`
       : "";
-    const overdue = !completed && range && dateKey(range.end) < dateKey(new Date());
+    const overdue =
+      !completed && range && dateKey(range.end) < dateKey(new Date());
     return `<div class="task-row ${completed ? "completed" : ""} ${overdue ? "is-overdue" : ""}" data-task-id="${escapeHtml(task.id)}">
       <button class="task-check ${completed ? "checked" : ""}" data-action="toggle-task" data-id="${escapeHtml(task.id)}" aria-label="${completed ? "Reopen" : "Complete"} ${escapeHtml(task.title)}">${completed ? "✓" : ""}</button>
       <div class="task-main"><strong class="task-title" dir="auto">${escapeHtml(task.title)}${repeating}</strong>${description}<span class="task-meta-inline" dir="auto">${escapeHtml(subject)}</span></div>
@@ -1692,7 +2730,12 @@
     </div>`;
   }
 
-  function taskSection(key, title, items, { count = items.length, collapsed = false, hint = "" } = {}) {
+  function taskSection(
+    key,
+    title,
+    items,
+    { count = items.length, collapsed = false, hint = "" } = {},
+  ) {
     if (!items.length && !hint) return "";
     const open = collapsed ? false : taskSectionState[key] !== false;
     const body = open
@@ -1707,7 +2750,9 @@
   }
 
   function taskProgressRing(completedCount, totalCount) {
-    const percent = totalCount ? Math.round((completedCount / totalCount) * 100) : 0;
+    const percent = totalCount
+      ? Math.round((completedCount / totalCount) * 100)
+      : 0;
     const radius = 26;
     const circumference = 2 * Math.PI * radius;
     const dash = (percent / 100) * circumference;
@@ -1725,22 +2770,46 @@
     const buckets = { overdue: [], day: [], nodate: [], completed: [] };
     if (dayMode) {
       const openTasks = tasks.filter((task) => task.status !== "completed");
-      buckets.overdue = openTasks.filter((task) => {
-        const endKey = taskEndKey(task);
-        return endKey && endKey < todayKey;
-      }).sort(sortTasksByPlan);
+      buckets.overdue = openTasks
+        .filter((task) => {
+          const endKey = taskEndKey(task);
+          return endKey && endKey < todayKey;
+        })
+        .sort(sortTasksByPlan);
       const overdueIds = new Set(buckets.overdue.map((task) => task.id));
-      buckets.day = openTasks.filter((task) => !overdueIds.has(task.id) && taskOccursOnKey(task, selectedKey)).sort(sortTasksByPlan);
-      buckets.nodate = openTasks.filter((task) => !taskDateRange(task) && !overdueIds.has(task.id)).sort(sortTasksByPlan);
-      buckets.completed = tasks.filter((task) => task.status === "completed" && taskOccursOnKey(task, selectedKey)).sort(sortTasksByPlan);
+      buckets.day = openTasks
+        .filter(
+          (task) =>
+            !overdueIds.has(task.id) && taskOccursOnKey(task, selectedKey),
+        )
+        .sort(sortTasksByPlan);
+      buckets.nodate = openTasks
+        .filter((task) => !taskDateRange(task) && !overdueIds.has(task.id))
+        .sort(sortTasksByPlan);
+      buckets.completed = tasks
+        .filter(
+          (task) =>
+            task.status === "completed" && taskOccursOnKey(task, selectedKey),
+        )
+        .sort(sortTasksByPlan);
     } else {
-      buckets.day = tasks.filter((task) => task.status !== "completed").sort(sortTasksByPlan);
-      buckets.completed = tasks.filter((task) => task.status === "completed").sort(sortTasksByPlan);
+      buckets.day = tasks
+        .filter((task) => task.status !== "completed")
+        .sort(sortTasksByPlan);
+      buckets.completed = tasks
+        .filter((task) => task.status === "completed")
+        .sort(sortTasksByPlan);
     }
-    const dayTasks = buckets.day.concat(buckets.overdue.filter((task) => taskOccursOnKey(task, selectedKey)));
-    const completedOnDay = buckets.completed.filter((task) => taskOccursOnKey(task, selectedKey) || !dayMode);
+    const dayTasks = buckets.day.concat(
+      buckets.overdue.filter((task) => taskOccursOnKey(task, selectedKey)),
+    );
+    const completedOnDay = buckets.completed.filter(
+      (task) => taskOccursOnKey(task, selectedKey) || !dayMode,
+    );
     const totalOnDay = dayTasks.length + completedOnDay.length;
-    const percent = totalOnDay ? Math.round((completedOnDay.length / totalOnDay) * 100) : 0;
+    const percent = totalOnDay
+      ? Math.round((completedOnDay.length / totalOnDay) * 100)
+      : 0;
     const stripStart = addLocalDays(taskViewDate, -3);
     const strip = Array.from({ length: 7 }, (_, index) => {
       const date = addLocalDays(stripStart, index);
@@ -1757,31 +2826,56 @@
     const search = `<label class="search-box"><span>⌕</span><input id="task-search" type="search" dir="auto" value="${escapeHtml(searchTerm)}" placeholder="Search tasks" aria-label="Search tasks"></label>`;
     const filters = `<select class="filter-select" id="task-filter" aria-label="Filter task status"><option value="all" ${statusFilter === "all" ? "selected" : ""}>All statuses</option><option value="not_started" ${statusFilter === "not_started" ? "selected" : ""}>Not started</option><option value="in_progress" ${statusFilter === "in_progress" ? "selected" : ""}>In progress</option><option value="completed" ${statusFilter === "completed" ? "selected" : ""}>Completed</option></select>`;
     const matchesSearch = (task) => {
-      const text = `${task.title} ${task.description || ""} ${task.subject || subjectName(task.subject_id)}`.toLowerCase();
-      return (!searchTerm || text.includes(searchTerm.toLowerCase()))
-        && (statusFilter === "all" || task.status === statusFilter);
+      const text =
+        `${task.title} ${task.description || ""} ${task.subject || subjectName(task.subject_id)}`.toLowerCase();
+      return (
+        (!searchTerm || text.includes(searchTerm.toLowerCase())) &&
+        (statusFilter === "all" || task.status === statusFilter)
+      );
     };
-    Object.keys(buckets).forEach((key) => { buckets[key] = buckets[key].filter(matchesSearch); });
+    Object.keys(buckets).forEach((key) => {
+      buckets[key] = buckets[key].filter(matchesSearch);
+    });
     const sections = dayMode
       ? `${taskSection("overdue", appLanguage === "ar" ? "المهام المتأخرة" : "Overdue", buckets.overdue)}
          ${totalOnDay || buckets.overdue.length || buckets.nodate.length ? "" : `<div class="empty-state task-empty"><strong>${appLanguage === "ar" ? "يومك مرتب" : "Your day is clear"}</strong>${appLanguage === "ar" ? "أضف مهمة أو اختر يومًا آخر." : "Add a task or pick another day."}<button class="button button-primary button-small" data-action="new-task" data-date="${selectedKey}">＋ Add a task</button></div>`}
-         ${taskSection("today", selectedKey === todayKey
-           ? (appLanguage === "ar" ? "مهام اليوم" : "Today")
-           : formatTaskDayLabel(taskViewDate), buckets.day)}
+         ${taskSection(
+           "today",
+           selectedKey === todayKey
+             ? appLanguage === "ar"
+               ? "مهام اليوم"
+               : "Today"
+             : formatTaskDayLabel(taskViewDate),
+           buckets.day,
+         )}
          ${taskSection("nodate", appLanguage === "ar" ? "بلا موعد" : "No date", buckets.nodate)}
          ${taskShowCompleted ? taskSection("completed", appLanguage === "ar" ? "المكتملة" : "Completed", buckets.completed) : ""}`
       : `${taskSection("today", appLanguage === "ar" ? "كل المهام المفتوحة" : "All open tasks", buckets.day)}
          ${taskSection("completed", appLanguage === "ar" ? "المكتملة" : "Completed", buckets.completed)}`;
-    return `${pageHeading("TASKBOARD", "Tasks", appLanguage === "ar" ? "ركّز على يومك، واترك الباقي في مكانه." : "Focus on today. Everything else stays quietly in place.",
-      `<button class="button button-primary" data-action="new-task" data-date="${selectedKey}"><span class="button-icon">＋</span> ${appLanguage === "ar" ? "مهمة جديدة" : "New task"}</button>`)}
+    return `${pageHeading(
+      "TASKBOARD",
+      "Tasks",
+      appLanguage === "ar"
+        ? "ركّز على يومك، واترك الباقي في مكانه."
+        : "Focus on today. Everything else stays quietly in place.",
+      `<button class="button button-primary" data-action="new-task" data-date="${selectedKey}"><span class="button-icon">＋</span> ${appLanguage === "ar" ? "مهمة جديدة" : "New task"}</button>`,
+    )}
       <section class="task-day-panel panel">
         <div class="task-day-top">
           <div class="task-day-title">
             <p class="eyebrow">${dayMode ? (selectedKey === todayKey ? "TODAY" : "SELECTED DAY") : "ALL TASKS"}</p>
-            <h2>${dayMode ? (selectedKey === todayKey ? (appLanguage === "ar" ? "اليوم" : "Today") : formatTaskDayLabel(taskViewDate)) : (appLanguage === "ar" ? `كل المهام (${tasks.length})` : `All tasks (${tasks.length})`)}</h2>
-            <p class="task-day-sub">${dayMode
-              ? (totalOnDay ? `${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(completedOnDay.length)} / ${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(totalOnDay)} ${appLanguage === "ar" ? "مكتملة" : "completed"}` : (appLanguage === "ar" ? "لا مهام لهذا اليوم" : "Nothing scheduled"))
-              : (appLanguage === "ar" ? "المهام المفتوحة والمكتملة" : "Open and completed tasks")}</p>
+            <h2>${dayMode ? (selectedKey === todayKey ? (appLanguage === "ar" ? "اليوم" : "Today") : formatTaskDayLabel(taskViewDate)) : appLanguage === "ar" ? `كل المهام (${tasks.length})` : `All tasks (${tasks.length})`}</h2>
+            <p class="task-day-sub">${
+              dayMode
+                ? totalOnDay
+                  ? `${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(completedOnDay.length)} / ${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(totalOnDay)} ${appLanguage === "ar" ? "مكتملة" : "completed"}`
+                  : appLanguage === "ar"
+                    ? "لا مهام لهذا اليوم"
+                    : "Nothing scheduled"
+                : appLanguage === "ar"
+                  ? "المهام المفتوحة والمكتملة"
+                  : "Open and completed tasks"
+            }</p>
           </div>
           ${taskProgressRing(completedOnDay.length, totalOnDay)}
         </div>
@@ -1796,14 +2890,16 @@
             <button class="icon-button" data-action="task-next-day" aria-label="Next day">›</button>
             <button class="button button-secondary button-small" data-action="task-today">${appLanguage === "ar" ? "اليوم" : "Today"}</button>
           </div>
-          <div class="task-toolbar">${search}${filters}<button class="button button-secondary button-small" data-action="toggle-task-completed">${taskShowCompleted ? (appLanguage === "ar" ? "إخفاء المكتملة" : "Hide completed") : (appLanguage === "ar" ? "إظهار المكتملة" : "Show completed")}</button></div>
+          <div class="task-toolbar">${search}${filters}<button class="button button-secondary button-small" data-action="toggle-task-completed">${taskShowCompleted ? (appLanguage === "ar" ? "إخفاء المكتملة" : "Hide completed") : appLanguage === "ar" ? "إظهار المكتملة" : "Show completed"}</button></div>
         </div>
         <div class="day-strip" ${dayMode ? "" : "hidden"}>${strip}</div>
       </section>
       <div class="task-groups">${sections}</div>
-      <p class="data-caption">${session
-        ? "Tasks are saved to your private account. Overdue tasks stay visible until you complete or reschedule them."
-        : "Tasks are saved in this browser in preview mode. Sign in to sync them across devices."}</p>`;
+      <p class="data-caption">${
+        session
+          ? "Tasks are saved to your private account. Overdue tasks stay visible until you complete or reschedule them."
+          : "Tasks are saved in this browser in preview mode. Sign in to sync them across devices."
+      }</p>`;
   }
 
   function dateKey(date) {
@@ -1812,7 +2908,9 @@
 
   function getDeadlineStatus(deadline, now = Date.now()) {
     if (deadline.status === "completed") return "completed";
-    return deadline.due_at && new Date(deadline.due_at).getTime() < now ? "overdue" : "upcoming";
+    return deadline.due_at && new Date(deadline.due_at).getTime() < now
+      ? "overdue"
+      : "upcoming";
   }
 
   function getDeadlines() {
@@ -1838,7 +2936,10 @@
     const status = getDeadlineStatus(deadline, now.getTime());
     if (status === "completed") return t.statusCompleted;
     if (status === "overdue") {
-      const count = Math.max(1, Math.ceil((now.getTime() - due.getTime()) / 86400000));
+      const count = Math.max(
+        1,
+        Math.ceil((now.getTime() - due.getTime()) / 86400000),
+      );
       return `${t.overdueBy} ${count} ${count === 1 ? t.day : t.days}`;
     }
     if (due.toDateString() === now.toDateString()) return t.today;
@@ -1847,9 +2948,11 @@
     if (due.toDateString() === tomorrow.toDateString()) return t.tomorrow;
     const milliseconds = due.getTime() - now.getTime();
     const days = Math.floor(milliseconds / 86400000);
-    if (days > 0) return `${days} ${days === 1 ? t.day : t.days} ${t.remaining}`;
+    if (days > 0)
+      return `${days} ${days === 1 ? t.day : t.days} ${t.remaining}`;
     const hours = Math.floor(milliseconds / 3600000);
-    if (hours > 0) return `${hours} ${hours === 1 ? t.hour : t.hours} ${t.remaining}`;
+    if (hours > 0)
+      return `${hours} ${hours === 1 ? t.hour : t.hours} ${t.remaining}`;
     const minutes = Math.max(1, Math.floor(milliseconds / 60000));
     return `${minutes} ${minutes === 1 ? t.minute : t.minutes} ${t.remaining}`;
   }
@@ -1861,9 +2964,15 @@
   function deadlineStats(deadlines) {
     const counts = {
       all: deadlines.length,
-      upcoming: deadlines.filter((deadline) => getDeadlineStatus(deadline) === "upcoming").length,
-      overdue: deadlines.filter((deadline) => getDeadlineStatus(deadline) === "overdue").length,
-      completed: deadlines.filter((deadline) => getDeadlineStatus(deadline) === "completed").length,
+      upcoming: deadlines.filter(
+        (deadline) => getDeadlineStatus(deadline) === "upcoming",
+      ).length,
+      overdue: deadlines.filter(
+        (deadline) => getDeadlineStatus(deadline) === "overdue",
+      ).length,
+      completed: deadlines.filter(
+        (deadline) => getDeadlineStatus(deadline) === "completed",
+      ).length,
     };
     const t = deadlineText[appLanguage];
     return `<div class="grid deadline-stats">
@@ -1878,8 +2987,17 @@
     const t = deadlineText[appLanguage];
     const status = getDeadlineStatus(deadline);
     const subject = deadline.subject || subjectName(deadline.subject_id);
-    const dueClass = status === "overdue" ? "is-overdue" : status === "upcoming" && new Date(deadline.due_at).toDateString() === new Date().toDateString() ? "is-today" : "";
-    const description = deadline.description?.trim() ? `<p class="deadline-description" dir="auto">${escapeHtml(deadline.description)}</p>` : "";
+    const dueClass =
+      status === "overdue"
+        ? "is-overdue"
+        : status === "upcoming" &&
+            new Date(deadline.due_at).toDateString() ===
+              new Date().toDateString()
+          ? "is-today"
+          : "";
+    const description = deadline.description?.trim()
+      ? `<p class="deadline-description" dir="auto">${escapeHtml(deadline.description)}</p>`
+      : "";
     return `<article class="deadline-card ${dueClass} ${status === "completed" ? "is-completed" : ""}" data-deadline-id="${escapeHtml(deadline.id)}">
       <button class="deadline-check ${status === "completed" ? "checked" : ""}" data-action="deadline-toggle" data-id="${escapeHtml(deadline.id)}" aria-label="${status === "completed" ? escapeHtml(t.reopenSuccess) : escapeHtml(t.completeSuccess)}">${status === "completed" ? "✓" : ""}</button>
       <div class="deadline-main">
@@ -1896,18 +3014,29 @@
 
   function getFilteredDeadlines() {
     const now = Date.now();
-    const normalized = deadlineSearch.toLocaleLowerCase(appLanguage === "ar" ? "ar" : "en");
+    const normalized = deadlineSearch.toLocaleLowerCase(
+      appLanguage === "ar" ? "ar" : "en",
+    );
     const result = getDeadlines().filter((deadline) => {
       const status = getDeadlineStatus(deadline, now);
       const subject = deadline.subject || subjectName(deadline.subject_id);
-      const searchMatches = `${deadline.title} ${deadline.description || ""} ${subject}`.toLocaleLowerCase(appLanguage === "ar" ? "ar" : "en").includes(normalized);
-      const filterMatches = deadlineFilter === "all" || deadlineFilter === status;
+      const searchMatches =
+        `${deadline.title} ${deadline.description || ""} ${subject}`
+          .toLocaleLowerCase(appLanguage === "ar" ? "ar" : "en")
+          .includes(normalized);
+      const filterMatches =
+        deadlineFilter === "all" || deadlineFilter === status;
       return searchMatches && filterMatches;
     });
     const priority = { urgent: 0, high: 1, medium: 2, low: 3 };
     result.sort((a, b) => {
-      if (deadlineSort === "priority") return (priority[a.priority] ?? 2) - (priority[b.priority] ?? 2) || new Date(a.due_at) - new Date(b.due_at);
-      if (deadlineSort === "recent") return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+      if (deadlineSort === "priority")
+        return (
+          (priority[a.priority] ?? 2) - (priority[b.priority] ?? 2) ||
+          new Date(a.due_at) - new Date(b.due_at)
+        );
+      if (deadlineSort === "recent")
+        return new Date(b.created_at || 0) - new Date(a.created_at || 0);
       return new Date(a.due_at) - new Date(b.due_at);
     });
     return result;
@@ -1927,7 +3056,9 @@
     const firstDay = new Date(year, month, 1);
     const startOffset = firstDay.getDay();
     const today = dateKey(new Date());
-    const weekdayLabels = t.daysShort.map((day) => `<span class="calendar-weekday">${day}</span>`).join("");
+    const weekdayLabels = t.daysShort
+      .map((day) => `<span class="calendar-weekday">${day}</span>`)
+      .join("");
     const startOfGrid = new Date(year, month, 1 - startOffset);
     const weeks = Array.from({ length: 6 }, (_, weekIndex) => {
       const weekStart = new Date(startOfGrid);
@@ -1945,37 +3076,63 @@
         if (key === today) classes.push("today");
         if (key === selectedDeadlineDate) classes.push("selected");
         if (hasDeadlines) classes.push("has-deadlines");
-        return { date, key, button: `<button class="${classes.join(" ")}" data-action="calendar-select" data-date="${key}" aria-label="${escapeHtml(new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "full" }).format(date))}" aria-pressed="${key === selectedDeadlineDate}">${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(date.getDate())}</button>` };
+        return {
+          date,
+          key,
+          button: `<button class="${classes.join(" ")}" data-action="calendar-select" data-date="${key}" aria-label="${escapeHtml(new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "full" }).format(date))}" aria-pressed="${key === selectedDeadlineDate}">${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(date.getDate())}</button>`,
+        };
       });
 
       const weekStartKey = dayDates[0].key;
       const weekEndKey = dayDates[6].key;
       const laneEnds = [];
-      const bars = deadlines.map((deadline) => {
-        const range = deadlineDateRange(deadline);
-        if (range.start > weekEndKey || range.end < weekStartKey) return null;
-        const startColumn = Math.max(0, Math.round((new Date(`${range.start}T00:00:00`) - weekStart) / 86400000));
-        const endColumn = Math.min(6, Math.round((new Date(`${range.end}T00:00:00`) - weekStart) / 86400000));
-        let lane = laneEnds.findIndex((lastColumn) => lastColumn < startColumn);
-        if (lane < 0) lane = laneEnds.length;
-        laneEnds[lane] = endColumn;
-        const status = getDeadlineStatus(deadline);
-        const classNames = ["calendar-span-bar"];
-        if (status === "overdue") classNames.push("overdue");
-        if (status === "completed") classNames.push("completed");
-        if (startColumn === endColumn) classNames.push("single-day");
-        const label = range.start >= weekStartKey ? deadline.title : "";
-        return `<span class="${classNames.join(" ")}" style="grid-column:${startColumn + 1}/${endColumn + 2};grid-row:${lane + 1}" title="${escapeHtml(deadline.title)}" aria-label="${escapeHtml(deadline.title)}">${escapeHtml(label)}</span>`;
-      }).filter(Boolean).join("");
+      const bars = deadlines
+        .map((deadline) => {
+          const range = deadlineDateRange(deadline);
+          if (range.start > weekEndKey || range.end < weekStartKey) return null;
+          const startColumn = Math.max(
+            0,
+            Math.round(
+              (new Date(`${range.start}T00:00:00`) - weekStart) / 86400000,
+            ),
+          );
+          const endColumn = Math.min(
+            6,
+            Math.round(
+              (new Date(`${range.end}T00:00:00`) - weekStart) / 86400000,
+            ),
+          );
+          let lane = laneEnds.findIndex(
+            (lastColumn) => lastColumn < startColumn,
+          );
+          if (lane < 0) lane = laneEnds.length;
+          laneEnds[lane] = endColumn;
+          const status = getDeadlineStatus(deadline);
+          const classNames = ["calendar-span-bar"];
+          if (status === "overdue") classNames.push("overdue");
+          if (status === "completed") classNames.push("completed");
+          if (startColumn === endColumn) classNames.push("single-day");
+          const label = range.start >= weekStartKey ? deadline.title : "";
+          return `<span class="${classNames.join(" ")}" style="grid-column:${startColumn + 1}/${endColumn + 2};grid-row:${lane + 1}" title="${escapeHtml(deadline.title)}" aria-label="${escapeHtml(deadline.title)}">${escapeHtml(label)}</span>`;
+        })
+        .filter(Boolean)
+        .join("");
       return `<div class="calendar-week"><div class="calendar-week-days">${dayDates.map((item) => item.button).join("")}</div><div class="calendar-week-bars" style="grid-template-rows:repeat(${Math.max(1, laneEnds.length)},18px)">${bars}</div></div>`;
     }).join("");
-    const monthLabel = new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { month: "long", year: "numeric" }).format(deadlineMonth);
+    const monthLabel = new Intl.DateTimeFormat(
+      appLanguage === "ar" ? "ar-EG" : "en",
+      { month: "long", year: "numeric" },
+    ).format(deadlineMonth);
     const selected = deadlines.filter((deadline) => {
       const range = deadlineDateRange(deadline);
-      return selectedDeadlineDate >= range.start && selectedDeadlineDate <= range.end;
+      return (
+        selectedDeadlineDate >= range.start && selectedDeadlineDate <= range.end
+      );
     });
     const selectedLabel = selectedDeadlineDate
-      ? new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "full" }).format(new Date(`${selectedDeadlineDate}T12:00:00`))
+      ? new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", {
+          dateStyle: "full",
+        }).format(new Date(`${selectedDeadlineDate}T12:00:00`))
       : t.noDate;
     return `<div class="calendar-header"><h2 class="calendar-month" id="calendar-month">${escapeHtml(monthLabel)}</h2><div class="calendar-nav"><button class="button button-secondary button-small" data-action="calendar-today">${t.currentMonth}</button><button class="icon-button" data-action="calendar-prev" aria-label="${t.previous}">‹</button><button class="icon-button" data-action="calendar-next" aria-label="${t.next}">›</button></div></div>
       <div class="calendar-grid" role="grid" aria-labelledby="calendar-month"><div class="calendar-weekdays">${weekdayLabels}</div>${weeks}</div>
@@ -1991,13 +3148,22 @@
       ? filtered.map(deadlineCard).join("")
       : `<div class="empty-state"><strong>${deadlines.length ? t.noResults : t.noDeadlines}</strong>${deadlines.length ? t.noResultsHint : t.noDeadlinesHint}</div>`;
     const filterOptions = [
-      ["all", t.all], ["upcoming", t.filterUpcoming], ["overdue", t.filterOverdue], ["completed", t.filterCompleted],
-    ].map(([value, label]) => `<button class="deadline-filter ${deadlineFilter === value ? "selected" : ""}" data-deadline-filter="${value}" aria-pressed="${deadlineFilter === value}">${label}</button>`).join("");
+      ["all", t.all],
+      ["upcoming", t.filterUpcoming],
+      ["overdue", t.filterOverdue],
+      ["completed", t.filterCompleted],
+    ]
+      .map(
+        ([value, label]) =>
+          `<button class="deadline-filter ${deadlineFilter === value ? "selected" : ""}" data-deadline-filter="${value}" aria-pressed="${deadlineFilter === value}">${label}</button>`,
+      )
+      .join("");
     const listControls = `<div class="deadline-toolbar"><div class="deadline-filters" role="group" aria-label="${t.title} filters">${filterOptions}</div><div class="deadline-controls"><label class="search-box"><span>⌕</span><input id="deadline-search" type="search" dir="auto" value="${escapeHtml(deadlineSearch)}" placeholder="${t.search}" aria-label="${t.search}"></label><select class="filter-select" id="deadline-sort" aria-label="${t.priorityLabel}"><option value="due" ${deadlineSort === "due" ? "selected" : ""}>${t.dueDate}</option><option value="priority" ${deadlineSort === "priority" ? "selected" : ""}>${t.priority}</option><option value="recent" ${deadlineSort === "recent" ? "selected" : ""}>${t.recentlyAdded}</option></select></div></div>`;
     const viewControls = `<div class="deadline-view-switch" role="group"><button class="deadline-view-button ${deadlineView === "list" ? "selected" : ""}" data-deadline-view="list" aria-pressed="${deadlineView === "list"}">☷ ${t.list}</button><button class="deadline-view-button ${deadlineView === "calendar" ? "selected" : ""}" data-deadline-view="calendar" aria-pressed="${deadlineView === "calendar"}">▦ ${t.calendar}</button></div>`;
-    const display = deadlineView === "list"
-      ? `<div class="deadline-list-heading"><strong>${t.title}</strong><span>${t.showing} ${activeCount} ${activeCount === 1 ? t.deadline : t.deadlines}</span></div><div class="deadline-list">${list}</div>`
-      : calendarView(filtered);
+    const display =
+      deadlineView === "list"
+        ? `<div class="deadline-list-heading"><strong>${t.title}</strong><span>${t.showing} ${activeCount} ${activeCount === 1 ? t.deadline : t.deadlines}</span></div><div class="deadline-list">${list}</div>`
+        : calendarView(filtered);
     return `${pageHeading(t.eyebrow, t.title, t.subtitle, `<button class="button button-primary" data-action="deadline-add"><span class="button-icon">＋</span> ${t.add}</button>`)}
       ${deadlineStats(deadlines)}
       <section class="panel"><div class="deadline-toolbar-row">${listControls}${viewControls}</div>${deadlinesLoading ? `<div class="deadline-loading"><div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div></div>` : display}</section>
@@ -2006,31 +3172,48 @@
 
   function plannerPage() {
     const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-    const todayName = new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en-US", { weekday: "long" }).format(new Date());
-    const dayLabels = appLanguage === "ar"
-      ? ["الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"]
-      : days;
+    const todayName = new Intl.DateTimeFormat(
+      appLanguage === "ar" ? "ar-EG" : "en-US",
+      { weekday: "long" },
+    ).format(new Date());
+    const dayLabels =
+      appLanguage === "ar"
+        ? ["الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"]
+        : days;
     const now = new Date();
     const weekStart = new Date(now);
     weekStart.setHours(0, 0, 0, 0);
     weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekEnd.getDate() + 7);
-    const dayCards = days.map((day) => {
-      const blocks = schedule.filter((item) => {
-        if (!item.starts_at) return item.day === day;
-        const startsAt = new Date(item.starts_at);
-        const weekdayMatches = new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(startsAt) === day;
-        if (item.recurrence === "daily") return true;
-        if (item.recurrence === "weekly") return weekdayMatches;
-        return startsAt >= weekStart && startsAt < weekEnd && weekdayMatches;
-      });
-      const label = dayLabels[days.indexOf(day)];
-      return `<article class="planner-day ${day === todayName ? "today" : ""}"><div class="planner-day-head">${label}<small>${blocks.length ? `${blocks.length} block` : "Open day"}</small></div>${blocks.length ? blocks.map((block) => `<div class="planner-block"><time>${escapeHtml(block.time || new Intl.DateTimeFormat(appLanguage, { hour: "2-digit", minute: "2-digit" }).format(new Date(block.starts_at)))} · ${escapeHtml(block.length || `${Math.round((new Date(block.ends_at) - new Date(block.starts_at)) / 60000)} min`)}</time><strong>${escapeHtml(block.title)}</strong><span>${escapeHtml(block.subject || subjectName(block.subject_id))}</span>${block.id ? `<div class="card-actions"><button class="text-button" data-action="schedule-edit" data-id="${escapeHtml(block.id)}">${featureText("edit")}</button><button class="text-button" data-action="schedule-delete" data-id="${escapeHtml(block.id)}">${featureText("delete")}</button></div>` : ""}</div>`).join("") : `<p class="empty-day">No study blocks planned.</p>`}</article>`;
-    }).join("");
-    const plannedMinutes = schedule.reduce((sum, block) => sum + (block.starts_at && block.ends_at
-      ? Math.max(0, (new Date(block.ends_at) - new Date(block.starts_at)) / 60000)
-      : Number.parseInt(block.length, 10) || 0), 0);
+    const dayCards = days
+      .map((day) => {
+        const blocks = schedule.filter((item) => {
+          if (!item.starts_at) return item.day === day;
+          const startsAt = new Date(item.starts_at);
+          const weekdayMatches =
+            new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(
+              startsAt,
+            ) === day;
+          if (item.recurrence === "daily") return true;
+          if (item.recurrence === "weekly") return weekdayMatches;
+          return startsAt >= weekStart && startsAt < weekEnd && weekdayMatches;
+        });
+        const label = dayLabels[days.indexOf(day)];
+        return `<article class="planner-day ${day === todayName ? "today" : ""}"><div class="planner-day-head">${label}<small>${blocks.length ? `${blocks.length} block` : "Open day"}</small></div>${blocks.length ? blocks.map((block) => `<div class="planner-block"><time>${escapeHtml(block.time || new Intl.DateTimeFormat(appLanguage, { hour: "2-digit", minute: "2-digit" }).format(new Date(block.starts_at)))} · ${escapeHtml(block.length || `${Math.round((new Date(block.ends_at) - new Date(block.starts_at)) / 60000)} min`)}</time><strong>${escapeHtml(block.title)}</strong><span>${escapeHtml(block.subject || subjectName(block.subject_id))}</span>${block.id ? `<div class="card-actions"><button class="text-button" data-action="schedule-edit" data-id="${escapeHtml(block.id)}">${featureText("edit")}</button><button class="text-button" data-action="schedule-delete" data-id="${escapeHtml(block.id)}">${featureText("delete")}</button></div>` : ""}</div>`).join("") : `<p class="empty-day">No study blocks planned.</p>`}</article>`;
+      })
+      .join("");
+    const plannedMinutes = schedule.reduce(
+      (sum, block) =>
+        sum +
+        (block.starts_at && block.ends_at
+          ? Math.max(
+              0,
+              (new Date(block.ends_at) - new Date(block.starts_at)) / 60000,
+            )
+          : Number.parseInt(block.length, 10) || 0),
+      0,
+    );
     return `${pageHeading("WEEK AT A GLANCE", "Study planner", "Make a realistic plan, then give yourself room to adapt.", `<button class="button button-primary" data-action="schedule-add">＋ Plan a block</button>`)}<section class="panel">${panelHeading("This week", session ? "Your planned study sessions" : "Planned sessions · preview")}<div class="grid planner-grid">${dayCards}</div></section><div class="grid dashboard-grid section-spacer"><section class="panel">${panelHeading("Planned study time", "Based on the blocks shown above")}<div class="metric-large">${(plannedMinutes / 60).toFixed(1)}h <span class="metric-caption">planned</span></div></section><section class="panel">${panelHeading("Planning tip")}<p class="panel-copy">Leave a little breathing room between study blocks. A flexible plan is easier to keep than a perfect one.</p></section></div><p class="data-caption">${session ? "Study blocks are saved to your private account." : "Sample blocks are shown in preview mode. Sign in to create and sync your own schedule."}</p>`;
   }
 
@@ -2038,7 +3221,9 @@
     return `${pageHeading("YOUR COURSES", "Subjects", "A quick view of your courses, credits, and learning progress.", `<button class="button button-primary" data-action="subject-add">＋ Add subject</button>`)}<div class="grid subject-grid">${subjects.map((subject) => `<article class="subject-card"><div class="subject-card-top"><span class="subject-color" style="background:${escapeHtml(subject.color)}"></span><span class="task-meta">${Number(subject.credit_hours ?? subject.credits ?? 0)} credits</span></div><h3>${escapeHtml(subject.name)}</h3><p>${escapeHtml(subject.description || "Keep your notes, tasks, and study sessions connected to this course.")}</p><div class="progress-track"><div class="progress-fill" style="width:${subject.progress ?? 0}%"></div></div><div class="subject-card-foot"><span>Learning progress</span><span>${subject.progress == null ? "—" : `${subject.progress}%`}</span></div>${subject.id && session ? `<div class="card-actions"><button class="text-button" data-action="subject-edit" data-id="${escapeHtml(subject.id)}">${featureText("edit")}</button><button class="text-button" data-action="subject-delete" data-id="${escapeHtml(subject.id)}">${featureText("delete")}</button></div>` : ""}</article>`).join("") || `<div class="empty-state"><strong>No subjects yet</strong>Add your first course to start organizing your study workspace.</div>`}</div><p class="data-caption">${session ? "Subject details are loaded from your private account." : "Preview content. Sign in to create and sync your own subjects."}</p>`;
   }
 
-  function plannerBlocksPage() { return schedule; }
+  function plannerBlocksPage() {
+    return schedule;
+  }
 
   function filesPage() {
     return `${pageHeading("STUDY MATERIALS", "Your files", "A tidy home for resources from every course.", `<button class="button button-primary" data-action="file-add">↑ Upload file</button>`)}<div class="grid resource-grid">${sampleFiles.map((file) => `<article class="item-card"><span class="stat-icon">▤</span><h3 dir="auto">${escapeHtml(file.name)}</h3><p dir="auto">${escapeHtml(file.subject || subjectName(file.subject_id))} · ${escapeHtml(file.type || file.mime_type || "File")}</p>${session && file.id ? `<div class="card-actions"><button class="text-button" data-action="file-download" data-id="${escapeHtml(file.id)}">${featureText("download")}</button><button class="text-button" data-action="file-delete" data-id="${escapeHtml(file.id)}">${featureText("delete")}</button></div>` : ""}</article>`).join("")}${session && !sampleFiles.length ? `<div class="empty-state"><strong>No files uploaded yet</strong>Upload a file to keep your study materials in your private workspace.</div>` : ""}</div><p class="data-caption">${session ? "Files are stored in a private account-owned bucket; downloads use short-lived signed links." : "Sample file cards are shown in preview. Sign in to upload files to private storage."}</p>`;
@@ -2049,27 +3234,32 @@
     summary: {
       label: "Lesson summary",
       title: "Lesson summary",
-      content: "<h2>Lesson summary</h2><p><strong>Topic:</strong> </p><h3>Key ideas</h3><ul><li></li></ul><h3>Questions to revisit</h3><ul><li></li></ul><h3>Takeaway</h3><p></p>",
+      content:
+        "<h2>Lesson summary</h2><p><strong>Topic:</strong> </p><h3>Key ideas</h3><ul><li></li></ul><h3>Questions to revisit</h3><ul><li></li></ul><h3>Takeaway</h3><p></p>",
     },
     formulas: {
       label: "Important formulas",
       title: "Important formulas",
-      content: "<h2>Important formulas</h2><ul class=\"rt-checklist\"><li data-checked=\"false\">Formula · when to use it</li><li data-checked=\"false\">Formula · when to use it</li></ul><p><strong>Watch out for:</strong> </p>",
+      content:
+        '<h2>Important formulas</h2><ul class="rt-checklist"><li data-checked="false">Formula · when to use it</li><li data-checked="false">Formula · when to use it</li></ul><p><strong>Watch out for:</strong> </p>',
     },
     questions: {
       label: "Questions & answers",
       title: "Questions & answers",
-      content: "<h2>Questions & answers</h2><h3>Question 1</h3><p><strong>Answer:</strong> </p><h3>Question 2</h3><p><strong>Answer:</strong> </p>",
+      content:
+        "<h2>Questions & answers</h2><h3>Question 1</h3><p><strong>Answer:</strong> </p><h3>Question 2</h3><p><strong>Answer:</strong> </p>",
     },
     revision: {
       label: "Exam revision",
       title: "Exam revision",
-      content: "<h2>Exam revision</h2><p><strong>Exam date:</strong> </p><h3>Must know</h3><ul class=\"rt-checklist\"><li data-checked=\"false\"></li></ul><h3>Practice</h3><ul class=\"rt-checklist\"><li data-checked=\"false\"></li></ul><h3>Last-minute reminders</h3><p></p>",
+      content:
+        '<h2>Exam revision</h2><p><strong>Exam date:</strong> </p><h3>Must know</h3><ul class="rt-checklist"><li data-checked="false"></li></ul><h3>Practice</h3><ul class="rt-checklist"><li data-checked="false"></li></ul><h3>Last-minute reminders</h3><p></p>',
     },
     lecture: {
       label: "Lecture notes",
       title: "Lecture notes",
-      content: "<h2>Lecture notes</h2><p><strong>Date:</strong> </p><h3>Main points</h3><ul><li></li></ul><h3>Examples</h3><p></p><h3>Follow-up</h3><ul class=\"rt-checklist\"><li data-checked=\"false\"></li></ul>",
+      content:
+        '<h2>Lecture notes</h2><p><strong>Date:</strong> </p><h3>Main points</h3><ul><li></li></ul><h3>Examples</h3><p></p><h3>Follow-up</h3><ul class="rt-checklist"><li data-checked="false"></li></ul>',
     },
     ideas: {
       label: "Quick ideas",
@@ -2078,14 +3268,65 @@
     },
   };
 
-  const RICH_DROP_TAGS = new Set(["script", "style", "iframe", "object", "embed", "link", "meta", "form", "input", "button", "textarea", "select", "option", "svg", "math", "template", "base"]);
-  const RICH_ALLOWED_TAGS = new Set(["p", "br", "div", "span", "strong", "b", "em", "i", "u", "s", "strike", "del", "h1", "h2", "h3", "h4", "ul", "ol", "li", "blockquote", "a", "img", "hr", "pre", "code", "font", "sub", "sup"]);
-  const RICH_SAFE_STYLE = /^(color|background-color|font-size|text-align|direction|font-family|font-weight|font-style|text-decoration)$/;
+  const RICH_DROP_TAGS = new Set([
+    "script",
+    "style",
+    "iframe",
+    "object",
+    "embed",
+    "link",
+    "meta",
+    "form",
+    "input",
+    "button",
+    "textarea",
+    "select",
+    "option",
+    "svg",
+    "math",
+    "template",
+    "base",
+  ]);
+  const RICH_ALLOWED_TAGS = new Set([
+    "p",
+    "br",
+    "div",
+    "span",
+    "strong",
+    "b",
+    "em",
+    "i",
+    "u",
+    "s",
+    "strike",
+    "del",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "ul",
+    "ol",
+    "li",
+    "blockquote",
+    "a",
+    "img",
+    "hr",
+    "pre",
+    "code",
+    "font",
+    "sub",
+    "sup",
+  ]);
+  const RICH_SAFE_STYLE =
+    /^(color|background-color|font-size|text-align|direction|font-family|font-weight|font-style|text-decoration)$/;
   const RICH_SAFE_STYLE_VALUE = /^[#a-zA-Z0-9.,%()\s_-]+$/;
 
   function sanitizeRichText(html) {
     if (!html) return "";
-    const doc = new DOMParser().parseFromString(`<div id="rt-root">${html}</div>`, "text/html");
+    const doc = new DOMParser().parseFromString(
+      `<div id="rt-root">${html}</div>`,
+      "text/html",
+    );
     const root = doc.getElementById("rt-root");
     if (!root) return "";
     const cleanAttributes = (element) => {
@@ -2093,33 +3334,54 @@
       [...element.attributes].forEach((attribute) => {
         const name = attribute.name.toLowerCase();
         const value = attribute.value;
-        if (name.startsWith("on") || name === "id" || name === "contenteditable") {
+        if (
+          name.startsWith("on") ||
+          name === "id" ||
+          name === "contenteditable"
+        ) {
           element.removeAttribute(attribute.name);
           return;
         }
         if (tag === "a" && name === "href") {
-          if (!/^(https?:|mailto:)/i.test(value.trim())) element.removeAttribute(attribute.name);
+          if (!/^(https?:|mailto:)/i.test(value.trim()))
+            element.removeAttribute(attribute.name);
           return;
         }
         if ((tag === "img" && name === "src") || name === "href") {
-          if (!/^https:\/\//i.test(value.trim())) element.removeAttribute(attribute.name);
+          if (!/^https:\/\//i.test(value.trim()))
+            element.removeAttribute(attribute.name);
           return;
         }
         if (name === "style") {
-          const safe = value.split(";").map((declaration) => {
-            const [property, ...rest] = declaration.split(":");
-            const propertyName = (property || "").trim().toLowerCase();
-            const propertyValue = rest.join(":").trim();
-            if (!RICH_SAFE_STYLE.test(propertyName) || !propertyValue || !RICH_SAFE_STYLE_VALUE.test(propertyValue)) return "";
-            if (/url\s*\(|expression/i.test(propertyValue)) return "";
-            return `${propertyName}:${propertyValue}`;
-          }).filter(Boolean).join(";");
+          const safe = value
+            .split(";")
+            .map((declaration) => {
+              const [property, ...rest] = declaration.split(":");
+              const propertyName = (property || "").trim().toLowerCase();
+              const propertyValue = rest.join(":").trim();
+              if (
+                !RICH_SAFE_STYLE.test(propertyName) ||
+                !propertyValue ||
+                !RICH_SAFE_STYLE_VALUE.test(propertyValue)
+              )
+                return "";
+              if (/url\s*\(|expression/i.test(propertyValue)) return "";
+              return `${propertyName}:${propertyValue}`;
+            })
+            .filter(Boolean)
+            .join(";");
           if (safe) element.setAttribute("style", safe);
           else element.removeAttribute("style");
           return;
         }
-        if (tag === "li" && name === "data-checked" && (value === "true" || value === "false")) return;
-        if (tag === "ul" && name === "class" && value === "rt-checklist") return;
+        if (
+          tag === "li" &&
+          name === "data-checked" &&
+          (value === "true" || value === "false")
+        )
+          return;
+        if (tag === "ul" && name === "class" && value === "rt-checklist")
+          return;
         if (tag === "a" && (name === "target" || name === "rel")) return;
         if (tag === "img" && (name === "alt" || name === "loading")) return;
         element.removeAttribute(attribute.name);
@@ -2164,7 +3426,12 @@
     const raw = String(note?.content || "");
     if (!raw) return "";
     if (/<[a-z][\s\S]*>/i.test(raw)) return sanitizeRichText(raw);
-    return raw.split(/\n{2,}/).map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`).join("");
+    return raw
+      .split(/\n{2,}/)
+      .map(
+        (paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`,
+      )
+      .join("");
   }
 
   function notePlainText(note) {
@@ -2182,26 +3449,43 @@
     if (note.color && /^#[0-9a-f]{6}$/i.test(note.color)) return note.color;
     const palette = ["#06D6A0", "#75CDB1", "#E6BA6C", "#A5C9BF"];
     let hash = 0;
-    for (const char of String(note.id || note.title || "note")) hash = (hash * 31 + char.charCodeAt(0)) % 997;
+    for (const char of String(note.id || note.title || "note"))
+      hash = (hash * 31 + char.charCodeAt(0)) % 997;
     return palette[hash % palette.length];
   }
 
   function notesPage() {
-    const filtered = notes.filter((note) => {
-      const text = `${note.title || ""} ${notePlainText(note)} ${note.subject || subjectName(note.subject_id)}`.toLowerCase();
-      const searchMatches = !noteSearch || text.includes(noteSearch.toLowerCase());
-      const subjectMatches = !noteSubjectFilter || String(note.subject_id || "") === noteSubjectFilter;
-      return searchMatches && subjectMatches;
-    }).sort((a, b) => {
-      if (Boolean(b.is_favorite) !== Boolean(a.is_favorite)) return Number(Boolean(b.is_favorite)) - Number(Boolean(a.is_favorite));
-      if (noteSort === "title") return String(a.title || "").localeCompare(String(b.title || ""), appLanguage === "ar" ? "ar" : "en");
-      if (noteSort === "created") return new Date(b.created_at || 0) - new Date(a.created_at || 0);
-      return new Date(b.updated_at || 0) - new Date(a.updated_at || 0);
-    });
+    const filtered = notes
+      .filter((note) => {
+        const text =
+          `${note.title || ""} ${notePlainText(note)} ${note.subject || subjectName(note.subject_id)}`.toLowerCase();
+        const searchMatches =
+          !noteSearch || text.includes(noteSearch.toLowerCase());
+        const subjectMatches =
+          !noteSubjectFilter ||
+          String(note.subject_id || "") === noteSubjectFilter;
+        return searchMatches && subjectMatches;
+      })
+      .sort((a, b) => {
+        if (Boolean(b.is_favorite) !== Boolean(a.is_favorite))
+          return (
+            Number(Boolean(b.is_favorite)) - Number(Boolean(a.is_favorite))
+          );
+        if (noteSort === "title")
+          return String(a.title || "").localeCompare(
+            String(b.title || ""),
+            appLanguage === "ar" ? "ar" : "en",
+          );
+        if (noteSort === "created")
+          return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+        return new Date(b.updated_at || 0) - new Date(a.updated_at || 0);
+      });
     const card = (note) => {
       const preview = notePlainText(note).slice(0, 180);
       const updated = note.updated_at
-        ? new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "medium" }).format(new Date(note.updated_at))
+        ? new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", {
+            dateStyle: "medium",
+          }).format(new Date(note.updated_at))
         : note.updated || "";
       const subject = note.subject || subjectName(note.subject_id);
       return `<article class="note-card" style="--note-color:${escapeHtml(noteColor(note))}" data-note-id="${escapeHtml(note.id)}">
@@ -2212,7 +3496,7 @@
           <span class="note-card-date">${escapeHtml(updated)}</span>
         </button>
         <div class="note-card-actions">
-          <button class="task-icon ${note.is_favorite ? "pinned" : ""}" data-action="note-pin" data-id="${escapeHtml(note.id)}" aria-label="${note.is_favorite ? (appLanguage === "ar" ? "إلغاء التثبيت" : "Unpin note") : (appLanguage === "ar" ? "تثبيت الملاحظة" : "Pin note")}" aria-pressed="${Boolean(note.is_favorite)}">${note.is_favorite ? "★" : "☆"}</button>
+          <button class="task-icon ${note.is_favorite ? "pinned" : ""}" data-action="note-pin" data-id="${escapeHtml(note.id)}" aria-label="${note.is_favorite ? (appLanguage === "ar" ? "إلغاء التثبيت" : "Unpin note") : appLanguage === "ar" ? "تثبيت الملاحظة" : "Pin note"}" aria-pressed="${Boolean(note.is_favorite)}">${note.is_favorite ? "★" : "☆"}</button>
           <button class="task-icon" data-action="note-edit" data-id="${escapeHtml(note.id)}" aria-label="${appLanguage === "ar" ? "تعديل الملاحظة" : "Edit note"}">✎</button>
           <button class="task-icon danger" data-action="note-delete" data-id="${escapeHtml(note.id)}" aria-label="${appLanguage === "ar" ? "حذف الملاحظة" : "Delete note"}">×</button>
         </div>
@@ -2221,13 +3505,24 @@
     const pinned = filtered.filter((note) => note.is_favorite);
     const rest = filtered.filter((note) => !note.is_favorite);
     const subjectOptions = `<option value="">${appLanguage === "ar" ? "كل المواد" : "All subjects"}</option>${subjects.map((subject) => `<option value="${escapeHtml(subject.id)}" ${String(noteSubjectFilter) === String(subject.id) ? "selected" : ""}>${escapeHtml(subject.name)}</option>`).join("")}`;
-    const templateOptions = Object.entries(NOTE_TEMPLATES).map(([key, template]) => `<option value="${key}">${escapeHtml(template.label)}</option>`).join("");
+    const templateOptions = Object.entries(NOTE_TEMPLATES)
+      .map(
+        ([key, template]) =>
+          `<option value="${key}">${escapeHtml(template.label)}</option>`,
+      )
+      .join("");
     const body = filtered.length
       ? `${pinned.length ? `<section class="notes-group"><h2 class="notes-group-title">★ ${appLanguage === "ar" ? "مثبتة" : "Pinned"}</h2><div class="grid notes-grid">${pinned.map(card).join("")}</div></section>` : ""}
          ${rest.length ? `<section class="notes-group"><h2 class="notes-group-title">${appLanguage === "ar" ? "كل الملاحظات" : "All notes"}</h2><div class="grid notes-grid">${rest.map(card).join("")}</div></section>` : ""}`
-      : `<div class="empty-state notes-empty"><strong>${noteSearch || noteSubjectFilter ? (appLanguage === "ar" ? "لا توجد نتائج" : "No notes match your search") : (appLanguage === "ar" ? "ابدأ دفترك الرقمي" : "Start your digital notebook")}</strong>${noteSearch || noteSubjectFilter ? (appLanguage === "ar" ? "جرّب بحثًا أو مادة أخرى." : "Try another search or subject.") : (appLanguage === "ar" ? "أنشئ ملاحظة بتنسيق غني أو ابدأ من قالب جاهز." : "Create a rich text note or start from a ready-made template.")}<button class="button button-primary button-small" data-action="note-add">＋ ${appLanguage === "ar" ? "ملاحظة جديدة" : "New note"}</button></div>`;
-    return `${pageHeading("YOUR KNOWLEDGE VAULT", appLanguage === "ar" ? "الملاحظات" : "Notes", appLanguage === "ar" ? "اكتب، نسّق، وثبّت ما يهمك — مع حفظ تلقائي." : "Write, format, and pin what matters — with autosave.",
-      `<div class="notes-heading-actions"><select class="filter-select" id="note-template" aria-label="${appLanguage === "ar" ? "قالب الملاحظة" : "Note template"}">${templateOptions}</select><button class="button button-primary" data-action="note-add">＋ ${appLanguage === "ar" ? "ملاحظة جديدة" : "New note"}</button></div>`)}
+      : `<div class="empty-state notes-empty"><strong>${noteSearch || noteSubjectFilter ? (appLanguage === "ar" ? "لا توجد نتائج" : "No notes match your search") : appLanguage === "ar" ? "ابدأ دفترك الرقمي" : "Start your digital notebook"}</strong>${noteSearch || noteSubjectFilter ? (appLanguage === "ar" ? "جرّب بحثًا أو مادة أخرى." : "Try another search or subject.") : appLanguage === "ar" ? "أنشئ ملاحظة بتنسيق غني أو ابدأ من قالب جاهز." : "Create a rich text note or start from a ready-made template."}<button class="button button-primary button-small" data-action="note-add">＋ ${appLanguage === "ar" ? "ملاحظة جديدة" : "New note"}</button></div>`;
+    return `${pageHeading(
+      "YOUR KNOWLEDGE VAULT",
+      appLanguage === "ar" ? "الملاحظات" : "Notes",
+      appLanguage === "ar"
+        ? "اكتب، نسّق، وثبّت ما يهمك — مع حفظ تلقائي."
+        : "Write, format, and pin what matters — with autosave.",
+      `<div class="notes-heading-actions"><select class="filter-select" id="note-template" aria-label="${appLanguage === "ar" ? "قالب الملاحظة" : "Note template"}">${templateOptions}</select><button class="button button-primary" data-action="note-add">＋ ${appLanguage === "ar" ? "ملاحظة جديدة" : "New note"}</button></div>`,
+    )}
       <section class="panel notes-toolbar">
         <label class="search-box"><span>⌕</span><input id="note-search" type="search" dir="auto" value="${escapeHtml(noteSearch)}" placeholder="${appLanguage === "ar" ? "ابحث في الملاحظات" : "Search notes"}" aria-label="${appLanguage === "ar" ? "ابحث في الملاحظات" : "Search notes"}"></label>
         <select class="filter-select" id="note-subject-filter" aria-label="${appLanguage === "ar" ? "تصفية حسب المادة" : "Filter by subject"}">${subjectOptions}</select>
@@ -2239,14 +3534,21 @@
         <span class="notes-count">${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(filtered.length)} ${appLanguage === "ar" ? "ملاحظة" : filtered.length === 1 ? "note" : "notes"}</span>
       </section>
       ${body}
-      <p class="data-caption">${session
-        ? "Notes are private to your account. Formatting is stored as sanitized rich text."
-        : "Notes are saved in this browser in preview mode. Sign in to sync them across devices."}${notesColorSupported ? "" : " Colors become available after applying the notes migration."}</p>`;
+      <p class="data-caption">${
+        session
+          ? "Notes are private to your account. Formatting is stored as sanitized rich text."
+          : "Notes are saved in this browser in preview mode. Sign in to sync them across devices."
+      }${notesColorSupported ? "" : " Colors become available after applying the notes migration."}</p>`;
   }
 
   function noteBodyForHtml(html) {
     const value = String(html || "").trim();
-    if (value === "<br>" || value === "<div><br></div>" || value === "<p><br></p>") return "";
+    if (
+      value === "<br>" ||
+      value === "<div><br></div>" ||
+      value === "<p><br></p>"
+    )
+      return "";
     return sanitizeRichText(value);
   }
 
@@ -2254,20 +3556,32 @@
     const isNew = !note?.id;
     const template = NOTE_TEMPLATES[templateKey] || NOTE_TEMPLATES.blank;
     const title = note?.title || template.title || "";
-    const content = note ? noteContentHtml(note) : sanitizeRichText(template.content);
+    const content = note
+      ? noteContentHtml(note)
+      : sanitizeRichText(template.content);
     const colorSwatches = notesColorSupported
       ? `<div class="note-color-row" role="group" aria-label="${appLanguage === "ar" ? "لون الملاحظة" : "Note color"}">${[
-        ["", appLanguage === "ar" ? "افتراضي" : "Default"],
-        ["#06D6A0", "Emerald"], ["#75CDB1", "Mint"], ["#E6BA6C", "Amber"], ["#A5C9BF", "Sage"], ["#7FB3D5", "Blue"],
-      ].map(([value, label]) => `<button type="button" class="note-color ${String(note?.color || "") === value ? "selected" : ""}" data-note-color="${value}" style="--swatch:${value || "var(--accent)"}" aria-label="${label}" title="${label}"></button>`).join("")}</div>`
+          ["", appLanguage === "ar" ? "افتراضي" : "Default"],
+          ["#06D6A0", "Emerald"],
+          ["#75CDB1", "Mint"],
+          ["#E6BA6C", "Amber"],
+          ["#A5C9BF", "Sage"],
+          ["#7FB3D5", "Blue"],
+        ]
+          .map(
+            ([value, label]) =>
+              `<button type="button" class="note-color ${String(note?.color || "") === value ? "selected" : ""}" data-note-color="${value}" style="--swatch:${value || "var(--accent)"}" aria-label="${label}" title="${label}"></button>`,
+          )
+          .join("")}</div>`
       : "";
     const subjOptions = `<option value="">${appLanguage === "ar" ? "بلا مادة" : "No subject"}</option>${subjects.map((subject) => `<option value="${escapeHtml(subject.id)}" ${String(note?.subject_id || "") === String(subject.id) ? "selected" : ""}>${escapeHtml(subject.name)}</option>`).join("")}`;
-    const toolButton = (command, label, text, extra = "") => `<button type="button" class="rt-button" data-rt="${command}" ${extra} aria-label="${label}" title="${label}">${text}</button>`;
+    const toolButton = (command, label, text, extra = "") =>
+      `<button type="button" class="rt-button" data-rt="${command}" ${extra} aria-label="${label}" title="${label}">${text}</button>`;
     return `<div class="modal-backdrop note-backdrop" id="note-modal" hidden>
       <section class="modal note-modal" role="dialog" aria-modal="true" aria-labelledby="note-editor-title">
         <header class="note-editor-head">
           <div class="note-editor-title-wrap">
-            <p class="eyebrow" id="note-editor-kicker">${isNew ? (appLanguage === "ar" ? "ملاحظة جديدة" : "NEW NOTE") : (appLanguage === "ar" ? "تعديل الملاحظة" : "EDIT NOTE")}</p>
+            <p class="eyebrow" id="note-editor-kicker">${isNew ? (appLanguage === "ar" ? "ملاحظة جديدة" : "NEW NOTE") : appLanguage === "ar" ? "تعديل الملاحظة" : "EDIT NOTE"}</p>
             <input id="note-editor-title" class="note-title-input" dir="auto" maxlength="180" value="${escapeHtml(title)}" placeholder="${appLanguage === "ar" ? "عنوان الملاحظة" : "Note title"}" aria-label="${appLanguage === "ar" ? "عنوان الملاحظة" : "Note title"}" />
           </div>
           <button class="modal-close" type="button" data-action="note-close" aria-label="${appLanguage === "ar" ? "إغلاق" : "Close"}">×</button>
@@ -2276,9 +3590,20 @@
           <select id="note-editor-subject" class="filter-select" aria-label="${appLanguage === "ar" ? "المادة" : "Subject"}">${subjOptions}</select>
           ${colorSwatches}
           <label class="note-pin-toggle"><input type="checkbox" id="note-editor-pin" ${note?.is_favorite ? "checked" : ""} /> <span>${appLanguage === "ar" ? "تثبيت" : "Pin"}</span></label>
-          <span class="note-save-status" id="note-save-status">${isNew ? "" : (appLanguage === "ar" ? "محفوظة" : "Saved")}</span>
+          <span class="note-save-status" id="note-save-status">${isNew ? "" : appLanguage === "ar" ? "محفوظة" : "Saved"}</span>
         </div>
-        ${isNew ? `<div class="note-template-row" role="group" aria-label="${appLanguage === "ar" ? "قوالب الملاحظات" : "Note templates"}"><span>${appLanguage === "ar" ? "ابدأ من قالب:" : "Start from a template:"}</span>${Object.entries(NOTE_TEMPLATES).map(([key, item]) => `<button type="button" class="note-template-chip" data-note-template="${key}">${escapeHtml(item.label)}</button>`).join("")}</div>` : ""}
+        ${
+          isNew
+            ? `<div class="note-template-row" role="group" aria-label="${appLanguage === "ar" ? "قوالب الملاحظات" : "Note templates"}"><span>${appLanguage === "ar" ? "ابدأ من قالب:" : "Start from a template:"}</span>${Object.entries(
+                NOTE_TEMPLATES,
+              )
+                .map(
+                  ([key, item]) =>
+                    `<button type="button" class="note-template-chip" data-note-template="${key}">${escapeHtml(item.label)}</button>`,
+                )
+                .join("")}</div>`
+            : ""
+        }
         <div class="rt-toolbar" id="note-toolbar" role="toolbar" aria-label="${appLanguage === "ar" ? "أدوات التنسيق" : "Formatting toolbar"}">
           <div class="rt-group">
             ${toolButton("undo", "Undo", "↶")}${toolButton("redo", "Redo", "↷")}
@@ -2295,7 +3620,18 @@
             <label class="rt-color" title="${appLanguage === "ar" ? "لون الخط" : "Text color"}"><span style="--swatch:#E6FBF6"></span><input type="color" id="rt-fore-color" value="#E6FBF6" aria-label="${appLanguage === "ar" ? "لون الخط" : "Text color"}" /></label>
           </div>
           <div class="rt-group rt-highlights" role="group" aria-label="${appLanguage === "ar" ? "تظليل النص" : "Highlight text"}">
-            ${[["#E6BA6C", "Yellow"], ["#06D6A0", "Green"], ["#7FB3D5", "Blue"], ["#E39AC7", "Pink"], ["#E39A5B", "Orange"]].map(([color, label]) => `<button type="button" class="rt-swatch" data-rt-highlight="${color}" style="--swatch:${color}" aria-label="${label}" title="${label}"></button>`).join("")}
+            ${[
+              ["#E6BA6C", "Yellow"],
+              ["#06D6A0", "Green"],
+              ["#7FB3D5", "Blue"],
+              ["#E39AC7", "Pink"],
+              ["#E39A5B", "Orange"],
+            ]
+              .map(
+                ([color, label]) =>
+                  `<button type="button" class="rt-swatch" data-rt-highlight="${color}" style="--swatch:${color}" aria-label="${label}" title="${label}"></button>`,
+              )
+              .join("")}
             ${toolButton("hiliteClear", appLanguage === "ar" ? "إزالة التظليل" : "Clear highlight", "⌫")}
           </div>
           <div class="rt-group">
@@ -2348,7 +3684,10 @@
       idle: appLanguage === "ar" ? "محفوظة" : "Saved",
       dirty: appLanguage === "ar" ? "تغييرات غير محفوظة" : "Unsaved changes",
       saving: appLanguage === "ar" ? "جارٍ الحفظ…" : "Saving…",
-      saved: appLanguage === "ar" ? `تم الحفظ · ${new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { hour: "numeric", minute: "2-digit" }).format(new Date())}` : `Saved · ${new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date())}`,
+      saved:
+        appLanguage === "ar"
+          ? `تم الحفظ · ${new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { hour: "numeric", minute: "2-digit" }).format(new Date())}`
+          : `Saved · ${new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date())}`,
       error: appLanguage === "ar" ? "تعذر الحفظ" : "Save failed",
     };
     element.textContent = labels[status] || "";
@@ -2358,7 +3697,9 @@
   function scheduleNoteSave() {
     setNoteSaveStatus("dirty");
     if (noteSaveTimer) window.clearTimeout(noteSaveTimer);
-    noteSaveTimer = window.setTimeout(() => { void saveNoteNow({ silent: true }); }, 900);
+    noteSaveTimer = window.setTimeout(() => {
+      void saveNoteNow({ silent: true });
+    }, 900);
   }
 
   async function saveNoteNow({ silent = false } = {}) {
@@ -2378,7 +3719,8 @@
       return;
     }
     const payload = {
-      title: title || (appLanguage === "ar" ? "ملاحظة بدون عنوان" : "Untitled note"),
+      title:
+        title || (appLanguage === "ar" ? "ملاحظة بدون عنوان" : "Untitled note"),
       content,
       subject_id: document.getElementById("note-editor-subject")?.value || null,
       is_favorite: Boolean(document.getElementById("note-editor-pin")?.checked),
@@ -2389,16 +3731,29 @@
       if (supabase && session) {
         let result;
         if (state.id && !String(state.id).startsWith("local-")) {
-          result = await supabase.from("notes").update(payload).eq("id", state.id)
-            .select("id,title,content,subject_id,is_favorite,created_at,updated_at").single();
+          result = await supabase
+            .from("notes")
+            .update(payload)
+            .eq("id", state.id)
+            .select(
+              "id,title,content,subject_id,is_favorite,created_at,updated_at",
+            )
+            .single();
         } else {
-          result = await supabase.from("notes").insert(payload)
-            .select("id,title,content,subject_id,is_favorite,created_at,updated_at").single();
+          result = await supabase
+            .from("notes")
+            .insert(payload)
+            .select(
+              "id,title,content,subject_id,is_favorite,created_at,updated_at",
+            )
+            .single();
         }
         if (result.error) throw result.error;
         const saved = result.data;
         if (notesColorSupported) saved.color = payload.color;
-        const index = notes.findIndex((note) => String(note.id) === String(saved.id));
+        const index = notes.findIndex(
+          (note) => String(note.id) === String(saved.id),
+        );
         const normalized = { ...saved, subject: subjectName(saved.subject_id) };
         if (index >= 0) notes[index] = normalized;
         else notes.unshift(normalized);
@@ -2407,8 +3762,18 @@
         const now = new Date().toISOString();
         const id = state.id || `local-note-${Date.now()}`;
         const existing = notes.find((note) => String(note.id) === String(id));
-        const saved = { ...(existing || {}), ...payload, id, subject: subjectName(payload.subject_id), created_at: existing?.created_at || now, updated_at: now };
-        if (existing) notes = notes.map((note) => String(note.id) === String(id) ? saved : note);
+        const saved = {
+          ...(existing || {}),
+          ...payload,
+          id,
+          subject: subjectName(payload.subject_id),
+          created_at: existing?.created_at || now,
+          updated_at: now,
+        };
+        if (existing)
+          notes = notes.map((note) =>
+            String(note.id) === String(id) ? saved : note,
+          );
         else notes.unshift(saved);
         state.id = id;
         saveLocalNotes();
@@ -2419,7 +3784,10 @@
     } catch (error) {
       console.error("Could not save the note.", error);
       setNoteSaveStatus("error");
-      if (!silent) showToast(`${appLanguage === "ar" ? "تعذر حفظ الملاحظة:" : "Could not save the note:"} ${error.message}`);
+      if (!silent)
+        showToast(
+          `${appLanguage === "ar" ? "تعذر حفظ الملاحظة:" : "Could not save the note:"} ${error.message}`,
+        );
       throw error;
     }
   }
@@ -2431,8 +3799,9 @@
     }
     const modal = document.getElementById("note-modal");
     if (!modal) return;
-    const hasContent = document.getElementById("note-editor-title")?.value.trim()
-      || (document.getElementById("note-editor")?.textContent || "").trim();
+    const hasContent =
+      document.getElementById("note-editor-title")?.value.trim() ||
+      (document.getElementById("note-editor")?.textContent || "").trim();
     if (hasContent && noteSaveStatus !== "saved" && noteSaveStatus !== "idle") {
       void saveNoteNow({ silent: true }).catch(() => {});
     }
@@ -2443,14 +3812,23 @@
   }
 
   function openNoteEditor(id = null, templateKey = "blank") {
-    const note = id ? notes.find((item) => String(item.id) === String(id)) : null;
+    const note = id
+      ? notes.find((item) => String(item.id) === String(id))
+      : null;
     if (id && !note) {
-      showToast(appLanguage === "ar" ? "تعذر العثور على الملاحظة." : "The note could not be found.");
+      showToast(
+        appLanguage === "ar"
+          ? "تعذر العثور على الملاحظة."
+          : "The note could not be found.",
+      );
       return;
     }
     const existing = document.getElementById("note-modal");
     if (existing) existing.remove();
-    document.body.insertAdjacentHTML("beforeend", noteEditorMarkup(note, templateKey));
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      noteEditorMarkup(note, templateKey),
+    );
     noteEditorState = {
       id: note?.id || null,
       color: note?.color || "",
@@ -2474,7 +3852,15 @@
       if (templateButton) {
         const template = NOTE_TEMPLATES[templateButton.dataset.noteTemplate];
         if (!template) return;
-        if ((editor.textContent || "").trim() && !window.confirm(appLanguage === "ar" ? "استبدال المحتوى الحالي بالقالب؟" : "Replace the current content with this template?")) return;
+        if (
+          (editor.textContent || "").trim() &&
+          !window.confirm(
+            appLanguage === "ar"
+              ? "استبدال المحتوى الحالي بالقالب؟"
+              : "Replace the current content with this template?",
+          )
+        )
+          return;
         editor.innerHTML = sanitizeRichText(template.content);
         if (!title.value.trim()) title.value = template.title;
         updateNoteWordCount();
@@ -2485,7 +3871,11 @@
       const colorButton = event.target.closest("[data-note-color]");
       if (colorButton) {
         noteEditorState.color = colorButton.dataset.noteColor;
-        modal.querySelectorAll("[data-note-color]").forEach((button) => button.classList.toggle("selected", button === colorButton));
+        modal
+          .querySelectorAll("[data-note-color]")
+          .forEach((button) =>
+            button.classList.toggle("selected", button === colorButton),
+          );
         scheduleNoteSave();
         return;
       }
@@ -2500,17 +3890,29 @@
         event.preventDefault();
         editor.focus();
         document.execCommand("styleWithCSS", false, true);
-        document.execCommand("hiliteColor", false, highlightButton.dataset.rtHighlight);
+        document.execCommand(
+          "hiliteColor",
+          false,
+          highlightButton.dataset.rtHighlight,
+        );
         scheduleNoteSave();
       }
     });
     modal.addEventListener("mousedown", (event) => {
-      if (event.target.closest(".rt-button, .rt-swatch")) event.preventDefault();
+      if (event.target.closest(".rt-button, .rt-swatch"))
+        event.preventDefault();
     });
-    editor.addEventListener("input", () => { updateNoteWordCount(); scheduleNoteSave(); });
+    editor.addEventListener("input", () => {
+      updateNoteWordCount();
+      scheduleNoteSave();
+    });
     title.addEventListener("input", scheduleNoteSave);
-    document.getElementById("note-editor-subject").addEventListener("change", scheduleNoteSave);
-    document.getElementById("note-editor-pin").addEventListener("change", scheduleNoteSave);
+    document
+      .getElementById("note-editor-subject")
+      .addEventListener("change", scheduleNoteSave);
+    document
+      .getElementById("note-editor-pin")
+      .addEventListener("change", scheduleNoteSave);
     document.getElementById("rt-block").addEventListener("change", (event) => {
       editor.focus();
       document.execCommand("formatBlock", false, event.target.value);
@@ -2528,16 +3930,20 @@
         span.innerHTML = font.innerHTML;
         font.replaceWith(span);
       });
-      editor.querySelectorAll('span[style*="xxx-large"]').forEach((span) => { span.style.fontSize = event.target.value; });
+      editor.querySelectorAll('span[style*="xxx-large"]').forEach((span) => {
+        span.style.fontSize = event.target.value;
+      });
       event.target.value = "";
       scheduleNoteSave();
     });
-    document.getElementById("rt-fore-color").addEventListener("input", (event) => {
-      editor.focus();
-      document.execCommand("styleWithCSS", false, true);
-      document.execCommand("foreColor", false, event.target.value);
-      scheduleNoteSave();
-    });
+    document
+      .getElementById("rt-fore-color")
+      .addEventListener("input", (event) => {
+        editor.focus();
+        document.execCommand("styleWithCSS", false, true);
+        document.execCommand("foreColor", false, event.target.value);
+        scheduleNoteSave();
+      });
     editor.addEventListener("click", (event) => {
       const item = event.target.closest("li");
       const list = item?.closest("ul.rt-checklist");
@@ -2562,17 +3968,33 @@
     editor.focus();
     document.execCommand("styleWithCSS", false, true);
     if (command === "checklist") {
-      document.execCommand("insertHTML", false, '<ul class="rt-checklist"><li data-checked="false"> </li></ul>');
+      document.execCommand(
+        "insertHTML",
+        false,
+        '<ul class="rt-checklist"><li data-checked="false"> </li></ul>',
+      );
     } else if (command === "hiliteClear" || command === "hiliteColor") {
-      document.execCommand("hiliteColor", false, command === "hiliteClear" ? "transparent" : "#E6BA6C");
+      document.execCommand(
+        "hiliteColor",
+        false,
+        command === "hiliteClear" ? "transparent" : "#E6BA6C",
+      );
     } else if (command === "dirRtl" || command === "dirLtr") {
       document.execCommand("dir", false, command === "dirRtl" ? "rtl" : "ltr");
     } else if (command === "link") {
-      const url = window.prompt(appLanguage === "ar" ? "رابط (https://...)" : "Link URL (https://...)");
-      if (url && /^https?:\/\//i.test(url.trim())) document.execCommand("createLink", false, url.trim());
+      const url = window.prompt(
+        appLanguage === "ar" ? "رابط (https://...)" : "Link URL (https://...)",
+      );
+      if (url && /^https?:\/\//i.test(url.trim()))
+        document.execCommand("createLink", false, url.trim());
     } else if (command === "image") {
-      const url = window.prompt(appLanguage === "ar" ? "رابط الصورة (https://...)" : "Image URL (https://...)");
-      if (url && /^https:\/\//i.test(url.trim())) document.execCommand("insertImage", false, url.trim());
+      const url = window.prompt(
+        appLanguage === "ar"
+          ? "رابط الصورة (https://...)"
+          : "Image URL (https://...)",
+      );
+      if (url && /^https:\/\//i.test(url.trim()))
+        document.execCommand("insertImage", false, url.trim());
     } else {
       document.execCommand(command, false, null);
     }
@@ -2585,17 +4007,28 @@
     const nextValue = !note.is_favorite;
     try {
       if (supabase && session && !String(id).startsWith("local-")) {
-        const { error } = await supabase.from("notes").update({ is_favorite: nextValue }).eq("id", id);
+        const { error } = await supabase
+          .from("notes")
+          .update({ is_favorite: nextValue })
+          .eq("id", id);
         if (error) throw error;
       }
       note.is_favorite = nextValue;
       if (!supabase || !session) saveLocalNotes();
       render();
-      showToast(nextValue
-        ? (appLanguage === "ar" ? "تم تثبيت الملاحظة." : "Note pinned.")
-        : (appLanguage === "ar" ? "تم إلغاء تثبيت الملاحظة." : "Note unpinned."));
+      showToast(
+        nextValue
+          ? appLanguage === "ar"
+            ? "تم تثبيت الملاحظة."
+            : "Note pinned."
+          : appLanguage === "ar"
+            ? "تم إلغاء تثبيت الملاحظة."
+            : "Note unpinned.",
+      );
     } catch (error) {
-      showToast(`${appLanguage === "ar" ? "تعذر تحديث الملاحظة:" : "Could not update the note:"} ${error.message}`);
+      showToast(
+        `${appLanguage === "ar" ? "تعذر تحديث الملاحظة:" : "Could not update the note:"} ${error.message}`,
+      );
       console.error("Could not pin the note.", error);
     }
   }
@@ -2603,7 +4036,14 @@
   async function deleteNote(id, { closeEditor = false } = {}) {
     const note = notes.find((item) => String(item.id) === String(id));
     if (!note) return;
-    if (!window.confirm(appLanguage === "ar" ? `حذف "${note.title}"؟ لا يمكن التراجع.` : `Delete "${note.title}"? This cannot be undone.`)) return;
+    if (
+      !window.confirm(
+        appLanguage === "ar"
+          ? `حذف "${note.title}"؟ لا يمكن التراجع.`
+          : `Delete "${note.title}"? This cannot be undone.`,
+      )
+    )
+      return;
     try {
       if (supabase && session && !String(id).startsWith("local-")) {
         const { error } = await supabase.from("notes").delete().eq("id", id);
@@ -2620,42 +4060,128 @@
       render();
       showToast(appLanguage === "ar" ? "تم حذف الملاحظة." : "Note deleted.");
     } catch (error) {
-      showToast(`${appLanguage === "ar" ? "تعذر حذف الملاحظة:" : "Could not delete the note:"} ${error.message}`);
+      showToast(
+        `${appLanguage === "ar" ? "تعذر حذف الملاحظة:" : "Could not delete the note:"} ${error.message}`,
+      );
       console.error("Could not delete the note.", error);
     }
   }
 
   const featureFormText = {
     en: {
-      save: "Save", cancel: "Cancel", loading: "Saving…", error: "Could not save your changes.",
-      signIn: "Sign in to manage your private study data.", subject: "Subject", noSubject: "No subject",
-      editSubject: "Edit subject", addSubject: "Add subject", editSchedule: "Edit study block", addSchedule: "Plan a study block",
-      uploadFile: "Upload a study file", editNote: "Edit note", addNote: "Create a note", editGoal: "Edit goal",
-      addGoal: "Create a goal", goalProgress: "Add goal progress", editExam: "Edit exam", addExam: "Add exam",
-      examResult: "Record exam result", editProfile: "Edit profile", edit: "Edit", delete: "Delete",
-      download: "Download", recordResult: "Record result", editResult: "Edit result", addProgress: "Add progress",
-      title: "Title", description: "Description", color: "Color", credits: "Credit hours", details: "Details",
-      startsAt: "Starts", endsAt: "Ends", recurrence: "Repeat", none: "Does not repeat", daily: "Daily", weekly: "Weekly",
-      file: "Choose file", content: "Note", period: "Goal period", target: "Target", current: "Current progress",
-      unit: "Unit", dueAt: "Due date", examAt: "Exam date", maximumMarks: "Maximum marks", result: "Result",
-      notes: "Notes", displayName: "Display name", timezone: "Timezone (IANA)", language: "Language",
-      avatar: "Avatar URL (optional)", progress: "Progress to add", fileLimit: "Choose a supported file no larger than 20 MB.",
+      save: "Save",
+      cancel: "Cancel",
+      loading: "Saving…",
+      error: "Could not save your changes.",
+      signIn: "Sign in to manage your private study data.",
+      subject: "Subject",
+      noSubject: "No subject",
+      editSubject: "Edit subject",
+      addSubject: "Add subject",
+      editSchedule: "Edit study block",
+      addSchedule: "Plan a study block",
+      uploadFile: "Upload a study file",
+      editNote: "Edit note",
+      addNote: "Create a note",
+      editGoal: "Edit goal",
+      addGoal: "Create a goal",
+      goalProgress: "Add goal progress",
+      editExam: "Edit exam",
+      addExam: "Add exam",
+      examResult: "Record exam result",
+      editProfile: "Edit profile",
+      edit: "Edit",
+      delete: "Delete",
+      download: "Download",
+      recordResult: "Record result",
+      editResult: "Edit result",
+      addProgress: "Add progress",
+      title: "Title",
+      description: "Description",
+      color: "Color",
+      credits: "Credit hours",
+      details: "Details",
+      startsAt: "Starts",
+      endsAt: "Ends",
+      recurrence: "Repeat",
+      none: "Does not repeat",
+      daily: "Daily",
+      weekly: "Weekly",
+      file: "Choose file",
+      content: "Note",
+      period: "Goal period",
+      target: "Target",
+      current: "Current progress",
+      unit: "Unit",
+      dueAt: "Due date",
+      examAt: "Exam date",
+      maximumMarks: "Maximum marks",
+      result: "Result",
+      notes: "Notes",
+      displayName: "Display name",
+      timezone: "Timezone (IANA)",
+      language: "Language",
+      avatar: "Avatar URL (optional)",
+      progress: "Progress to add",
+      fileLimit: "Choose a supported file no larger than 20 MB.",
       resultRange: "Result must be between zero and maximum marks.",
     },
     ar: {
-      save: "حفظ", cancel: "إلغاء", loading: "جارٍ الحفظ…", error: "تعذر حفظ التغييرات.",
-      signIn: "سجّل الدخول لإدارة بياناتك الدراسية الخاصة.", subject: "المادة", noSubject: "بلا مادة",
-      editSubject: "تعديل المادة", addSubject: "إضافة مادة", editSchedule: "تعديل الجلسة", addSchedule: "تخطيط جلسة دراسية",
-      uploadFile: "رفع ملف دراسي", editNote: "تعديل الملاحظة", addNote: "إنشاء ملاحظة", editGoal: "تعديل الهدف",
-      addGoal: "إنشاء هدف", goalProgress: "إضافة تقدم للهدف", editExam: "تعديل الاختبار", addExam: "إضافة اختبار",
-      examResult: "تسجيل نتيجة الاختبار", editProfile: "تعديل الملف الشخصي", edit: "تعديل", delete: "حذف",
-      download: "تنزيل", recordResult: "تسجيل النتيجة", editResult: "تعديل النتيجة", addProgress: "إضافة تقدم",
-      title: "العنوان", description: "الوصف", color: "اللون", credits: "الساعات المعتمدة", details: "التفاصيل",
-      startsAt: "يبدأ", endsAt: "ينتهي", recurrence: "التكرار", none: "بدون تكرار", daily: "يوميًا", weekly: "أسبوعيًا",
-      file: "اختر ملفًا", content: "الملاحظة", period: "فترة الهدف", target: "المستهدف", current: "التقدم الحالي",
-      unit: "الوحدة", dueAt: "تاريخ الاستحقاق", examAt: "موعد الاختبار", maximumMarks: "الدرجة النهائية", result: "النتيجة",
-      notes: "ملاحظات", displayName: "اسم العرض", timezone: "المنطقة الزمنية (IANA)", language: "اللغة",
-      avatar: "رابط الصورة (اختياري)", progress: "مقدار التقدم المضاف", fileLimit: "اختر ملفًا مدعومًا لا يتجاوز حجمه 20 ميغابايت.",
+      save: "حفظ",
+      cancel: "إلغاء",
+      loading: "جارٍ الحفظ…",
+      error: "تعذر حفظ التغييرات.",
+      signIn: "سجّل الدخول لإدارة بياناتك الدراسية الخاصة.",
+      subject: "المادة",
+      noSubject: "بلا مادة",
+      editSubject: "تعديل المادة",
+      addSubject: "إضافة مادة",
+      editSchedule: "تعديل الجلسة",
+      addSchedule: "تخطيط جلسة دراسية",
+      uploadFile: "رفع ملف دراسي",
+      editNote: "تعديل الملاحظة",
+      addNote: "إنشاء ملاحظة",
+      editGoal: "تعديل الهدف",
+      addGoal: "إنشاء هدف",
+      goalProgress: "إضافة تقدم للهدف",
+      editExam: "تعديل الاختبار",
+      addExam: "إضافة اختبار",
+      examResult: "تسجيل نتيجة الاختبار",
+      editProfile: "تعديل الملف الشخصي",
+      edit: "تعديل",
+      delete: "حذف",
+      download: "تنزيل",
+      recordResult: "تسجيل النتيجة",
+      editResult: "تعديل النتيجة",
+      addProgress: "إضافة تقدم",
+      title: "العنوان",
+      description: "الوصف",
+      color: "اللون",
+      credits: "الساعات المعتمدة",
+      details: "التفاصيل",
+      startsAt: "يبدأ",
+      endsAt: "ينتهي",
+      recurrence: "التكرار",
+      none: "بدون تكرار",
+      daily: "يوميًا",
+      weekly: "أسبوعيًا",
+      file: "اختر ملفًا",
+      content: "الملاحظة",
+      period: "فترة الهدف",
+      target: "المستهدف",
+      current: "التقدم الحالي",
+      unit: "الوحدة",
+      dueAt: "تاريخ الاستحقاق",
+      examAt: "موعد الاختبار",
+      maximumMarks: "الدرجة النهائية",
+      result: "النتيجة",
+      notes: "ملاحظات",
+      displayName: "اسم العرض",
+      timezone: "المنطقة الزمنية (IANA)",
+      language: "اللغة",
+      avatar: "رابط الصورة (اختياري)",
+      progress: "مقدار التقدم المضاف",
+      fileLimit: "اختر ملفًا مدعومًا لا يتجاوز حجمه 20 ميغابايت.",
       resultRange: "يجب أن تكون النتيجة بين صفر والدرجة النهائية.",
     },
   };
@@ -2668,18 +4194,28 @@
     if (!value) return "";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "";
-    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
   }
 
   function featureSubjectOptions(selectedId = "") {
     return `<option value="">${featureText("noSubject")}</option>${subjects.map((item) => `<option value="${escapeHtml(item.id)}" ${String(item.id) === String(selectedId) ? "selected" : ""}>${escapeHtml(item.name)}</option>`).join("")}`;
   }
 
-  function featureField(name, label, type = "text", value = "", attributes = "") {
-    const valueAttr = type === "file" ? "" : ` value="${escapeHtml(value ?? "")}"`;
-    const field = type === "textarea"
-      ? `<textarea name="${name}" dir="auto" ${attributes}>${escapeHtml(value ?? "")}</textarea>`
-      : `<input name="${name}" type="${type}"${valueAttr} ${attributes}>`;
+  function featureField(
+    name,
+    label,
+    type = "text",
+    value = "",
+    attributes = "",
+  ) {
+    const valueAttr =
+      type === "file" ? "" : ` value="${escapeHtml(value ?? "")}"`;
+    const field =
+      type === "textarea"
+        ? `<textarea name="${name}" dir="auto" ${attributes}>${escapeHtml(value ?? "")}</textarea>`
+        : `<input name="${name}" type="${type}"${valueAttr} ${attributes}>`;
     return `<label>${featureText(label)}${field}</label>`;
   }
 
@@ -2691,13 +4227,23 @@
     }
 
     const collections = {
-      subject: subjects, schedule, file: sampleFiles, note: sampleNotes, goal: goals,
-      exam: examResults, profile: accountProfile ? [accountProfile] : [],
-      "exam-result": examResults, "goal-progress": goals,
+      subject: subjects,
+      schedule,
+      file: sampleFiles,
+      note: sampleNotes,
+      goal: goals,
+      exam: examResults,
+      profile: accountProfile ? [accountProfile] : [],
+      "exam-result": examResults,
+      "goal-progress": goals,
     };
-    const record = id ? collections[type]?.find((item) => String(item.id) === String(id)) : null;
+    const record = id
+      ? collections[type]?.find((item) => String(item.id) === String(id))
+      : null;
     if (id && !record && type !== "profile") {
-      showToast("The selected record could not be found. Refresh the page and try again.");
+      showToast(
+        "The selected record could not be found. Refresh the page and try again.",
+      );
       return;
     }
     const titles = {
@@ -2714,63 +4260,85 @@
     let fields = "";
 
     if (type === "subject") {
-      fields = `${featureField("name", "title", "text", record?.name, "required maxlength=\"100\"")}${featureField("description", "description", "textarea", record?.description, "rows=\"3\" maxlength=\"2000\"")}<div class="form-row">${featureField("color", "color", "color", record?.color || "#06D6A0", "required")}${featureField("credit_hours", "credits", "number", record?.credit_hours ?? record?.credits ?? 0, "min=\"0\" max=\"30\" required")}</div>`;
+      fields = `${featureField("name", "title", "text", record?.name, 'required maxlength="100"')}${featureField("description", "description", "textarea", record?.description, 'rows="3" maxlength="2000"')}<div class="form-row">${featureField("color", "color", "color", record?.color || "#06D6A0", "required")}${featureField("credit_hours", "credits", "number", record?.credit_hours ?? record?.credits ?? 0, 'min="0" max="30" required')}</div>`;
     } else if (type === "schedule") {
-      fields = `${featureField("title", "title", "text", record?.title, "required maxlength=\"120\"")}${featureField("details", "details", "textarea", record?.details, "rows=\"2\" maxlength=\"2000\"")}<label>${featureText("subject")}<select name="subject_id">${featureSubjectOptions(record?.subject_id)}</select></label><div class="form-row">${featureField("starts_at", "startsAt", "datetime-local", localDateTimeValue(record?.starts_at), "required")}${featureField("ends_at", "endsAt", "datetime-local", localDateTimeValue(record?.ends_at), "required")}</div><label>${featureText("recurrence")}<select name="recurrence"><option value="none">Does not repeat</option><option value="daily" ${record?.recurrence === "daily" ? "selected" : ""}>Daily</option><option value="weekly" ${record?.recurrence === "weekly" ? "selected" : ""}>Weekly</option></select></label>`;
+      fields = `${featureField("title", "title", "text", record?.title, 'required maxlength="120"')}${featureField("details", "details", "textarea", record?.details, 'rows="2" maxlength="2000"')}<label>${featureText("subject")}<select name="subject_id">${featureSubjectOptions(record?.subject_id)}</select></label><div class="form-row">${featureField("starts_at", "startsAt", "datetime-local", localDateTimeValue(record?.starts_at), "required")}${featureField("ends_at", "endsAt", "datetime-local", localDateTimeValue(record?.ends_at), "required")}</div><label>${featureText("recurrence")}<select name="recurrence"><option value="none">Does not repeat</option><option value="daily" ${record?.recurrence === "daily" ? "selected" : ""}>Daily</option><option value="weekly" ${record?.recurrence === "weekly" ? "selected" : ""}>Weekly</option></select></label>`;
     } else if (type === "file") {
-      fields = `${featureField("file", "file", "file", "", "required accept=\".pdf,.jpg,.jpeg,.png,.webp,.txt,.md,.doc,.docx,.ppt,.pptx\"")}<label>${featureText("subject")}<select name="subject_id">${featureSubjectOptions()}</select></label>`;
+      fields = `${featureField("file", "file", "file", "", 'required accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.md,.doc,.docx,.ppt,.pptx"')}<label>${featureText("subject")}<select name="subject_id">${featureSubjectOptions()}</select></label>`;
     } else if (type === "note") {
-      fields = `${featureField("title", "title", "text", record?.title || "Untitled note", "required maxlength=\"180\"")}${featureField("content", "content", "textarea", record?.content, "rows=\"8\" maxlength=\"30000\"")}<label>${featureText("subject")}<select name="subject_id">${featureSubjectOptions(record?.subject_id)}</select></label>`;
+      fields = `${featureField("title", "title", "text", record?.title || "Untitled note", 'required maxlength="180"')}${featureField("content", "content", "textarea", record?.content, 'rows="8" maxlength="30000"')}<label>${featureText("subject")}<select name="subject_id">${featureSubjectOptions(record?.subject_id)}</select></label>`;
     } else if (type === "goal") {
-      fields = `${featureField("title", "title", "text", record?.title, "required maxlength=\"160\"")}${featureField("details", "details", "textarea", record?.details, "rows=\"2\" maxlength=\"2000\"")}<div class="form-row"><label>${featureText("period")}<select name="period"><option value="daily">Daily</option><option value="weekly" ${!record || record.period === "weekly" ? "selected" : ""}>Weekly</option><option value="monthly" ${record?.period === "monthly" ? "selected" : ""}>Monthly</option><option value="custom" ${record?.period === "custom" ? "selected" : ""}>Custom</option></select></label>${featureField("unit", "unit", "text", record?.unit || "sessions", "required maxlength=\"30\"")}</div><div class="form-row">${featureField("target_value", "target", "number", record?.target_value || 1, "min=\"0.01\" step=\"0.01\" required")}${featureField("current_value", "current", "number", record?.current_value || 0, "min=\"0\" step=\"0.01\" required")}</div>${featureField("due_at", "dueAt", "date", record?.due_at ? dateKey(new Date(record.due_at)) : "")}`;
+      fields = `${featureField("title", "title", "text", record?.title, 'required maxlength="160"')}${featureField("details", "details", "textarea", record?.details, 'rows="2" maxlength="2000"')}<div class="form-row"><label>${featureText("period")}<select name="period"><option value="daily">Daily</option><option value="weekly" ${!record || record.period === "weekly" ? "selected" : ""}>Weekly</option><option value="monthly" ${record?.period === "monthly" ? "selected" : ""}>Monthly</option><option value="custom" ${record?.period === "custom" ? "selected" : ""}>Custom</option></select></label>${featureField("unit", "unit", "text", record?.unit || "sessions", 'required maxlength="30"')}</div><div class="form-row">${featureField("target_value", "target", "number", record?.target_value || 1, 'min="0.01" step="0.01" required')}${featureField("current_value", "current", "number", record?.current_value || 0, 'min="0" step="0.01" required')}</div>${featureField("due_at", "dueAt", "date", record?.due_at ? dateKey(new Date(record.due_at)) : "")}`;
     } else if (type === "goal-progress") {
-      fields = featureField("increment", "progress", "number", "", "min=\"0.01\" step=\"0.01\" required");
+      fields = featureField(
+        "increment",
+        "progress",
+        "number",
+        "",
+        'min="0.01" step="0.01" required',
+      );
     } else if (type === "exam") {
-      fields = `${featureField("title", "title", "text", record?.title, "required maxlength=\"160\"")}${featureField("details", "details", "textarea", record?.details, "rows=\"2\" maxlength=\"2000\"")}<label>${featureText("subject")}<select name="subject_id">${featureSubjectOptions(record?.subject_id)}</select></label><div class="form-row">${featureField("exam_at", "examAt", "datetime-local", localDateTimeValue(record?.exam_at), "required")}${featureField("max_marks", "maximumMarks", "number", record?.max_marks ?? 100, "min=\"0.01\" step=\"0.01\" required")}</div>`;
+      fields = `${featureField("title", "title", "text", record?.title, 'required maxlength="160"')}${featureField("details", "details", "textarea", record?.details, 'rows="2" maxlength="2000"')}<label>${featureText("subject")}<select name="subject_id">${featureSubjectOptions(record?.subject_id)}</select></label><div class="form-row">${featureField("exam_at", "examAt", "datetime-local", localDateTimeValue(record?.exam_at), "required")}${featureField("max_marks", "maximumMarks", "number", record?.max_marks ?? 100, 'min="0.01" step="0.01" required')}</div>`;
     } else if (type === "exam-result") {
-      const currentResult = Array.isArray(record.exam_results) ? record.exam_results[0] : record.exam_results;
-      fields = `${featureField("obtained_marks", "result", "number", currentResult?.obtained_marks ?? record.obtained_marks, `min="0" max="${Number(record.max_marks)}" step="0.01" required`)}${featureField("notes", "notes", "textarea", currentResult?.notes, "rows=\"3\" maxlength=\"2000\"")}`;
+      const currentResult = Array.isArray(record.exam_results)
+        ? record.exam_results[0]
+        : record.exam_results;
+      fields = `${featureField("obtained_marks", "result", "number", currentResult?.obtained_marks ?? record.obtained_marks, `min="0" max="${Number(record.max_marks)}" step="0.01" required`)}${featureField("notes", "notes", "textarea", currentResult?.notes, 'rows="3" maxlength="2000"')}`;
     } else if (type === "profile") {
       const profile = record || {};
-      fields = `${featureField("display_name", "displayName", "text", profile.display_name || session.user.user_metadata?.full_name || "", "required maxlength=\"100\"")}${featureField("timezone", "timezone", "text", profile.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone, "required maxlength=\"80\"")}<label>${featureText("language")}<select name="language"><option value="en" ${profile.language === "en" ? "selected" : ""}>English</option><option value="ar" ${profile.language === "ar" ? "selected" : ""}>العربية</option></select></label><label>${translateUiText("Choose a profile photo from your device")}<input type="file" name="avatar_file" accept="image/png,image/jpeg,image/webp"></label><small>${translateUiText("PNG, JPEG, or WebP · up to 2 MB")}</small>`;
+      fields = `${featureField("display_name", "displayName", "text", profile.display_name || session.user.user_metadata?.full_name || "", 'required maxlength="100"')}${featureField("timezone", "timezone", "text", profile.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone, 'required maxlength="80"')}<label>${featureText("language")}<select name="language"><option value="en" ${profile.language === "en" ? "selected" : ""}>English</option><option value="ar" ${profile.language === "ar" ? "selected" : ""}>العربية</option></select></label><label>${translateUiText("Choose a profile photo from your device")}<input type="file" name="avatar_file" accept="image/png,image/jpeg,image/webp"></label><small>${translateUiText("PNG, JPEG, or WebP · up to 2 MB")}</small>`;
     } else {
       return;
     }
 
     let modal = document.getElementById("feature-modal");
     if (!modal) {
-      document.body.insertAdjacentHTML("beforeend", `<div class="modal-backdrop" id="feature-modal" hidden><section class="modal" role="dialog" aria-modal="true" aria-labelledby="feature-modal-title"><button class="modal-close" type="button" data-close-modal aria-label="Close">×</button><p class="eyebrow">STUDY ZONE</p><h2 id="feature-modal-title"></h2><form id="feature-form" class="form-stack"></form></section></div>`);
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="modal-backdrop" id="feature-modal" hidden><section class="modal" role="dialog" aria-modal="true" aria-labelledby="feature-modal-title"><button class="modal-close" type="button" data-close-modal aria-label="Close">×</button><p class="eyebrow">STUDY ZONE</p><h2 id="feature-modal-title"></h2><form id="feature-form" class="form-stack"></form></section></div>`,
+      );
       modal = document.getElementById("feature-modal");
-      document.getElementById("feature-form").addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const form = event.currentTarget;
-        const submit = form.querySelector('[type="submit"]');
-        const errorEl = form.querySelector("[data-form-error]");
-        submit.disabled = true;
-        submit.textContent = featureText("loading");
-        errorEl.textContent = "";
-        try {
-          await saveFeatureForm(form);
-        } catch (error) {
-          errorEl.textContent = `${featureText("error")} ${error.message || ""}`.trim();
-          console.error("Study workspace save failed.", error);
-        } finally {
-          submit.disabled = false;
-          submit.textContent = featureText("save");
-        }
-      });
+      document
+        .getElementById("feature-form")
+        .addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const form = event.currentTarget;
+          const submit = form.querySelector('[type="submit"]');
+          const errorEl = form.querySelector("[data-form-error]");
+          submit.disabled = true;
+          submit.textContent = featureText("loading");
+          errorEl.textContent = "";
+          try {
+            await saveFeatureForm(form);
+          } catch (error) {
+            errorEl.textContent =
+              `${featureText("error")} ${error.message || ""}`.trim();
+            console.error("Study workspace save failed.", error);
+          } finally {
+            submit.disabled = false;
+            submit.textContent = featureText("save");
+          }
+        });
     }
-    document.getElementById("feature-modal-title").textContent = featureText(titles[type]);
+    document.getElementById("feature-modal-title").textContent = featureText(
+      titles[type],
+    );
     document.getElementById("feature-form").dataset.featureType = type;
     document.getElementById("feature-form").dataset.recordId = id || "";
-    document.getElementById("feature-form").innerHTML = `${fields}<p class="form-error" data-form-error role="alert"></p><div class="modal-actions"><button class="button button-secondary" type="button" data-close-modal>${featureText("cancel")}</button><button class="button button-primary" type="submit">${featureText("save")}</button></div>`;
+    document.getElementById("feature-form").innerHTML =
+      `${fields}<p class="form-error" data-form-error role="alert"></p><div class="modal-actions"><button class="button button-secondary" type="button" data-close-modal>${featureText("cancel")}</button><button class="button button-primary" type="submit">${featureText("save")}</button></div>`;
     modal.hidden = false;
-    document.querySelector("#feature-form input, #feature-form textarea, #feature-form select")?.focus();
+    document
+      .querySelector(
+        "#feature-form input, #feature-form textarea, #feature-form select",
+      )
+      ?.focus();
   }
 
   function featureDate(value) {
     const date = new Date(value);
-    if (!value || Number.isNaN(date.getTime())) throw new Error("Enter a valid date and time.");
+    if (!value || Number.isNaN(date.getTime()))
+      throw new Error("Enter a valid date and time.");
     return date.toISOString();
   }
 
@@ -2793,7 +4361,8 @@
     } else if (type === "schedule") {
       const startsAt = featureDate(values.get("starts_at"));
       const endsAt = featureDate(values.get("ends_at"));
-      if (new Date(endsAt) <= new Date(startsAt)) throw new Error("The end time must be after the start time.");
+      if (new Date(endsAt) <= new Date(startsAt))
+        throw new Error("The end time must be after the start time.");
       table = "schedules";
       row = {
         title: String(values.get("title") || "").trim(),
@@ -2826,12 +4395,18 @@
         target_value: Number(values.get("target_value")),
         current_value: Number(values.get("current_value")),
         unit: String(values.get("unit") || "").trim(),
-        due_at: values.get("due_at") ? new Date(`${values.get("due_at")}T23:59:59`).toISOString() : null,
+        due_at: values.get("due_at")
+          ? new Date(`${values.get("due_at")}T23:59:59`).toISOString()
+          : null,
       };
     } else if (type === "goal-progress") {
       const increment = Number(values.get("increment"));
-      if (!Number.isFinite(increment) || increment <= 0) throw new Error("Enter a positive progress amount.");
-      const { error } = await supabase.rpc("increment_goal_progress", { p_goal_id: id, p_increment: increment });
+      if (!Number.isFinite(increment) || increment <= 0)
+        throw new Error("Enter a positive progress amount.");
+      const { error } = await supabase.rpc("increment_goal_progress", {
+        p_goal_id: id,
+        p_increment: increment,
+      });
       if (error) throw error;
       document.getElementById("feature-modal").hidden = true;
       await loadAccountWorkspace();
@@ -2850,14 +4425,22 @@
     } else if (type === "exam-result") {
       const exam = examResults.find((item) => String(item.id) === String(id));
       const obtainedMarks = Number(values.get("obtained_marks"));
-      if (!exam || !Number.isFinite(obtainedMarks) || obtainedMarks < 0 || obtainedMarks > Number(exam.max_marks)) {
+      if (
+        !exam ||
+        !Number.isFinite(obtainedMarks) ||
+        obtainedMarks < 0 ||
+        obtainedMarks > Number(exam.max_marks)
+      ) {
         throw new Error(featureText("resultRange"));
       }
-      const { error } = await supabase.from("exam_results").upsert({
-        exam_id: exam.id,
-        obtained_marks: obtainedMarks,
-        notes: String(values.get("notes") || "").trim(),
-      }, { onConflict: "exam_id" });
+      const { error } = await supabase.from("exam_results").upsert(
+        {
+          exam_id: exam.id,
+          obtained_marks: obtainedMarks,
+          notes: String(values.get("notes") || "").trim(),
+        },
+        { onConflict: "exam_id" },
+      );
       if (error) throw error;
       document.getElementById("feature-modal").hidden = true;
       await loadAccountWorkspace();
@@ -2877,16 +4460,25 @@
         newAvatarPath = await uploadProfilePhoto(avatarFile);
         row.avatar_url = newAvatarPath;
       }
-      const { data, error } = await supabase.from("profiles").update(row)
+      const { data, error } = await supabase
+        .from("profiles")
+        .update(row)
         .eq("id", session.user.id)
         .select("id,display_name,avatar_url,timezone,language")
         .maybeSingle();
       if (error) {
         if (newAvatarPath) {
-          const { error: cleanupError } = await supabase.storage.from("studyflow-files").remove([newAvatarPath]);
+          const { error: cleanupError } = await supabase.storage
+            .from("studyflow-files")
+            .remove([newAvatarPath]);
           if (cleanupError) {
-            console.error("New profile photo could not be removed after the profile update failed.", cleanupError);
-            throw new Error(`${error.message} Photo cleanup also failed: ${cleanupError.message}`);
+            console.error(
+              "New profile photo could not be removed after the profile update failed.",
+              cleanupError,
+            );
+            throw new Error(
+              `${error.message} Photo cleanup also failed: ${cleanupError.message}`,
+            );
           }
         }
         throw error;
@@ -2894,20 +4486,36 @@
       if (!data) {
         let cleanupMessage = "";
         if (newAvatarPath) {
-          const { error: cleanupError } = await supabase.storage.from("studyflow-files").remove([newAvatarPath]);
+          const { error: cleanupError } = await supabase.storage
+            .from("studyflow-files")
+            .remove([newAvatarPath]);
           if (cleanupError) {
-            console.error("New profile photo could not be removed after no profile row was updated.", cleanupError);
+            console.error(
+              "New profile photo could not be removed after no profile row was updated.",
+              cleanupError,
+            );
             cleanupMessage = ` Photo cleanup also failed: ${cleanupError.message}`;
           }
         }
-        throw new Error(`No profile row was updated for this account. Re-run the profile setup section in supabase/schema.sql, then retry.${cleanupMessage}`);
+        throw new Error(
+          `No profile row was updated for this account. Re-run the profile setup section in supabase/schema.sql, then retry.${cleanupMessage}`,
+        );
       }
       accountProfile = data;
       let avatarCleanupMessage = "";
-      if (newAvatarPath && oldAvatarPath?.startsWith(`${session.user.id}/`) && oldAvatarPath !== newAvatarPath) {
-        const { error: cleanupError } = await supabase.storage.from("studyflow-files").remove([oldAvatarPath]);
+      if (
+        newAvatarPath &&
+        oldAvatarPath?.startsWith(`${session.user.id}/`) &&
+        oldAvatarPath !== newAvatarPath
+      ) {
+        const { error: cleanupError } = await supabase.storage
+          .from("studyflow-files")
+          .remove([oldAvatarPath]);
         if (cleanupError) {
-          console.error("The previous profile photo could not be removed.", cleanupError);
+          console.error(
+            "The previous profile photo could not be removed.",
+            cleanupError,
+          );
           avatarCleanupMessage = ` Previous photo cleanup failed: ${cleanupError.message}`;
         }
       }
@@ -2916,7 +4524,9 @@
       render();
       updateUserUi();
       if (row.language !== appLanguage) await setLanguage(row.language);
-      showToast(`${newAvatarPath ? translateUiText("Profile photo uploaded.") : "Profile updated."}${avatarCleanupMessage}`);
+      showToast(
+        `${newAvatarPath ? translateUiText("Profile photo uploaded.") : "Profile updated."}${avatarCleanupMessage}`,
+      );
       return;
     } else {
       throw new Error("Unsupported study workspace action.");
@@ -2936,18 +4546,35 @@
   async function uploadStudyFile(values) {
     const file = values.get("file");
     const allowedTypes = new Set([
-      "application/pdf", "image/jpeg", "image/png", "image/webp", "text/plain", "text/markdown",
-      "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "text/plain",
+      "text/markdown",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-powerpoint",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ]);
-    if (!(file instanceof File) || !file.size || file.size > 20 * 1024 * 1024 || !allowedTypes.has(file.type)) {
+    if (
+      !(file instanceof File) ||
+      !file.size ||
+      file.size > 20 * 1024 * 1024 ||
+      !allowedTypes.has(file.type)
+    ) {
       throw new Error(featureText("fileLimit"));
     }
-    const safeName = file.name.replace(/[^\w.-]+/g, "_").slice(0, 180) || "study-file";
+    const safeName =
+      file.name.replace(/[^\w.-]+/g, "_").slice(0, 180) || "study-file";
     const storagePath = `${session.user.id}/${focusId()}-${safeName}`;
-    const { error: uploadError } = await supabase.storage.from("studyflow-files").upload(storagePath, file, {
-      cacheControl: "3600", contentType: file.type, upsert: false,
-    });
+    const { error: uploadError } = await supabase.storage
+      .from("studyflow-files")
+      .upload(storagePath, file, {
+        cacheControl: "3600",
+        contentType: file.type,
+        upsert: false,
+      });
     if (uploadError) throw uploadError;
 
     const { error: rowError } = await supabase.from("study_files").insert({
@@ -2958,10 +4585,17 @@
       subject_id: values.get("subject_id") || null,
     });
     if (rowError) {
-      const { error: cleanupError } = await supabase.storage.from("studyflow-files").remove([storagePath]);
+      const { error: cleanupError } = await supabase.storage
+        .from("studyflow-files")
+        .remove([storagePath]);
       if (cleanupError) {
-        console.error("Uploaded file could not be removed after its metadata insert failed.", cleanupError);
-        throw new Error(`${rowError.message} File cleanup also failed: ${cleanupError.message}`);
+        console.error(
+          "Uploaded file could not be removed after its metadata insert failed.",
+          cleanupError,
+        );
+        throw new Error(
+          `${rowError.message} File cleanup also failed: ${cleanupError.message}`,
+        );
       }
       throw rowError;
     }
@@ -2978,11 +4612,13 @@
       throw new Error(translateUiText("PNG, JPEG, or WebP · up to 2 MB"));
     }
     const storagePath = `${session.user.id}/avatars/${focusId()}.${extension}`;
-    const { error } = await supabase.storage.from("studyflow-files").upload(storagePath, file, {
-      cacheControl: "3600",
-      contentType: file.type,
-      upsert: false,
-    });
+    const { error } = await supabase.storage
+      .from("studyflow-files")
+      .upload(storagePath, file, {
+        cacheControl: "3600",
+        contentType: file.type,
+        upsert: false,
+      });
     if (error) throw error;
     return storagePath;
   }
@@ -2990,9 +4626,21 @@
   async function deleteFeatureRecord(type, id) {
     if (!supabase || !session) return;
     const configByType = {
-      subject: { table: "subjects", items: subjects, name: (item) => item.name },
-      schedule: { table: "schedules", items: schedule, name: (item) => item.title },
-      file: { table: "study_files", items: sampleFiles, name: (item) => item.name },
+      subject: {
+        table: "subjects",
+        items: subjects,
+        name: (item) => item.name,
+      },
+      schedule: {
+        table: "schedules",
+        items: schedule,
+        name: (item) => item.title,
+      },
+      file: {
+        table: "study_files",
+        items: sampleFiles,
+        name: (item) => item.name,
+      },
       note: { table: "notes", items: sampleNotes, name: (item) => item.title },
       goal: { table: "goals", items: goals, name: (item) => item.title },
       exam: { table: "exams", items: examResults, name: (item) => item.title },
@@ -3000,15 +4648,20 @@
     const config = configByType[type];
     const record = config?.items.find((item) => String(item.id) === String(id));
     if (!record) return;
-    const warning = type === "subject"
-      ? `Delete subject "${config.name(record)}"? Linked records will be preserved without a subject.`
-      : `Delete "${config.name(record)}"? This cannot be undone.`;
+    const warning =
+      type === "subject"
+        ? `Delete subject "${config.name(record)}"? Linked records will be preserved without a subject.`
+        : `Delete "${config.name(record)}"? This cannot be undone.`;
     if (!window.confirm(warning)) return;
 
     if (type === "file") {
-      const { error: storageError } = await supabase.storage.from("studyflow-files").remove([record.storage_path]);
+      const { error: storageError } = await supabase.storage
+        .from("studyflow-files")
+        .remove([record.storage_path]);
       if (storageError) {
-        showToast(`Could not delete the file from private storage: ${storageError.message}`);
+        showToast(
+          `Could not delete the file from private storage: ${storageError.message}`,
+        );
         console.error("Study file storage deletion failed.", storageError);
         return;
       }
@@ -3027,7 +4680,9 @@
   async function downloadStudyFile(id) {
     const file = sampleFiles.find((item) => String(item.id) === String(id));
     if (!file || !supabase || !session) return;
-    const { data, error } = await supabase.storage.from("studyflow-files").createSignedUrl(file.storage_path, 60);
+    const { data, error } = await supabase.storage
+      .from("studyflow-files")
+      .createSignedUrl(file.storage_path, 60);
     if (error) {
       showToast(`Could not create a private download link: ${error.message}`);
       console.error("Study file signed URL request failed.", error);
@@ -3051,10 +4706,14 @@
   }
 
   function getFocusElapsedMs(now = Date.now()) {
-    const activeRun = focusSession.status === "running" && focusSession.runStartedAt
-      ? Math.max(0, now - focusSession.runStartedAt)
-      : 0;
-    return Math.max(0, Number(focusSession.elapsedBeforeRunMs || 0) + activeRun);
+    const activeRun =
+      focusSession.status === "running" && focusSession.runStartedAt
+        ? Math.max(0, now - focusSession.runStartedAt)
+        : 0;
+    return Math.max(
+      0,
+      Number(focusSession.elapsedBeforeRunMs || 0) + activeRun,
+    );
   }
 
   function getFocusRemainingMs(now = Date.now()) {
@@ -3070,7 +4729,9 @@
     window.crypto.getRandomValues(bytes);
     bytes[6] = (bytes[6] & 15) | 64;
     bytes[8] = (bytes[8] & 63) | 128;
-    const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const hex = [...bytes]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   }
 
@@ -3084,13 +4745,23 @@
     const secondText = String(seconds % 60).padStart(2, "0");
     return {
       minutes: [...minutesText].map(renderFlipDigit).join(""),
-      seconds: showSeconds ? [...secondText].map((digit, index) => renderFlipDigit(digit, index + minutesText.length)).join("") : "",
+      seconds: showSeconds
+        ? [...secondText]
+            .map((digit, index) =>
+              renderFlipDigit(digit, index + minutesText.length),
+            )
+            .join("")
+        : "",
     };
   }
 
   function getNextBreakType() {
-    const completed = focusRecords.filter((record) => record.session_type === "focus" && record.completed).length;
-    return (completed + 1) % focusSettings.longBreakInterval === 0 ? "long_break" : "short_break";
+    const completed = focusRecords.filter(
+      (record) => record.session_type === "focus" && record.completed,
+    ).length;
+    return (completed + 1) % focusSettings.longBreakInterval === 0
+      ? "long_break"
+      : "short_break";
   }
 
   function focusSessionTypeLabel(type, text = focusText[appLanguage]) {
@@ -3103,14 +4774,18 @@
     const minutes = Math.floor(Math.max(0, seconds) / 60);
     const hours = Math.floor(minutes / 60);
     const remainder = minutes % 60;
-    const number = (value) => new Intl.NumberFormat(focusLocale()).format(value);
-    if (hours) return `${number(hours)}${text.hours} ${number(remainder)}${text.mins}`;
+    const number = (value) =>
+      new Intl.NumberFormat(focusLocale()).format(value);
+    if (hours)
+      return `${number(hours)}${text.hours} ${number(remainder)}${text.mins}`;
     return `${number(minutes)} ${text.mins}`;
   }
 
   function formatFocusHours(seconds, text = focusText[appLanguage]) {
     const hours = seconds / 3600;
-    const value = new Intl.NumberFormat(focusLocale(), { maximumFractionDigits: 1 }).format(hours);
+    const value = new Intl.NumberFormat(focusLocale(), {
+      maximumFractionDigits: 1,
+    }).format(hours);
     return `${value}${text.hours}`;
   }
 
@@ -3119,38 +4794,81 @@
   }
 
   function getFocusStats(now = new Date()) {
-    const completed = focusRecords.filter((record) => record.session_type === "focus" && record.completed);
+    const completed = focusRecords.filter(
+      (record) => record.session_type === "focus" && record.completed,
+    );
     const todayKey = localDateKey(now);
-    const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
     const mondayOffset = (weekStart.getDay() + 6) % 7;
     weekStart.setDate(weekStart.getDate() - mondayOffset);
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const runningSeconds = focusSession.type === "focus" && focusSession.startedAt
-      ? Math.floor(getFocusElapsedMs(now.getTime()) / 1000)
-      : 0;
-    const durations = completed.map((record) => ({
-      started: new Date(record.started_at),
-      seconds: Math.max(0, Number(record.duration_seconds || 0)),
-    })).filter((record) => !Number.isNaN(record.started.getTime()));
-    const todayRecords = durations.filter((record) => localDateKey(record.started) === todayKey);
-    const weekSeconds = durations
-      .filter((record) => record.started >= weekStart && record.started <= now)
-      .reduce((sum, record) => sum + record.seconds, 0)
-      + (focusSession.type === "focus" && focusSession.startedAt && new Date(focusSession.startedAt) >= weekStart ? runningSeconds : 0);
-    const todaySeconds = todayRecords.reduce((sum, record) => sum + record.seconds, 0)
-      + (focusSession.type === "focus" && focusSession.startedAt && localDateKey(new Date(focusSession.startedAt)) === todayKey ? runningSeconds : 0);
-    const dayKeys = new Set(durations.map((record) => localDateKey(record.started)));
-    if (runningSeconds && focusSession.startedAt) dayKeys.add(localDateKey(new Date(focusSession.startedAt)));
+    const runningSeconds =
+      focusSession.type === "focus" && focusSession.startedAt
+        ? Math.floor(getFocusElapsedMs(now.getTime()) / 1000)
+        : 0;
+    const durations = completed
+      .map((record) => ({
+        started: new Date(record.started_at),
+        seconds: Math.max(0, Number(record.duration_seconds || 0)),
+      }))
+      .filter((record) => !Number.isNaN(record.started.getTime()));
+    const todayRecords = durations.filter(
+      (record) => localDateKey(record.started) === todayKey,
+    );
+    const weekSeconds =
+      durations
+        .filter(
+          (record) => record.started >= weekStart && record.started <= now,
+        )
+        .reduce((sum, record) => sum + record.seconds, 0) +
+      (focusSession.type === "focus" &&
+      focusSession.startedAt &&
+      new Date(focusSession.startedAt) >= weekStart
+        ? runningSeconds
+        : 0);
+    const todaySeconds =
+      todayRecords.reduce((sum, record) => sum + record.seconds, 0) +
+      (focusSession.type === "focus" &&
+      focusSession.startedAt &&
+      localDateKey(new Date(focusSession.startedAt)) === todayKey
+        ? runningSeconds
+        : 0);
+    const dayKeys = new Set(
+      durations.map((record) => localDateKey(record.started)),
+    );
+    if (runningSeconds && focusSession.startedAt)
+      dayKeys.add(localDateKey(new Date(focusSession.startedAt)));
     const streakAnchor = dayKeys.has(todayKey)
       ? dayStart
       : new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
     let streak = 0;
-    for (let cursor = streakAnchor; dayKeys.has(localDateKey(cursor)); cursor.setDate(cursor.getDate() - 1)) streak += 1;
+    for (
+      let cursor = streakAnchor;
+      dayKeys.has(localDateKey(cursor));
+      cursor.setDate(cursor.getDate() - 1)
+    )
+      streak += 1;
     const days = Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + index);
-      const daySeconds = durations.filter((record) => localDateKey(record.started) === localDateKey(date))
-        .reduce((sum, record) => sum + record.seconds, 0)
-        + (focusSession.type === "focus" && focusSession.startedAt && localDateKey(new Date(focusSession.startedAt)) === localDateKey(date) ? runningSeconds : 0);
+      const date = new Date(
+        weekStart.getFullYear(),
+        weekStart.getMonth(),
+        weekStart.getDate() + index,
+      );
+      const daySeconds =
+        durations
+          .filter(
+            (record) => localDateKey(record.started) === localDateKey(date),
+          )
+          .reduce((sum, record) => sum + record.seconds, 0) +
+        (focusSession.type === "focus" &&
+        focusSession.startedAt &&
+        localDateKey(new Date(focusSession.startedAt)) === localDateKey(date)
+          ? runningSeconds
+          : 0);
       return { date, seconds: daySeconds };
     });
     return {
@@ -3168,47 +4886,85 @@
       activity = previewActivity;
       return;
     }
-    const pendingIds = new Set(pendingFocusRecords.map((record) => record.idempotency_key));
+    const pendingIds = new Set(
+      pendingFocusRecords.map((record) => record.idempotency_key),
+    );
     const today = new Date();
-    const firstDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6);
+    const firstDay = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate() - 6,
+    );
     activity = Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(firstDay.getFullYear(), firstDay.getMonth(), firstDay.getDate() + index);
+      const date = new Date(
+        firstDay.getFullYear(),
+        firstDay.getMonth(),
+        firstDay.getDate() + index,
+      );
       const key = localDateKey(date);
       const seconds = focusRecords.reduce((sum, record) => {
-        if (!record.completed || record.session_type !== "focus" || pendingIds.has(record.idempotency_key)) return sum;
+        if (
+          !record.completed ||
+          record.session_type !== "focus" ||
+          pendingIds.has(record.idempotency_key)
+        )
+          return sum;
         const endedAt = new Date(record.ended_at || record.started_at);
-        return localDateKey(endedAt) === key ? sum + Math.max(0, Number(record.duration_seconds) || 0) : sum;
+        return localDateKey(endedAt) === key
+          ? sum + Math.max(0, Number(record.duration_seconds) || 0)
+          : sum;
       }, 0);
       return {
-        day: new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(date),
+        day: new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(
+          date,
+        ),
         hours: seconds / 3600,
       };
     });
   }
 
   function renderFocusChart(days, text) {
-    const displayDays = appLanguage === "ar" ? [days[6], ...days.slice(0, 6)] : days;
+    const displayDays =
+      appLanguage === "ar" ? [days[6], ...days.slice(0, 6)] : days;
     const maxSeconds = Math.max(3600, ...days.map((day) => day.seconds));
-    const bars = displayDays.map((day) => {
-      const label = new Intl.DateTimeFormat(focusLocale(), { weekday: "short" }).format(day.date);
-      const height = Math.max(day.seconds ? 4 : 0, (day.seconds / maxSeconds) * 100);
-      return `<div class="focus-chart-day" title="${escapeHtml(label)}: ${escapeHtml(formatFocusHours(day.seconds, text))}"><div class="focus-chart-track"><span style="height:${height}%"></span></div><small>${escapeHtml(label)}</small></div>`;
-    }).join("");
+    const bars = displayDays
+      .map((day) => {
+        const label = new Intl.DateTimeFormat(focusLocale(), {
+          weekday: "short",
+        }).format(day.date);
+        const height = Math.max(
+          day.seconds ? 4 : 0,
+          (day.seconds / maxSeconds) * 100,
+        );
+        return `<div class="focus-chart-day" title="${escapeHtml(label)}: ${escapeHtml(formatFocusHours(day.seconds, text))}"><div class="focus-chart-track"><span style="height:${height}%"></span></div><small>${escapeHtml(label)}</small></div>`;
+      })
+      .join("");
     return `<div class="focus-chart" role="img" aria-label="${escapeHtml(text.weeklyChart)}">${bars}</div>`;
   }
 
   function renderFocusHistoryRow(record, text) {
-    const subject = subjects.find((item) => String(item.id) === String(record.subject_id))?.name;
-    const task = tasks.find((item) => String(item.id) === String(record.task_id))?.title;
+    const subject = subjects.find(
+      (item) => String(item.id) === String(record.subject_id),
+    )?.name;
+    const task = tasks.find(
+      (item) => String(item.id) === String(record.task_id),
+    )?.title;
     const date = new Date(record.ended_at || record.started_at);
-    const label = new Intl.DateTimeFormat(focusLocale(), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(date);
+    const label = new Intl.DateTimeFormat(focusLocale(), {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
     const duration = `${new Intl.NumberFormat(focusLocale()).format(Math.floor(Number(record.duration_seconds || 0) / 60))} ${text.mins}`;
     return `<article class="focus-history-row ${record.completed ? "" : "incomplete"}"><span class="focus-history-type ${escapeHtml(record.session_type)}" aria-hidden="true">${record.session_type === "focus" ? "◷" : "☕"}</span><div class="focus-history-details"><strong>${escapeHtml(focusSessionTypeLabel(record.session_type, text))}</strong><small dir="auto">${escapeHtml(task || subject || text.emptySubject)}</small></div><time>${escapeHtml(label)}</time><span class="focus-history-duration" dir="ltr">${escapeHtml(duration)}</span></article>`;
   }
 
   function renderFocusSettings(text) {
-    const numberField = (name, label, value, min, max) => `<label>${label}<input type="number" name="${name}" value="${value}" min="${min}" max="${max}" required></label>`;
-    const toggleField = (name, label, checked) => `<label class="focus-setting-toggle"><span>${label}</span><input type="checkbox" name="${name}" ${checked ? "checked" : ""}><i aria-hidden="true"></i></label>`;
+    const numberField = (name, label, value, min, max) =>
+      `<label>${label}<input type="number" name="${name}" value="${value}" min="${min}" max="${max}" required></label>`;
+    const toggleField = (name, label, checked) =>
+      `<label class="focus-setting-toggle"><span>${label}</span><input type="checkbox" name="${name}" ${checked ? "checked" : ""}><i aria-hidden="true"></i></label>`;
     return `<section class="panel focus-settings-panel" id="focus-settings-panel" aria-labelledby="focus-settings-title">
       <div class="panel-heading"><div><h2 id="focus-settings-title">${text.settingsTitle}</h2><p>${text.durations}</p></div><button class="icon-button" data-action="focus-settings-close" aria-label="${deadlineText[appLanguage].close}">×</button></div>
       <form id="focus-settings-form" class="focus-settings-form" novalidate>
@@ -3240,24 +4996,58 @@
     const t = focusText[appLanguage];
     const durationMs = getFocusDurationMs(focusSession.type);
     const remaining = getFocusRemainingMs();
-    const progress = Math.min(100, Math.max(0, ((durationMs - remaining) / durationMs) * 100));
-    const focusedTask = tasks.find((task) => String(task.id) === String(focusSession.taskId));
-    const focusedSubject = subjects.find((subject) => String(subject.id) === String(focusSession.subjectId));
-    const phase = focusSession.type === "focus" ? t.focus : focusSession.type === "short_break" ? t.shortBreak : t.longBreak;
+    const progress = Math.min(
+      100,
+      Math.max(0, ((durationMs - remaining) / durationMs) * 100),
+    );
+    const focusedTask = tasks.find(
+      (task) => String(task.id) === String(focusSession.taskId),
+    );
+    const focusedSubject = subjects.find(
+      (subject) => String(subject.id) === String(focusSession.subjectId),
+    );
+    const phase =
+      focusSession.type === "focus"
+        ? t.focus
+        : focusSession.type === "short_break"
+          ? t.shortBreak
+          : t.longBreak;
     const clock = renderFlipClock(remaining, focusSettings.showSeconds);
-    const subjectOptions = [`<option value="">${t.chooseSubject}</option>`, ...subjects.map((subject) =>
-      `<option value="${escapeHtml(subject.id)}" ${String(subject.id) === String(focusSession.subjectId) ? "selected" : ""}>${escapeHtml(subject.name)}</option>`,
-    )].join("");
-    const taskOptions = [`<option value="">${t.noTask}</option>`, ...tasks.filter((task) => task.status !== "completed").map((task) =>
-      `<option value="${escapeHtml(task.id)}" ${String(task.id) === String(focusSession.taskId) ? "selected" : ""}>${escapeHtml(task.title)}</option>`,
-    )].join("");
-    const nextPhase = focusSession.type === "focus"
-      ? getNextBreakType() === "long_break" ? t.longBreak : t.shortBreak
-      : t.focus;
+    const subjectOptions = [
+      `<option value="">${t.chooseSubject}</option>`,
+      ...subjects.map(
+        (subject) =>
+          `<option value="${escapeHtml(subject.id)}" ${String(subject.id) === String(focusSession.subjectId) ? "selected" : ""}>${escapeHtml(subject.name)}</option>`,
+      ),
+    ].join("");
+    const taskOptions = [
+      `<option value="">${t.noTask}</option>`,
+      ...tasks
+        .filter((task) => task.status !== "completed")
+        .map(
+          (task) =>
+            `<option value="${escapeHtml(task.id)}" ${String(task.id) === String(focusSession.taskId) ? "selected" : ""}>${escapeHtml(task.title)}</option>`,
+        ),
+    ].join("");
+    const nextPhase =
+      focusSession.type === "focus"
+        ? getNextBreakType() === "long_break"
+          ? t.longBreak
+          : t.shortBreak
+        : t.focus;
     const settingsPanel = focusSettingsOpen ? renderFocusSettings(t) : "";
     const stats = getFocusStats();
-    const history = focusRecords.slice().sort((a, b) => new Date(b.ended_at || b.started_at) - new Date(a.ended_at || a.started_at)).slice(0, 6);
-    const historyRows = history.map((record) => renderFocusHistoryRow(record, t)).join("");
+    const history = focusRecords
+      .slice()
+      .sort(
+        (a, b) =>
+          new Date(b.ended_at || b.started_at) -
+          new Date(a.ended_at || a.started_at),
+      )
+      .slice(0, 6);
+    const historyRows = history
+      .map((record) => renderFocusHistoryRow(record, t))
+      .join("");
     return `<section class="focus-page ${distractionFree ? "distraction-free" : ""}" data-session-type="${focusSession.type}">
       <header class="page-heading focus-heading"><div><p class="eyebrow">${t.eyebrow}</p><h1>${t.title}</h1><p class="page-subtitle">${t.subtitle}</p></div><div class="focus-heading-actions"><button class="button button-secondary button-small" data-action="focus-distraction">${distractionFree ? t.exitDistraction : t.distraction}</button><button class="icon-button" data-action="focus-settings" aria-label="${t.settings}" aria-expanded="${focusSettingsOpen}">⚙</button></div></header>
       ${settingsPanel}
@@ -3269,7 +5059,7 @@
             ${clock.minutes}<span class="flip-clock-colon" ${focusSettings.showSeconds ? "" : "hidden"}>:</span>${focusSettings.showSeconds ? clock.seconds : ""}
           </div>
           <div class="focus-progress" role="progressbar" aria-label="${phase}" aria-valuenow="${Math.round(progress)}" aria-valuemin="0" aria-valuemax="100"><span id="focus-progress-fill" style="width:${progress}%"></span></div>
-          <p class="focus-session-message" id="focus-session-message">${focusSession.type === "focus" ? focusSession.status === "running" ? t.stayFocused : t.focusHint : t.breakHint}</p>
+          <p class="focus-session-message" id="focus-session-message">${focusSession.type === "focus" ? (focusSession.status === "running" ? t.stayFocused : t.focusHint) : t.breakHint}</p>
           <p class="focus-session-context" dir="auto">${escapeHtml(focusedTask?.title || focusedSubject?.name || (focusSession.type === "focus" ? t.emptySubject : nextPhase))}</p>
           <div class="focus-selectors">
             <label>${t.subject}<select id="focus-subject" aria-label="${t.subject}">${subjectOptions}</select></label>
@@ -3301,18 +5091,43 @@
   function analyticsPage() {
     const weekHours = activity.reduce((sum, item) => sum + item.hours, 0);
     const completedTasks = tasks.filter((task) => task.status === "completed");
-    const taskRate = tasks.length ? Math.round((completedTasks.length / tasks.length) * 100) : 0;
-    const activeSubjectIds = new Set(focusRecords
-      .filter((record) => record.completed && record.session_type === "focus" && record.subject_id)
-      .filter((record) => Date.now() - new Date(record.started_at).getTime() <= 7 * 86400000)
-      .map((record) => record.subject_id));
-    const scoreRows = session ? examResults.flatMap((exam) => {
-      const result = Array.isArray(exam.exam_results) ? exam.exam_results[0] : exam.exam_results;
-      if (result?.obtained_marks == null) return [];
-      const score = Math.round((Number(result.obtained_marks) / Number(exam.max_marks)) * 100);
-      return [{ subject: exam.subject || subjectName(exam.subject_id), score }];
-    }) : examResults;
-    const bars = scoreRows.map((item) => `<div class="score-row"><span>${escapeHtml(item.subject)}</span><div class="progress-track"><div class="progress-fill" style="width:${item.score}%"></div></div><span class="score-value">${item.score}%</span></div>`).join("");
+    const taskRate = tasks.length
+      ? Math.round((completedTasks.length / tasks.length) * 100)
+      : 0;
+    const activeSubjectIds = new Set(
+      focusRecords
+        .filter(
+          (record) =>
+            record.completed &&
+            record.session_type === "focus" &&
+            record.subject_id,
+        )
+        .filter(
+          (record) =>
+            Date.now() - new Date(record.started_at).getTime() <= 7 * 86400000,
+        )
+        .map((record) => record.subject_id),
+    );
+    const scoreRows = session
+      ? examResults.flatMap((exam) => {
+          const result = Array.isArray(exam.exam_results)
+            ? exam.exam_results[0]
+            : exam.exam_results;
+          if (result?.obtained_marks == null) return [];
+          const score = Math.round(
+            (Number(result.obtained_marks) / Number(exam.max_marks)) * 100,
+          );
+          return [
+            { subject: exam.subject || subjectName(exam.subject_id), score },
+          ];
+        })
+      : examResults;
+    const bars = scoreRows
+      .map(
+        (item) =>
+          `<div class="score-row"><span>${escapeHtml(item.subject)}</span><div class="progress-track"><div class="progress-fill" style="width:${item.score}%"></div></div><span class="score-value">${item.score}%</span></div>`,
+      )
+      .join("");
     const stats = session
       ? `${statCard("STUDY TIME", `${weekHours.toFixed(1)}h`, " across 7 days", "◷")}${statCard("DAILY AVERAGE", `${(weekHours / 7).toFixed(1)}h`, " each day", "⌁")}${statCard("TASK COMPLETION", `${taskRate}%`, ` ${completedTasks.length} of ${tasks.length} tasks`, "✓")}${statCard("SUBJECTS ACTIVE", String(activeSubjectIds.size), " courses this week", "◈")}`
       : `${statCard("STUDY TIME", "—", " Sign in to view verified focus time", "◷")}${statCard("DAILY AVERAGE", "—", " Based on completed sessions", "⌁")}${statCard("TASK COMPLETION", "—", " Based on your saved tasks", "✓")}${statCard("SUBJECTS ACTIVE", "—", " Based on recent sessions", "◈")}`;
@@ -3324,27 +5139,69 @@
   }
 
   function examsPage() {
-    const cards = session ? examResults.map((exam) => {
-      const score = exam.obtained_marks == null ? null : `${Number(exam.obtained_marks)} / ${Number(exam.max_marks)}`;
-      const result = Array.isArray(exam.exam_results) ? exam.exam_results[0] : exam.exam_results;
-      const obtained = result?.obtained_marks ?? exam.obtained_marks;
-      const percentage = obtained == null ? null : Math.round((Number(obtained) / Number(exam.max_marks || 100)) * 100);
-      return `<article class="item-card"><span class="task-meta">${escapeHtml(new Intl.DateTimeFormat(appLanguage, { dateStyle: "medium", timeStyle: "short" }).format(new Date(exam.exam_at || Date.now())))}</span><h3>${escapeHtml(exam.title || exam.subject)}</h3><p>${escapeHtml(exam.subject || subjectName(exam.subject_id))}</p>${percentage == null ? `<div class="exam-score">—<small> / ${escapeHtml(exam.max_marks || "—")}</small></div>` : `<div class="exam-score">${percentage}<small>% · ${escapeHtml(score || `${obtained} / ${exam.max_marks}`)}</small></div>`}${session && exam.id ? `<div class="card-actions"><button class="text-button" data-action="exam-result" data-id="${escapeHtml(exam.id)}">${obtained == null ? "Record result" : "Edit result"}</button><button class="text-button" data-action="exam-edit" data-id="${escapeHtml(exam.id)}">Edit</button><button class="text-button" data-action="exam-delete" data-id="${escapeHtml(exam.id)}">Delete</button></div>` : ""}</article>`;
-    }).join("") : examResults.map((exam) => `<article class="item-card"><span class="task-meta">PAST RESULT · SAMPLE</span><h3>${escapeHtml(exam.subject)}</h3><div class="exam-score">${Number(exam.score)}<small> / 100</small></div><p>Recorded exam score preview</p></article>`).join("");
-    const upcoming = session ? examResults.filter((exam) => new Date(exam.exam_at) >= new Date()).length : 0;
-    return `${pageHeading("EXAM TRACKER", "Exams & results", "Keep upcoming assessments and your progress in one view.", `<button class="button button-primary" data-action="exam-add">＋ Add exam</button>`)}<div class="grid exam-grid">${cards || `<div class="empty-state"><strong>${session ? "No exams yet" : "No exam results to show"}</strong>${session ? "Add an exam to track its date and result." : "Sign in to add and track your own exams."}</div>`}</div><section class="panel section-spacer">${panelHeading("Upcoming assessments", `${upcoming} upcoming`)}${upcoming ? `<div class="activity-list">${examResults.filter((exam) => new Date(exam.exam_at) >= new Date()).map((exam) => `<div class="activity-item"><span>${escapeHtml(exam.title)}</span><time>${escapeHtml(new Intl.DateTimeFormat(appLanguage, { dateStyle: "medium" }).format(new Date(exam.exam_at)))}</time></div>`).join("")}</div>` : `<div class="empty-state">No upcoming exams.</div>`}</section><p class="data-caption">${session ? "Exam dates and results are stored in your private account." : "Sample results are previews, not account records. Sign in to track your own exams."}</p>`;
+    const cards = session
+      ? examResults
+          .map((exam) => {
+            const score =
+              exam.obtained_marks == null
+                ? null
+                : `${Number(exam.obtained_marks)} / ${Number(exam.max_marks)}`;
+            const result = Array.isArray(exam.exam_results)
+              ? exam.exam_results[0]
+              : exam.exam_results;
+            const obtained = result?.obtained_marks ?? exam.obtained_marks;
+            const percentage =
+              obtained == null
+                ? null
+                : Math.round(
+                    (Number(obtained) / Number(exam.max_marks || 100)) * 100,
+                  );
+            return `<article class="item-card"><span class="task-meta">${escapeHtml(new Intl.DateTimeFormat(appLanguage, { dateStyle: "medium", timeStyle: "short" }).format(new Date(exam.exam_at || Date.now())))}</span><h3>${escapeHtml(exam.title || exam.subject)}</h3><p>${escapeHtml(exam.subject || subjectName(exam.subject_id))}</p>${percentage == null ? `<div class="exam-score">—<small> / ${escapeHtml(exam.max_marks || "—")}</small></div>` : `<div class="exam-score">${percentage}<small>% · ${escapeHtml(score || `${obtained} / ${exam.max_marks}`)}</small></div>`}${session && exam.id ? `<div class="card-actions"><button class="text-button" data-action="exam-result" data-id="${escapeHtml(exam.id)}">${obtained == null ? "Record result" : "Edit result"}</button><button class="text-button" data-action="exam-edit" data-id="${escapeHtml(exam.id)}">Edit</button><button class="text-button" data-action="exam-delete" data-id="${escapeHtml(exam.id)}">Delete</button></div>` : ""}</article>`;
+          })
+          .join("")
+      : examResults
+          .map(
+            (exam) =>
+              `<article class="item-card"><span class="task-meta">PAST RESULT · SAMPLE</span><h3>${escapeHtml(exam.subject)}</h3><div class="exam-score">${Number(exam.score)}<small> / 100</small></div><p>Recorded exam score preview</p></article>`,
+          )
+          .join("");
+    const upcoming = session
+      ? examResults.filter((exam) => new Date(exam.exam_at) >= new Date())
+          .length
+      : 0;
+    return `${pageHeading("EXAM TRACKER", "Exams & results", "Keep upcoming assessments and your progress in one view.", `<button class="button button-primary" data-action="exam-add">＋ Add exam</button>`)}<div class="grid exam-grid">${cards || `<div class="empty-state"><strong>${session ? "No exams yet" : "No exam results to show"}</strong>${session ? "Add an exam to track its date and result." : "Sign in to add and track your own exams."}</div>`}</div><section class="panel section-spacer">${panelHeading("Upcoming assessments", `${upcoming} upcoming`)}${
+      upcoming
+        ? `<div class="activity-list">${examResults
+            .filter((exam) => new Date(exam.exam_at) >= new Date())
+            .map(
+              (exam) =>
+                `<div class="activity-item"><span>${escapeHtml(exam.title)}</span><time>${escapeHtml(new Intl.DateTimeFormat(appLanguage, { dateStyle: "medium" }).format(new Date(exam.exam_at)))}</time></div>`,
+            )
+            .join("")}</div>`
+        : `<div class="empty-state">No upcoming exams.</div>`
+    }</section><p class="data-caption">${session ? "Exam dates and results are stored in your private account." : "Sample results are previews, not account records. Sign in to track your own exams."}</p>`;
   }
 
   function achievementsPage() {
-    const earnedCodes = new Set(earnedAchievements.map((item) => {
-      const achievement = Array.isArray(item.achievements) ? item.achievements[0] : item.achievements;
-      return achievement?.code;
-    }).filter(Boolean));
-    const cards = achievementCatalog.map((item) => {
-      const unlocked = earnedCodes.has(item.code);
-      const reward = new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(item.reward);
-      return `<article class="item-card achievement-card ${unlocked ? "unlocked" : "locked"}"><span class="achievement-icon ${unlocked ? "" : "locked"}">${item.symbol}</span><h3>${translateUiText(item.name)}</h3><p>${translateUiText(item.description)}</p><p class="badge-status">${unlocked ? "Unlocked" : "Keep going to unlock"}</p><p class="data-caption">${translateUiText("Reward")} +${reward} XP</p></article>`;
-    }).join("");
+    const earnedCodes = new Set(
+      earnedAchievements
+        .map((item) => {
+          const achievement = Array.isArray(item.achievements)
+            ? item.achievements[0]
+            : item.achievements;
+          return achievement?.code;
+        })
+        .filter(Boolean),
+    );
+    const cards = achievementCatalog
+      .map((item) => {
+        const unlocked = earnedCodes.has(item.code);
+        const reward = new Intl.NumberFormat(
+          appLanguage === "ar" ? "ar-EG" : "en",
+        ).format(item.reward);
+        return `<article class="item-card achievement-card ${unlocked ? "unlocked" : "locked"}"><span class="achievement-icon ${unlocked ? "" : "locked"}">${item.symbol}</span><h3>${translateUiText(item.name)}</h3><p>${translateUiText(item.description)}</p><p class="badge-status">${unlocked ? "Unlocked" : "Keep going to unlock"}</p><p class="data-caption">${translateUiText("Reward")} +${reward} XP</p></article>`;
+      })
+      .join("");
     const xp = Number(rewardSummary?.total_xp) || 0;
     const level = Number(rewardSummary?.level) || 1;
     const progress = xp % 100;
@@ -3354,11 +5211,17 @@
   function isMissingRelation(error) {
     const code = String(error?.code || "");
     const message = String(error?.message || "");
-    return code === "42P01" || code === "PGRST205" || /does not exist|could not find the table|schema cache/i.test(message);
+    return (
+      code === "42P01" ||
+      code === "PGRST205" ||
+      /does not exist|could not find the table|schema cache/i.test(message)
+    );
   }
 
   function teamMemberCount(teamId) {
-    return teamMembers.filter((member) => String(member.team_id) === String(teamId)).length;
+    return teamMembers.filter(
+      (member) => String(member.team_id) === String(teamId),
+    ).length;
   }
 
   async function loadTeams() {
@@ -3367,7 +5230,8 @@
     teamsError = "";
     scheduleRender();
     try {
-      const { data, error } = await supabase.from("teams")
+      const { data, error } = await supabase
+        .from("teams")
         .select("id,name,description,join_code,owner_id,created_at")
         .order("created_at", { ascending: true });
       if (error) throw error;
@@ -3378,15 +5242,24 @@
       if (teams.length) {
         const ids = teams.map((team) => team.id);
         const [memberResult, taskResult] = await Promise.all([
-          supabase.from("team_members").select("team_id,user_id,role,joined_at").in("team_id", ids),
-          supabase.from("team_tasks")
-            .select("id,team_id,created_by,assigned_to,title,description,status,priority,due_at,created_at")
-            .in("team_id", ids).order("due_at", { ascending: true, nullsFirst: false }),
+          supabase
+            .from("team_members")
+            .select("team_id,user_id,role,joined_at")
+            .in("team_id", ids),
+          supabase
+            .from("team_tasks")
+            .select(
+              "id,team_id,created_by,assigned_to,title,description,status,priority,due_at,created_at",
+            )
+            .in("team_id", ids)
+            .order("due_at", { ascending: true, nullsFirst: false }),
         ]);
-        if (memberResult.error && !isMissingRelation(memberResult.error)) console.error("Could not load team members.", memberResult.error);
-        if (taskResult.error && !isMissingRelation(taskResult.error)) console.error("Could not load team tasks.", taskResult.error);
-        teamMembers = memberResult.error ? [] : (memberResult.data || []);
-        teamTasks = taskResult.error ? [] : (taskResult.data || []);
+        if (memberResult.error && !isMissingRelation(memberResult.error))
+          console.error("Could not load team members.", memberResult.error);
+        if (taskResult.error && !isMissingRelation(taskResult.error))
+          console.error("Could not load team tasks.", taskResult.error);
+        teamMembers = memberResult.error ? [] : memberResult.data || [];
+        teamTasks = taskResult.error ? [] : taskResult.data || [];
       } else {
         teamMembers = [];
         teamTasks = [];
@@ -3411,7 +5284,8 @@
 
   function teamMemberLabel(member) {
     if (!member) return "Member";
-    if (member.user_id === session?.user?.id) return appLanguage === "ar" ? "أنت" : "You";
+    if (member.user_id === session?.user?.id)
+      return appLanguage === "ar" ? "أنت" : "You";
     return `${appLanguage === "ar" ? "عضو" : "Member"} ${String(member.user_id || "").slice(0, 6)}`;
   }
 
@@ -3419,7 +5293,9 @@
     const completed = task.status === "completed";
     const mine = task.created_by === session?.user?.id;
     const owner = team.owner_id === session?.user?.id;
-    const due = task.due_at ? taskDueLabel({ due_at: task.due_at }, { includeDate: true }) : "";
+    const due = task.due_at
+      ? taskDueLabel({ due_at: task.due_at }, { includeDate: true })
+      : "";
     return `<div class="team-task-row ${completed ? "completed" : ""}">
       <button class="task-check ${completed ? "checked" : ""}" data-action="team-task-toggle" data-id="${escapeHtml(task.id)}" aria-label="${completed ? "Reopen" : "Complete"} ${escapeHtml(task.title)}">${completed ? "✓" : ""}</button>
       <div class="team-task-main">
@@ -3450,11 +5326,24 @@
       return `${pageHeading("STUDY TOGETHER", appLanguage === "ar" ? "الفرق" : "Teams", appLanguage === "ar" ? "شارك المهام مع مجموعتك الدراسية." : "Share tasks and momentum with your study group.", actions)}
         <section class="panel teams-empty"><div class="empty-state"><strong>${appLanguage === "ar" ? "ابدأ فريقك الأول" : "Start your first team"}</strong><p>${appLanguage === "ar" ? "أنشئ فريقًا أو انضم بكود من زميل." : "Create a team, or join one with a short code from a classmate."}</p><div class="teams-empty-actions"><button class="button button-secondary button-small" data-action="team-join">${appLanguage === "ar" ? "الانضمام إلى فريق" : "Join team"}</button><button class="button button-primary button-small" data-action="team-create">＋ ${appLanguage === "ar" ? "فريق جديد" : "New team"}</button></div></div></section>`;
     }
-    const selected = teams.find((team) => String(team.id) === String(selectedTeamId)) || teams[0];
-    const members = teamMembers.filter((member) => String(member.team_id) === String(selected.id));
+    const selected =
+      teams.find((team) => String(team.id) === String(selectedTeamId)) ||
+      teams[0];
+    const members = teamMembers.filter(
+      (member) => String(member.team_id) === String(selected.id),
+    );
     const owner = selected.owner_id === session.user.id;
-    const memberRows = members.map((member) => `<div class="team-member"><span class="team-member-avatar">${escapeHtml(initials(teamMemberLabel(member)))}</span><div><strong>${escapeHtml(teamMemberLabel(member))}</strong><small>${escapeHtml(member.role === "owner" ? (appLanguage === "ar" ? "مالك الفريق" : "Team owner") : (appLanguage === "ar" ? "عضو" : "Member"))}</small></div></div>`).join("") || `<p class="data-caption">${appLanguage === "ar" ? "لا أعضاء بعد." : "No members yet."}</p>`;
-    const tasks = teamTasks.filter((task) => String(task.team_id) === String(selected.id));
+    const memberRows =
+      members
+        .map(
+          (member) =>
+            `<div class="team-member"><span class="team-member-avatar">${escapeHtml(initials(teamMemberLabel(member)))}</span><div><strong>${escapeHtml(teamMemberLabel(member))}</strong><small>${escapeHtml(member.role === "owner" ? (appLanguage === "ar" ? "مالك الفريق" : "Team owner") : appLanguage === "ar" ? "عضو" : "Member")}</small></div></div>`,
+        )
+        .join("") ||
+      `<p class="data-caption">${appLanguage === "ar" ? "لا أعضاء بعد." : "No members yet."}</p>`;
+    const tasks = teamTasks.filter(
+      (task) => String(task.team_id) === String(selected.id),
+    );
     const openTasks = tasks.filter((task) => task.status !== "completed");
     const doneTasks = tasks.filter((task) => task.status === "completed");
     const taskList = `${openTasks.length ? openTasks.map((task) => teamTaskRow(task, selected)).join("") : `<div class="empty-state"><strong>${appLanguage === "ar" ? "لا مهام للفريق" : "No team tasks yet"}</strong>${appLanguage === "ar" ? "أضف أول مهمة مشتركة." : "Add the first shared task below."}</div>`}
@@ -3463,13 +5352,15 @@
       <div class="team-switcher" role="tablist" aria-label="${appLanguage === "ar" ? "فرقك" : "Your teams"}">${teams.map((team) => `<button class="team-chip ${String(team.id) === String(selected.id) ? "selected" : ""}" data-action="team-select" data-id="${escapeHtml(team.id)}" role="tab" aria-selected="${String(team.id) === String(selected.id)}">${escapeHtml(team.name)}<small>${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(teamMemberCount(team.id))}</small></button>`).join("")}</div>
       <div class="grid team-layout">
         <section class="panel">
-          <div class="team-heading"><div><p class="eyebrow">${owner ? (appLanguage === "ar" ? "أنت المالك" : "YOU OWN THIS TEAM") : (appLanguage === "ar" ? "عضو" : "MEMBER")}</p><h2>${escapeHtml(selected.name)}</h2><p class="panel-copy">${escapeHtml(selected.description || (appLanguage === "ar" ? "لا وصف بعد." : "No description yet."))}</p></div><div class="team-code"><span>${appLanguage === "ar" ? "كود الانضمام" : "Join code"}</span><strong dir="ltr">${escapeHtml(selected.join_code || "—")}</strong></div></div>
+          <div class="team-heading"><div><p class="eyebrow">${owner ? (appLanguage === "ar" ? "أنت المالك" : "YOU OWN THIS TEAM") : appLanguage === "ar" ? "عضو" : "MEMBER"}</p><h2>${escapeHtml(selected.name)}</h2><p class="panel-copy">${escapeHtml(selected.description || (appLanguage === "ar" ? "لا وصف بعد." : "No description yet."))}</p></div><div class="team-code"><span>${appLanguage === "ar" ? "كود الانضمام" : "Join code"}</span><strong dir="ltr">${escapeHtml(selected.join_code || "—")}</strong></div></div>
           <div class="team-members">${memberRows}</div>
           <div class="team-actions-row">
             <button class="button button-secondary button-small" data-action="team-refresh">${appLanguage === "ar" ? "تحديث" : "Refresh"}</button>
-            ${owner
-              ? `<button class="button button-quiet button-small danger-text" data-action="team-delete">${appLanguage === "ar" ? "حذف الفريق" : "Delete team"}</button>`
-              : `<button class="button button-quiet button-small danger-text" data-action="team-leave">${appLanguage === "ar" ? "مغادرة الفريق" : "Leave team"}</button>`}
+            ${
+              owner
+                ? `<button class="button button-quiet button-small danger-text" data-action="team-delete">${appLanguage === "ar" ? "حذف الفريق" : "Delete team"}</button>`
+                : `<button class="button button-quiet button-small danger-text" data-action="team-leave">${appLanguage === "ar" ? "مغادرة الفريق" : "Leave team"}</button>`
+            }
           </div>
         </section>
         <section class="panel">
@@ -3488,7 +5379,10 @@
   }
 
   function openTeamModal() {
-    if (!session) { document.getElementById("open-auth")?.click(); return; }
+    if (!session) {
+      document.getElementById("open-auth")?.click();
+      return;
+    }
     const form = document.getElementById("team-form");
     form.reset();
     document.getElementById("team-error").textContent = "";
@@ -3500,11 +5394,15 @@
     if (!supabase || !session) throw new Error("Sign in to create a team.");
     const name = String(formData.get("name") || "").trim();
     if (!name) throw new Error("Enter a team name.");
-    const { data, error } = await supabase.from("teams").insert({
-      name,
-      description: String(formData.get("description") || "").trim() || null,
-      owner_id: session.user.id,
-    }).select("id,name,description,join_code,owner_id,created_at").single();
+    const { data, error } = await supabase
+      .from("teams")
+      .insert({
+        name,
+        description: String(formData.get("description") || "").trim() || null,
+        owner_id: session.user.id,
+      })
+      .select("id,name,description,join_code,owner_id,created_at")
+      .single();
     if (error) throw error;
     selectedTeamId = data.id;
     teamsLoaded = false;
@@ -3514,7 +5412,10 @@
   }
 
   function openTeamJoinModal() {
-    if (!session) { document.getElementById("open-auth")?.click(); return; }
+    if (!session) {
+      document.getElementById("open-auth")?.click();
+      return;
+    }
     const form = document.getElementById("team-join-form");
     form.reset();
     document.getElementById("team-join-error").textContent = "";
@@ -3531,15 +5432,18 @@
     selectedTeamId = Array.isArray(data) ? data[0] : data;
     teamsLoaded = false;
     document.getElementById("team-join-modal").hidden = true;
-    showToast(appLanguage === "ar" ? "انضممت إلى الفريق." : "You joined the team.");
+    showToast(
+      appLanguage === "ar" ? "انضممت إلى الفريق." : "You joined the team.",
+    );
     await loadTeams();
   }
 
   async function deleteTeam(team) {
     if (!team) return;
-    const message = appLanguage === "ar"
-      ? `حذف "${team.name}"؟ ستحذف مهام الفريق نهائيًا.`
-      : `Delete "${team.name}"? All team tasks and comments will be permanently removed.`;
+    const message =
+      appLanguage === "ar"
+        ? `حذف "${team.name}"؟ ستحذف مهام الفريق نهائيًا.`
+        : `Delete "${team.name}"? All team tasks and comments will be permanently removed.`;
     if (!window.confirm(message)) return;
     const { error } = await supabase.from("teams").delete().eq("id", team.id);
     if (error) throw error;
@@ -3552,9 +5456,17 @@
 
   async function leaveTeam(team) {
     if (!team) return;
-    if (!window.confirm(appLanguage === "ar" ? "مغادرة هذا الفريق؟" : "Leave this team?")) return;
-    const { error } = await supabase.from("team_members")
-      .delete().eq("team_id", team.id).eq("user_id", session.user.id);
+    if (
+      !window.confirm(
+        appLanguage === "ar" ? "مغادرة هذا الفريق؟" : "Leave this team?",
+      )
+    )
+      return;
+    const { error } = await supabase
+      .from("team_members")
+      .delete()
+      .eq("team_id", team.id)
+      .eq("user_id", session.user.id);
     if (error) throw error;
     teams = teams.filter((item) => String(item.id) !== String(team.id));
     selectedTeamId = teams[0]?.id || null;
@@ -3564,42 +5476,67 @@
   }
 
   async function addTeamTask(formData) {
-    const team = teams.find((item) => String(item.id) === String(selectedTeamId));
+    const team = teams.find(
+      (item) => String(item.id) === String(selectedTeamId),
+    );
     if (!team) throw new Error("Choose a team first.");
     const title = String(formData.get("title") || "").trim();
     if (!title) throw new Error("Enter a task title.");
     const dateValue = String(formData.get("due_date") || "");
     const timeValue = String(formData.get("due_time") || "") || "23:59";
     const dueAt = dateValue ? new Date(`${dateValue}T${timeValue}:00`) : null;
-    if (dueAt && Number.isNaN(dueAt.getTime())) throw new Error("Choose a valid due date.");
-    const { data, error } = await supabase.from("team_tasks").insert({
-      team_id: team.id,
-      created_by: session.user.id,
-      title,
-      description: null,
-      priority: String(formData.get("priority") || "medium"),
-      due_at: dueAt ? dueAt.toISOString() : null,
-    }).select("id,team_id,created_by,assigned_to,title,description,status,priority,due_at,created_at").single();
+    if (dueAt && Number.isNaN(dueAt.getTime()))
+      throw new Error("Choose a valid due date.");
+    const { data, error } = await supabase
+      .from("team_tasks")
+      .insert({
+        team_id: team.id,
+        created_by: session.user.id,
+        title,
+        description: null,
+        priority: String(formData.get("priority") || "medium"),
+        due_at: dueAt ? dueAt.toISOString() : null,
+      })
+      .select(
+        "id,team_id,created_by,assigned_to,title,description,status,priority,due_at,created_at",
+      )
+      .single();
     if (error) throw error;
     teamTasks.unshift(data);
     render();
-    showToast(appLanguage === "ar" ? "تمت إضافة مهمة الفريق." : "Team task added.");
+    showToast(
+      appLanguage === "ar" ? "تمت إضافة مهمة الفريق." : "Team task added.",
+    );
   }
 
   async function toggleTeamTask(id) {
     const task = teamTasks.find((item) => String(item.id) === String(id));
     if (!task) return;
     const next = task.status === "completed" ? "not_started" : "completed";
-    const { error } = await supabase.from("team_tasks").update({ status: next }).eq("id", id);
-    if (error) { showToast(error.message); return; }
+    const { error } = await supabase
+      .from("team_tasks")
+      .update({ status: next })
+      .eq("id", id);
+    if (error) {
+      showToast(error.message);
+      return;
+    }
     task.status = next;
     render();
   }
 
   async function deleteTeamTask(id) {
-    if (!window.confirm(appLanguage === "ar" ? "حذف مهمة الفريق؟" : "Delete this team task?")) return;
+    if (
+      !window.confirm(
+        appLanguage === "ar" ? "حذف مهمة الفريق؟" : "Delete this team task?",
+      )
+    )
+      return;
     const { error } = await supabase.from("team_tasks").delete().eq("id", id);
-    if (error) { showToast(error.message); return; }
+    if (error) {
+      showToast(error.message);
+      return;
+    }
     teamTasks = teamTasks.filter((task) => String(task.id) !== String(id));
     render();
   }
@@ -3615,21 +5552,34 @@
     voiceNotesError = "";
     scheduleRender();
     try {
-      const { data, error } = await supabase.from("voice_notes")
-        .select("id,note_id,title,storage_path,mime_type,duration_seconds,size_bytes,transcript,transcription_status,created_at")
-        .order("created_at", { ascending: false }).limit(100);
+      const { data, error } = await supabase
+        .from("voice_notes")
+        .select(
+          "id,note_id,title,storage_path,mime_type,duration_seconds,size_bytes,transcript,transcription_status,created_at",
+        )
+        .order("created_at", { ascending: false })
+        .limit(100);
       if (error) throw error;
-      const rows = await Promise.all((data || []).map(async (row) => {
-        const { data: signed, error: signError } = await supabase.storage
-          .from("voice-notes").createSignedUrl(row.storage_path, 3600);
-        return { ...row, signed_url: signError ? "" : signed?.signedUrl || "" };
-      }));
+      const rows = await Promise.all(
+        (data || []).map(async (row) => {
+          const { data: signed, error: signError } = await supabase.storage
+            .from("voice-notes")
+            .createSignedUrl(row.storage_path, 3600);
+          return {
+            ...row,
+            signed_url: signError ? "" : signed?.signedUrl || "",
+          };
+        }),
+      );
       voiceNotes = rows;
       voiceNotesSupported = true;
     } catch (error) {
       console.error("Could not load voice notes.", error);
       voiceNotes = [];
-      if (isMissingRelation(error) || /bucket|not found/i.test(error.message || "")) {
+      if (
+        isMissingRelation(error) ||
+        /bucket|not found/i.test(error.message || "")
+      ) {
         voiceNotesSupported = false;
         voiceNotesError = error.message || "";
       } else {
@@ -3643,7 +5593,9 @@
   }
 
   function voiceNoteCard(note) {
-    const linked = note.note_id ? notes.find((item) => String(item.id) === String(note.note_id)) : null;
+    const linked = note.note_id
+      ? notes.find((item) => String(item.id) === String(note.note_id))
+      : null;
     const url = note.signed_url || note.local_url || "";
     return `<article class="voice-note-card" data-voice-id="${escapeHtml(note.id)}">
       <div class="voice-note-head">
@@ -3671,24 +5623,38 @@
     const setupHint = !voiceNotesSupported
       ? `<section class="panel"><div class="empty-state"><strong>${appLanguage === "ar" ? "التسجيلات الصوتية غير مهيأة" : "Voice note storage is not enabled yet"}</strong><p>${appLanguage === "ar" ? "طبّق ملف الترحيل 001_studyzone_enhancements.sql لإنشاء الجدول والحاوية الخاصة." : "Apply supabase/migrations/001_studyzone_enhancements.sql to create the private bucket and metadata table."}</p></div></section>`
       : "";
-    const errorHint = voiceNotesError && voiceNotesSupported
-      ? `<section class="panel"><div class="empty-state"><strong>${appLanguage === "ar" ? "تعذر تحميل التسجيلات" : "Could not load recordings"}</strong><p>${escapeHtml(voiceNotesError)}</p><button class="button button-secondary button-small" data-action="voice-retry">${appLanguage === "ar" ? "إعادة المحاولة" : "Try again"}</button></div></section>`
-      : "";
+    const errorHint =
+      voiceNotesError && voiceNotesSupported
+        ? `<section class="panel"><div class="empty-state"><strong>${appLanguage === "ar" ? "تعذر تحميل التسجيلات" : "Could not load recordings"}</strong><p>${escapeHtml(voiceNotesError)}</p><button class="button button-secondary button-small" data-action="voice-retry">${appLanguage === "ar" ? "إعادة المحاولة" : "Try again"}</button></div></section>`
+        : "";
     const list = voiceNotes.length
       ? `<div class="voice-note-grid">${voiceNotes.map(voiceNoteCard).join("")}</div>`
       : `<div class="empty-state"><strong>${appLanguage === "ar" ? "لا تسجيلات بعد" : "No recordings yet"}</strong>${appLanguage === "ar" ? "اضغط تسجيل وابدأ بفكرة." : "Press record and capture a thought, a lecture summary, or a reminder."}</div>`;
     return `${pageHeading("SPEAK IT, KEEP IT", appLanguage === "ar" ? "الملاحظات الصوتية" : "Voice notes", appLanguage === "ar" ? "سجّل أفكارك واحفظها بشكل خاص." : "Capture ideas out loud and keep them private.", actions)}
       ${setupHint}${errorHint}
       <section class="panel">${panelHeading(appLanguage === "ar" ? "تسجيلاتك" : "Your recordings", appLanguage === "ar" ? `${voiceNotes.length} ملاحظة صوتية` : `${voiceNotes.length} voice note${voiceNotes.length === 1 ? "" : "s"}`)}${list}</section>
-      <p class="data-caption">${session
-        ? (appLanguage === "ar" ? "الصوت يُحفظ في حاوية خاصة، ولا يمكن الوصول إليه إلا بروابط موقعة قصيرة الأجل." : "Audio is stored in a private bucket. Playback uses short-lived signed URLs; files are never public.")
-        : (appLanguage === "ar" ? "معاينات الضيف تبقى في هذه الجلسة فقط ولا تُرفع. سجّل الدخول للحفظ الدائم." : "Guest previews stay in this browser session only and are never uploaded. Sign in to save permanently.")}</p>`;
+      <p class="data-caption">${
+        session
+          ? appLanguage === "ar"
+            ? "الصوت يُحفظ في حاوية خاصة، ولا يمكن الوصول إليه إلا بروابط موقعة قصيرة الأجل."
+            : "Audio is stored in a private bucket. Playback uses short-lived signed URLs; files are never public."
+          : appLanguage === "ar"
+            ? "معاينات الضيف تبقى في هذه الجلسة فقط ولا تُرفع. سجّل الدخول للحفظ الدائم."
+            : "Guest previews stay in this browser session only and are never uploaded. Sign in to save permanently."
+      }</p>`;
   }
 
   function resetVoiceRecorder({ keepPreview = false } = {}) {
-    if (voiceTimerHandle) { window.clearInterval(voiceTimerHandle); voiceTimerHandle = null; }
+    if (voiceTimerHandle) {
+      window.clearInterval(voiceTimerHandle);
+      voiceTimerHandle = null;
+    }
     if (voiceRecorder && voiceRecorder.state !== "inactive") {
-      try { voiceRecorder.stop(); } catch { /* already stopped */ }
+      try {
+        voiceRecorder.stop();
+      } catch {
+        /* already stopped */
+      }
     }
     voiceRecorder = null;
     if (voiceStream) {
@@ -3710,7 +5676,11 @@
 
   function voiceElapsedMs() {
     if (!voiceStartedAt) return 0;
-    const paused = voicePausedTotal + (voiceState === "paused" && voicePauseStartedAt ? Date.now() - voicePauseStartedAt : 0);
+    const paused =
+      voicePausedTotal +
+      (voiceState === "paused" && voicePauseStartedAt
+        ? Date.now() - voicePauseStartedAt
+        : 0);
     return Math.max(0, Date.now() - voiceStartedAt - paused);
   }
 
@@ -3727,29 +5697,70 @@
     timer.textContent = formatVoiceDuration(voiceElapsedMs() / 1000);
     const labels = {
       idle: appLanguage === "ar" ? "جاهز عندما تكون." : "Ready when you are.",
-      requesting: appLanguage === "ar" ? "جارٍ طلب إذن الميكروفون…" : "Requesting microphone permission…",
+      requesting:
+        appLanguage === "ar"
+          ? "جارٍ طلب إذن الميكروفون…"
+          : "Requesting microphone permission…",
       recording: appLanguage === "ar" ? "جارٍ التسجيل…" : "Recording…",
-      paused: appLanguage === "ar" ? "التسجيل متوقف مؤقتًا." : "Recording paused.",
-      processing: appLanguage === "ar" ? "جارٍ تجهيز التسجيل…" : "Preparing your recording…",
-      ready: appLanguage === "ar" ? "استمع للمعاينة ثم احفظ." : "Preview your recording, then save it.",
+      paused:
+        appLanguage === "ar" ? "التسجيل متوقف مؤقتًا." : "Recording paused.",
+      processing:
+        appLanguage === "ar"
+          ? "جارٍ تجهيز التسجيل…"
+          : "Preparing your recording…",
+      ready:
+        appLanguage === "ar"
+          ? "استمع للمعاينة ثم احفظ."
+          : "Preview your recording, then save it.",
     };
     if (status) status.textContent = labels[voiceState] || "";
-    if (start) { start.hidden = voiceState !== "idle" && voiceState !== "ready"; start.textContent = voiceState === "ready" ? (appLanguage === "ar" ? "● تسجيل جديد" : "● Record again") : (appLanguage === "ar" ? "● بدء التسجيل" : "● Start recording"); }
-    if (pause) { pause.hidden = voiceState !== "recording" && voiceState !== "paused"; pause.textContent = voiceState === "paused" ? (appLanguage === "ar" ? "استئناف" : "Resume") : (appLanguage === "ar" ? "إيقاف مؤقت" : "Pause"); }
-    if (stop) stop.hidden = voiceState !== "recording" && voiceState !== "paused";
-    if (discard) discard.hidden = voiceState === "idle" || voiceState === "processing";
+    if (start) {
+      start.hidden = voiceState !== "idle" && voiceState !== "ready";
+      start.textContent =
+        voiceState === "ready"
+          ? appLanguage === "ar"
+            ? "● تسجيل جديد"
+            : "● Record again"
+          : appLanguage === "ar"
+            ? "● بدء التسجيل"
+            : "● Start recording";
+    }
+    if (pause) {
+      pause.hidden = voiceState !== "recording" && voiceState !== "paused";
+      pause.textContent =
+        voiceState === "paused"
+          ? appLanguage === "ar"
+            ? "استئناف"
+            : "Resume"
+          : appLanguage === "ar"
+            ? "إيقاف مؤقت"
+            : "Pause";
+    }
+    if (stop)
+      stop.hidden = voiceState !== "recording" && voiceState !== "paused";
+    if (discard)
+      discard.hidden = voiceState === "idle" || voiceState === "processing";
     if (save) save.disabled = voiceState !== "ready" || !voiceBlob;
-    if (preview) { preview.hidden = voiceState !== "ready" || !voicePreviewUrl; if (voicePreviewUrl) preview.src = voicePreviewUrl; }
+    if (preview) {
+      preview.hidden = voiceState !== "ready" || !voicePreviewUrl;
+      if (voicePreviewUrl) preview.src = voicePreviewUrl;
+    }
   }
 
   function openVoiceModal() {
     resetVoiceRecorder();
-    document.getElementById("voice-title").value = appLanguage === "ar" ? "ملاحظة صوتية" : "Voice note";
+    document.getElementById("voice-title").value =
+      appLanguage === "ar" ? "ملاحظة صوتية" : "Voice note";
     document.getElementById("voice-error").textContent = "";
-    document.getElementById("voice-note-link").innerHTML = `<option value="">${appLanguage === "ar" ? "بلا ملاحظة" : "No note"}</option>${notes.map((note) => `<option value="${escapeHtml(note.id)}">${escapeHtml(note.title || "Untitled note")}</option>`).join("")}`;
+    document.getElementById("voice-note-link").innerHTML =
+      `<option value="">${appLanguage === "ar" ? "بلا ملاحظة" : "No note"}</option>${notes.map((note) => `<option value="${escapeHtml(note.id)}">${escapeHtml(note.title || "Untitled note")}</option>`).join("")}`;
     document.getElementById("voice-help").textContent = session
-      ? (appLanguage === "ar" ? "الحد الأقصى 10 دقائق. يُحفظ في مساحة خاصة بحسابك." : "Maximum length is 10 minutes. Saved to your private storage.")
-      : (appLanguage === "ar" ? "معاينة الضيف تُحفظ لهذه الجلسة فقط. سجّل الدخول للحفظ الدائم." : "Guest recordings stay in this browser session only. Sign in to save permanently.");
+      ? appLanguage === "ar"
+        ? "الحد الأقصى 10 دقائق. يُحفظ في مساحة خاصة بحسابك."
+        : "Maximum length is 10 minutes. Saved to your private storage."
+      : appLanguage === "ar"
+        ? "معاينة الضيف تُحفظ لهذه الجلسة فقط. سجّل الدخول للحفظ الدائم."
+        : "Guest recordings stay in this browser session only. Sign in to save permanently.";
     const modal = document.getElementById("voice-modal");
     modal.hidden = false;
     updateVoiceUi();
@@ -3761,7 +5772,10 @@
     const errorEl = document.getElementById("voice-error");
     errorEl.textContent = "";
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-      errorEl.textContent = appLanguage === "ar" ? "متصفحك لا يدعم تسجيل الصوت." : "Your browser does not support audio recording.";
+      errorEl.textContent =
+        appLanguage === "ar"
+          ? "متصفحك لا يدعم تسجيل الصوت."
+          : "Your browser does not support audio recording.";
       return;
     }
     if (voiceState === "ready") resetVoiceRecorder();
@@ -3778,18 +5792,36 @@
     } catch (error) {
       voiceState = "idle";
       updateVoiceUi();
-      const denied = error?.name === "NotAllowedError" || error?.name === "SecurityError";
+      const denied =
+        error?.name === "NotAllowedError" || error?.name === "SecurityError";
       errorEl.textContent = denied
-        ? (appLanguage === "ar" ? "تم رفض إذن الميكروفون. اسمح به من إعدادات المتصفح." : "Microphone permission was denied. Allow it in your browser settings and try again.")
-        : (appLanguage === "ar" ? `تعذر بدء التسجيل: ${error.message}` : `Could not start recording: ${error.message}`);
+        ? appLanguage === "ar"
+          ? "تم رفض إذن الميكروفون. اسمح به من إعدادات المتصفح."
+          : "Microphone permission was denied. Allow it in your browser settings and try again."
+        : appLanguage === "ar"
+          ? `تعذر بدء التسجيل: ${error.message}`
+          : `Could not start recording: ${error.message}`;
       return;
     }
-    const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
-    voiceMimeType = candidates.find((type) => window.MediaRecorder.isTypeSupported?.(type)) || "";
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+      "audio/ogg;codecs=opus",
+    ];
+    voiceMimeType =
+      candidates.find((type) => window.MediaRecorder.isTypeSupported?.(type)) ||
+      "";
     try {
-      voiceRecorder = new window.MediaRecorder(voiceStream, voiceMimeType ? { mimeType: voiceMimeType } : undefined);
+      voiceRecorder = new window.MediaRecorder(
+        voiceStream,
+        voiceMimeType ? { mimeType: voiceMimeType } : undefined,
+      );
     } catch (error) {
-      errorEl.textContent = appLanguage === "ar" ? "تعذر إنشاء مسجل الصوت." : "Could not create the audio recorder.";
+      errorEl.textContent =
+        appLanguage === "ar"
+          ? "تعذر إنشاء مسجل الصوت."
+          : "Could not create the audio recorder.";
       resetVoiceRecorder();
       updateVoiceUi();
       return;
@@ -3803,7 +5835,8 @@
     voicePauseStartedAt = 0;
     const activeRecorder = voiceRecorder;
     activeRecorder.addEventListener("dataavailable", (event) => {
-      if (voiceRecorder === activeRecorder && event.data?.size) voiceChunks.push(event.data);
+      if (voiceRecorder === activeRecorder && event.data?.size)
+        voiceChunks.push(event.data);
     });
     activeRecorder.addEventListener("stop", () => {
       if (voiceRecorder !== activeRecorder) return;
@@ -3811,10 +5844,17 @@
       if (voicePreviewUrl) URL.revokeObjectURL(voicePreviewUrl);
       voicePreviewUrl = URL.createObjectURL(voiceBlob);
       voiceDurationSeconds = Math.max(1, Math.round(voiceElapsedMs() / 1000));
-      if (voiceStream) { voiceStream.getTracks().forEach((track) => track.stop()); voiceStream = null; }
+      if (voiceStream) {
+        voiceStream.getTracks().forEach((track) => track.stop());
+        voiceStream = null;
+      }
       voiceState = "ready";
-      if (voiceTimerHandle) { window.clearInterval(voiceTimerHandle); voiceTimerHandle = null; }
-      document.getElementById("voice-timer").textContent = formatVoiceDuration(voiceDurationSeconds);
+      if (voiceTimerHandle) {
+        window.clearInterval(voiceTimerHandle);
+        voiceTimerHandle = null;
+      }
+      document.getElementById("voice-timer").textContent =
+        formatVoiceDuration(voiceDurationSeconds);
       updateVoiceUi();
     });
     voiceRecorder.start(250);
@@ -3823,7 +5863,8 @@
     if (voiceTimerHandle) window.clearInterval(voiceTimerHandle);
     voiceTimerHandle = window.setInterval(() => {
       const timer = document.getElementById("voice-timer");
-      if (timer) timer.textContent = formatVoiceDuration(voiceElapsedMs() / 1000);
+      if (timer)
+        timer.textContent = formatVoiceDuration(voiceElapsedMs() / 1000);
       if (voiceState === "recording" && voiceElapsedMs() >= 600000) {
         stopVoiceRecording();
       }
@@ -3851,7 +5892,11 @@
     voiceDurationSeconds = Math.max(1, Math.round(voiceElapsedMs() / 1000));
     voiceState = "processing";
     updateVoiceUi();
-    try { voiceRecorder.stop(); } catch (error) { console.error("Could not stop recording.", error); }
+    try {
+      voiceRecorder.stop();
+    } catch (error) {
+      console.error("Could not stop recording.", error);
+    }
   }
 
   function discardVoiceRecording() {
@@ -3863,7 +5908,9 @@
     if (!voiceBlob) return;
     const errorEl = document.getElementById("voice-error");
     errorEl.textContent = "";
-    const title = document.getElementById("voice-title").value.trim() || (appLanguage === "ar" ? "ملاحظة صوتية" : "Voice note");
+    const title =
+      document.getElementById("voice-title").value.trim() ||
+      (appLanguage === "ar" ? "ملاحظة صوتية" : "Voice note");
     const noteId = document.getElementById("voice-note-link").value || null;
     const saveButton = document.getElementById("voice-save");
     saveButton.disabled = true;
@@ -3881,41 +5928,70 @@
       resetVoiceRecorder({ keepPreview: true });
       document.getElementById("voice-modal").hidden = true;
       if (currentPage === "voice") render();
-      showToast(appLanguage === "ar" ? "تم حفظ المعاينة لهذه الجلسة فقط. سجّل الدخول للحفظ الدائم." : "Preview saved for this browser session only. Sign in to save permanently.");
+      showToast(
+        appLanguage === "ar"
+          ? "تم حفظ المعاينة لهذه الجلسة فقط. سجّل الدخول للحفظ الدائم."
+          : "Preview saved for this browser session only. Sign in to save permanently.",
+      );
       return;
     }
     try {
-      const extension = /mp4|m4a/.test(voiceMimeType) ? "m4a" : /ogg/.test(voiceMimeType) ? "ogg" : "webm";
-      const unique = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const extension = /mp4|m4a/.test(voiceMimeType)
+        ? "m4a"
+        : /ogg/.test(voiceMimeType)
+          ? "ogg"
+          : "webm";
+      const unique =
+        window.crypto?.randomUUID?.() ||
+        `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const path = `${session.user.id}/${unique}.${extension}`;
-      const upload = await supabase.storage.from("voice-notes").upload(path, voiceBlob, {
-        contentType: voiceMimeType || "audio/webm",
-        upsert: false,
-      });
+      const upload = await supabase.storage
+        .from("voice-notes")
+        .upload(path, voiceBlob, {
+          contentType: voiceMimeType || "audio/webm",
+          upsert: false,
+        });
       if (upload.error) throw upload.error;
-      const insert = await supabase.from("voice_notes").insert({
-        note_id: noteId,
-        title,
-        storage_path: path,
-        mime_type: voiceMimeType || "audio/webm",
-        duration_seconds: voiceDurationSeconds,
-        size_bytes: voiceBlob.size,
-      }).select("id,note_id,title,storage_path,mime_type,duration_seconds,size_bytes,transcript,transcription_status,created_at").single();
+      const insert = await supabase
+        .from("voice_notes")
+        .insert({
+          note_id: noteId,
+          title,
+          storage_path: path,
+          mime_type: voiceMimeType || "audio/webm",
+          duration_seconds: voiceDurationSeconds,
+          size_bytes: voiceBlob.size,
+        })
+        .select(
+          "id,note_id,title,storage_path,mime_type,duration_seconds,size_bytes,transcript,transcription_status,created_at",
+        )
+        .single();
       if (insert.error) {
         await supabase.storage.from("voice-notes").remove([path]);
         throw insert.error;
       }
-      const signed = await supabase.storage.from("voice-notes").createSignedUrl(path, 3600);
-      voiceNotes.unshift({ ...insert.data, signed_url: signed.error ? "" : signed.data?.signedUrl || "" });
+      const signed = await supabase.storage
+        .from("voice-notes")
+        .createSignedUrl(path, 3600);
+      voiceNotes.unshift({
+        ...insert.data,
+        signed_url: signed.error ? "" : signed.data?.signedUrl || "",
+      });
       document.getElementById("voice-modal").hidden = true;
       resetVoiceRecorder();
       if (currentPage === "voice") render();
-      showToast(appLanguage === "ar" ? "تم حفظ الملاحظة الصوتية." : "Voice note saved.");
+      showToast(
+        appLanguage === "ar" ? "تم حفظ الملاحظة الصوتية." : "Voice note saved.",
+      );
     } catch (error) {
       console.error("Could not save the voice note.", error);
       errorEl.textContent = isMissingRelation(error)
-        ? (appLanguage === "ar" ? "جدول الملاحظات الصوتية غير موجود. طبّق ملف الترحيل أولًا." : "The voice_notes table is missing. Apply the migration first.")
-        : (appLanguage === "ar" ? `تعذر حفظ التسجيل: ${error.message}` : `Could not save the recording: ${error.message}`);
+        ? appLanguage === "ar"
+          ? "جدول الملاحظات الصوتية غير موجود. طبّق ملف الترحيل أولًا."
+          : "The voice_notes table is missing. Apply the migration first."
+        : appLanguage === "ar"
+          ? `تعذر حفظ التسجيل: ${error.message}`
+          : `Could not save the recording: ${error.message}`;
       saveButton.disabled = false;
     }
   }
@@ -3923,12 +5999,21 @@
   async function renameVoiceNote(id) {
     const note = voiceNotes.find((item) => String(item.id) === String(id));
     if (!note) return;
-    const next = window.prompt(appLanguage === "ar" ? "اسم جديد للتسجيل" : "New recording title", note.title || "Voice note");
+    const next = window.prompt(
+      appLanguage === "ar" ? "اسم جديد للتسجيل" : "New recording title",
+      note.title || "Voice note",
+    );
     if (!next || !next.trim()) return;
     note.title = next.trim().slice(0, 180);
     if (!note.local) {
-      const { error } = await supabase.from("voice_notes").update({ title: note.title }).eq("id", note.id);
-      if (error) { showToast(error.message); return; }
+      const { error } = await supabase
+        .from("voice_notes")
+        .update({ title: note.title })
+        .eq("id", note.id);
+      if (error) {
+        showToast(error.message);
+        return;
+      }
     }
     render();
   }
@@ -3936,24 +6021,36 @@
   async function deleteVoiceNote(id) {
     const note = voiceNotes.find((item) => String(item.id) === String(id));
     if (!note) return;
-    if (!window.confirm(appLanguage === "ar" ? "حذف هذا التسجيل؟" : "Delete this recording?")) return;
+    if (
+      !window.confirm(
+        appLanguage === "ar" ? "حذف هذا التسجيل؟" : "Delete this recording?",
+      )
+    )
+      return;
     try {
       if (!note.local) {
-        const { error } = await supabase.from("voice_notes").delete().eq("id", note.id);
+        const { error } = await supabase
+          .from("voice_notes")
+          .delete()
+          .eq("id", note.id);
         if (error) throw error;
         await supabase.storage.from("voice-notes").remove([note.storage_path]);
       }
       if (note.local_url) URL.revokeObjectURL(note.local_url);
       voiceNotes = voiceNotes.filter((item) => String(item.id) !== String(id));
       render();
-      showToast(appLanguage === "ar" ? "تم حذف التسجيل." : "Recording deleted.");
+      showToast(
+        appLanguage === "ar" ? "تم حذف التسجيل." : "Recording deleted.",
+      );
     } catch (error) {
       showToast(error.message);
     }
   }
 
   function minutesFromTime(value) {
-    const [hours, minutes] = String(value || "").split(":").map(Number);
+    const [hours, minutes] = String(value || "")
+      .split(":")
+      .map(Number);
     if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
     return hours * 60 + minutes;
   }
@@ -3965,14 +6062,19 @@
     if (start == null || end == null || start === end) return false;
     const now = new Date();
     const current = now.getHours() * 60 + now.getMinutes();
-    return start < end ? current >= start && current < end : current >= start || current < end;
+    return start < end
+      ? current >= start && current < end
+      : current >= start || current < end;
   }
 
   const ALERT_SOUNDS = [
     {
       id: "focus-start",
       label: { en: "Focus start", ar: "بداية التركيز" },
-      description: { en: "Two-note signal that a focus session has begun.", ar: "نغمة من فتحتين واضحة تعلن بدء جلسة التركيز." },
+      description: {
+        en: "Two-note signal that a focus session has begun.",
+        ar: "نغمة من فتحتين واضحة تعلن بدء جلسة التركيز.",
+      },
       pattern: {
         durationMs: 560,
         tones: [
@@ -3984,31 +6086,49 @@
     {
       id: "focus-end",
       label: { en: "Focus end", ar: "نهاية التركيز" },
-      description: { en: "Deep tone that marks a focus session or Pomodoro cycle as complete.", ar: "نغمة عميقة تميّز اكتمال جلسة التركيز أو دورة البومودورو." },
+      description: {
+        en: "Deep tone that marks a focus session or Pomodoro cycle as complete.",
+        ar: "نغمة عميقة تميّز اكتمال جلسة التركيز أو دورة البومودورو.",
+      },
       pattern: {
         durationMs: 1400,
-        tones: [ { frequency: 329.63, endFrequency: 246.94, start: 0, duration: 1.2 } ],
+        tones: [
+          { frequency: 329.63, endFrequency: 246.94, start: 0, duration: 1.2 },
+        ],
       },
     },
     {
       id: "task-reminder",
       label: { en: "Task reminder", ar: "تذكير المهمة" },
-      description: { en: "Two-note alert that pulls a task or appointment back into focus.", ar: "تنبيه من فتحتين يسترجع المهمة أو الموعد إلى التركيز." },
+      description: {
+        en: "Two-note alert that pulls a task or appointment back into focus.",
+        ar: "تنبيه من فتحتين يسترجع المهمة أو الموعد إلى التركيز.",
+      },
       pattern: {
         durationMs: 900,
         tones: [
           { frequency: 659.25, endFrequency: 830.61, start: 0, duration: 0.32 },
-          { frequency: 830.61, endFrequency: 987.77, start: 0.32, duration: 0.42 },
+          {
+            frequency: 830.61,
+            endFrequency: 987.77,
+            start: 0.32,
+            duration: 0.42,
+          },
         ],
       },
     },
     {
       id: "break-end",
       label: { en: "Break end", ar: "نهاية الاستراحة" },
-      description: { en: "Soft tone that ends a break and prepares the next focus block.", ar: "نغمة هادئة تنهي الاستراحة وتجهز الجلسة القادمة." },
+      description: {
+        en: "Soft tone that ends a break and prepares the next focus block.",
+        ar: "نغمة هادئة تنهي الاستراحة وتجهز الجلسة القادمة.",
+      },
       pattern: {
         durationMs: 1000,
-        tones: [ { frequency: 493.88, endFrequency: 440, start: 0, duration: 0.9 } ],
+        tones: [
+          { frequency: 493.88, endFrequency: 440, start: 0, duration: 0.9 },
+        ],
       },
     },
   ];
@@ -4017,6 +6137,7 @@
   let alertAudioMaster = null;
   let alertAudioSources = [];
   let alertAudioRepeatHandle = null;
+  let alertAudioStopHandle = null;
   let alertSnoozeTimer = null;
   let lastAlertSound = { soundId: "task-reminder", volume: 80, duration: 5 };
   let activeAlertKey = null;
@@ -4037,7 +6158,11 @@
     const context = ensureAlertAudioContext();
     if (!context) return null;
     if (context.state === "suspended") {
-      try { await context.resume(); } catch { /* keep the current context */ }
+      try {
+        await context.resume();
+      } catch {
+        /* keep the current context */
+      }
     }
     return context;
   }
@@ -4047,8 +6172,21 @@
       window.clearTimeout(alertAudioRepeatHandle);
       alertAudioRepeatHandle = null;
     }
+    if (alertAudioStopHandle) {
+      window.clearTimeout(alertAudioStopHandle);
+      alertAudioStopHandle = null;
+    }
     for (const source of alertAudioSources) {
-      try { source.stop(); } catch { /* already stopped */ }
+      try {
+        source.stop(0);
+      } catch {
+        /* already stopped */
+      }
+      try {
+        source.disconnect();
+      } catch {
+        /* already disconnected */
+      }
     }
     alertAudioSources = [];
   }
@@ -4056,7 +6194,11 @@
   function startAlert({ key, soundId, volume, duration, repeat } = {}) {
     stopAlertAudio();
     activeAlertKey = key || null;
-    lastAlertSound = { soundId: soundId || "task-reminder", volume: volume || 80, duration: duration || 5 };
+    lastAlertSound = {
+      soundId: soundId || "task-reminder",
+      volume: volume || 80,
+      duration: duration || 5,
+    };
     void playAlertSound({ soundId, volume, duration, repeat }).then(() => {
       if (activeAlertKey !== key) stopAlertAudio();
     });
@@ -4066,58 +6208,91 @@
   function snoozeActiveAlert(minutes = 5) {
     stopAlertAudio();
     if (alertSnoozeTimer) window.clearTimeout(alertSnoozeTimer);
-    alertSnoozeTimer = window.setTimeout(() => {
-      alertSnoozeTimer = null;
-      void playAlertSound({ ...lastAlertSound, repeat: false });
-    }, Math.max(1, minutes) * 60000);
+    alertSnoozeTimer = window.setTimeout(
+      () => {
+        alertSnoozeTimer = null;
+        void playAlertSound({ ...lastAlertSound, repeat: false });
+      },
+      Math.max(1, minutes) * 60000,
+    );
   }
 
   async function playAlertSound({ soundId, volume, duration, repeat } = {}) {
     const context = await unlockAlertAudio();
     if (!context || !alertAudioMaster) return;
-    const sound = ALERT_SOUNDS.find((item) => item.id === soundId) || ALERT_SOUNDS[ALERT_SOUNDS.length - 1];
+    const sound =
+      ALERT_SOUNDS.find((item) => item.id === soundId) ||
+      ALERT_SOUNDS[ALERT_SOUNDS.length - 1];
     const pattern = sound.pattern;
     const volumeValue = Math.max(0, Math.min(100, Number(volume) || 80)) / 100;
-    const iterationDurationMs = pattern.durationMs * 1000;
-    const playDurationMs = repeat === true
-      ? iterationDurationMs
-      : Math.max(iterationDurationMs, Number(duration) > 0 ? Number(duration) * 1000 : iterationDurationMs);
+    // Web Audio يعمل بالثواني، لذلك نحوّل كل القيم إلى ثوانٍ قبل الجدولة.
+    const iterationSeconds = pattern.durationMs / 1000;
+    const playSeconds = Math.max(
+      iterationSeconds,
+      Number(duration) > 0 ? Number(duration) : iterationSeconds,
+    );
 
-    if (alertAudioRepeatHandle) window.clearTimeout(alertAudioRepeatHandle);
-    alertAudioSources = [];
+    stopAlertAudio();
     alertAudioMaster.gain.cancelScheduledValues(context.currentTime);
-    alertAudioMaster.gain.setValueAtTime(Math.max(volumeValue * 0.9, 0.0001), context.currentTime);
-    alertAudioMaster.gain.exponentialRampToValueAtTime(Math.max(volumeValue * 0.9, 0.0001), context.currentTime + 0.05);
+    alertAudioMaster.gain.setValueAtTime(
+      Math.max(volumeValue * 0.9, 0.0001),
+      context.currentTime,
+    );
+    alertAudioMaster.gain.exponentialRampToValueAtTime(
+      Math.max(volumeValue * 0.9, 0.0001),
+      context.currentTime + 0.05,
+    );
 
-    const runIteration = (contextNow) => {
-      let cursor = contextNow;
+    const startTime = context.currentTime + 0.02;
+    const endTime = startTime + playSeconds;
+    const iterations =
+      repeat === true
+        ? Math.max(1, Math.ceil(playSeconds / iterationSeconds))
+        : 1;
+
+    // نجدول كل النغمات مقدماً ونضع لكل منها وقت إيقاف صريح داخل المدة.
+    for (let index = 0; index < iterations; index += 1) {
+      const iterationStart = startTime + index * iterationSeconds;
+      if (iterationStart >= endTime) break;
       for (const tone of pattern.tones) {
-        const startAt = contextNow + tone.start * 1000;
+        const toneStart = iterationStart + tone.start;
+        const toneEnd = Math.min(toneStart + tone.duration, endTime);
+        if (toneStart >= endTime || toneEnd <= toneStart) continue;
         const oscillator = context.createOscillator();
         const gain = context.createGain();
         oscillator.type = "sine";
-        oscillator.frequency.setValueAtTime(tone.frequency, startAt);
-        if (tone.endFrequency) oscillator.frequency.exponentialRampToValueAtTime(Math.max(tone.endFrequency, 1), startAt + tone.duration * 1000);
-        gain.gain.setValueAtTime(0.0001, startAt);
-        gain.gain.exponentialRampToValueAtTime(Math.max(volumeValue * 0.9, 0.0001), startAt + 0.015);
-        gain.gain.setValueAtTime(Math.max(volumeValue * 0.9, 0.0001), startAt + Math.max(tone.duration * 1000 - 0.015, 0.001));
-        gain.gain.exponentialRampToValueAtTime(0.0001, startAt + tone.duration * 1000);
+        oscillator.frequency.setValueAtTime(tone.frequency, toneStart);
+        if (tone.endFrequency)
+          oscillator.frequency.exponentialRampToValueAtTime(
+            Math.max(tone.endFrequency, 1),
+            toneEnd,
+          );
+        gain.gain.setValueAtTime(0.0001, toneStart);
+        gain.gain.exponentialRampToValueAtTime(
+          Math.max(volumeValue * 0.9, 0.0001),
+          toneStart + 0.015,
+        );
+        gain.gain.setValueAtTime(
+          Math.max(volumeValue * 0.9, 0.0001),
+          Math.max(toneEnd - 0.015, toneStart + 0.001),
+        );
+        gain.gain.exponentialRampToValueAtTime(0.0001, toneEnd);
         oscillator.connect(gain);
         gain.connect(alertAudioMaster);
-        oscillator.start(startAt);
-        oscillator.stop(startAt + tone.duration * 1000);
+        oscillator.start(toneStart);
+        oscillator.stop(toneEnd);
         alertAudioSources.push(oscillator);
       }
-      const lastTone = pattern.tones[pattern.tones.length - 1];
-      const endAt = contextNow + lastTone.start * 1000 + lastTone.duration * 1000;
-      const stopInMs = Math.max(0, (repeat === true ? iterationDurationMs : playDurationMs) - (endAt - contextNow));
-      if (repeat === true) {
-        alertAudioRepeatHandle = window.setTimeout(() => runIteration(context.currentTime + iterationDurationMs), iterationDurationMs);
-      }
-      if (repeat !== true && stopInMs > 0) window.setTimeout(() => stopAlertAudio(), stopInMs);
-    };
+    }
 
-    runIteration(context.currentTime);
+    // تنظيف إضافي احتياطي بعد انتهاء النافذة الزمنية.
+    alertAudioStopHandle = window.setTimeout(
+      () => {
+        alertAudioStopHandle = null;
+        stopAlertAudio();
+      },
+      playSeconds * 1000 + 120,
+    );
   }
 
   async function previewAlertSound(soundId) {
@@ -4145,7 +6320,7 @@
           <label>${appLanguage === "ar" ? "من" : "From"}<input type="time" name="dnd_start" value="${escapeHtml(notificationPrefs.start)}" /></label>
           <label>${appLanguage === "ar" ? "إلى" : "To"}<input type="time" name="dnd_end" value="${escapeHtml(notificationPrefs.end)}" /></label>
         </div>
-        <p class="data-caption">${dndActive ? (appLanguage === "ar" ? "وضع عدم الإزعاج نشط الآن، لذلك لن تُشغّل الأصوات." : "Do not disturb is active right now, so sounds are suppressed.") : (appLanguage === "ar" ? "تُطبّق هذه الإعدادات في هذا المتصفح وتحفظ في حسابك عند توفر الجدول." : "These preferences apply in this browser and sync to your account when the preferences table is available.")}</p>
+        <p class="data-caption">${dndActive ? (appLanguage === "ar" ? "وضع عدم الإزعاج نشط الآن، لذلك لن تُشغّل الأصوات." : "Do not disturb is active right now, so sounds are suppressed.") : appLanguage === "ar" ? "تُطبّق هذه الإعدادات في هذا المتصفح وتحفظ في حسابك عند توفر الجدول." : "These preferences apply in this browser and sync to your account when the preferences table is available."}</p>
         <button class="button button-primary button-small" type="submit">${appLanguage === "ar" ? "حفظ إعدادات الإشعارات" : "Save notification settings"}</button>
         <div class="task-sound-settings">
           <div class="form-row">
@@ -4171,37 +6346,67 @@
       taskDuration: Number(formData.get("taskDuration") || 5),
       taskRepeat: formData.get("taskRepeat") === "on",
     };
-    localStorage.setItem(notificationPrefsKey, JSON.stringify(notificationPrefs));
+    localStorage.setItem(
+      notificationPrefsKey,
+      JSON.stringify(notificationPrefs),
+    );
     if (supabase && session) {
-      const { error } = await supabase.from("user_notification_preferences").upsert({
-        user_id: session.user.id,
-        sound_enabled: notificationPrefs.sound,
-        dnd_enabled: notificationPrefs.dnd,
-        dnd_start: notificationPrefs.start,
-        dnd_end: notificationPrefs.end,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "user_id" });
+      const { error } = await supabase
+        .from("user_notification_preferences")
+        .upsert(
+          {
+            user_id: session.user.id,
+            sound_enabled: notificationPrefs.sound,
+            dnd_enabled: notificationPrefs.dnd,
+            dnd_start: notificationPrefs.start,
+            dnd_end: notificationPrefs.end,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id" },
+        );
       if (error && !isMissingRelation(error)) throw error;
     }
     render();
-    showToast(appLanguage === "ar" ? "تم حفظ إعدادات الإشعارات." : "Notification settings saved.");
+    showToast(
+      appLanguage === "ar"
+        ? "تم حفظ إعدادات الإشعارات."
+        : "Notification settings saved.",
+    );
   }
 
   async function enableTaskNotifications() {
-    if (!supabase || !session) throw new Error("Sign in to enable task notifications.");
+    if (!supabase || !session)
+      throw new Error("Sign in to enable task notifications.");
     const vapidPublicKey = window.studyFlowSupabaseConfig?.vapidPublicKey;
-    if (!vapidPublicKey) throw new Error("Daily push is not configured yet. Ask your administrator to finish the VAPID setup.");
-    if (!window.isSecureContext || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
-      throw new Error("Push notifications require a supported browser and HTTPS (localhost is supported for development).");
+    if (!vapidPublicKey)
+      throw new Error(
+        "Daily push is not configured yet. Ask your administrator to finish the VAPID setup.",
+      );
+    if (
+      !window.isSecureContext ||
+      !("serviceWorker" in navigator) ||
+      !("PushManager" in window) ||
+      !("Notification" in window)
+    ) {
+      throw new Error(
+        "Push notifications require a supported browser and HTTPS (localhost is supported for development).",
+      );
     }
-    const permission = Notification.permission === "granted" ? Notification.permission : await Notification.requestPermission();
-    if (permission !== "granted") throw new Error("Notification permission is required to enable task notifications.");
+    const permission =
+      Notification.permission === "granted"
+        ? Notification.permission
+        : await Notification.requestPermission();
+    if (permission !== "granted")
+      throw new Error(
+        "Notification permission is required to enable task notifications.",
+      );
     const registration = await navigator.serviceWorker.ready;
-    const subscription = await registration.pushManager.getSubscription()
-      || await registration.pushManager.subscribe({
+    const subscription =
+      (await registration.pushManager.getSubscription()) ||
+      (await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: vapidApplicationServerKey(vapidPublicKey),
-      });
+      }));
     const serialized = subscription.toJSON();
     const p256dh = serialized.keys?.p256dh;
     const authSecret = serialized.keys?.auth;
@@ -4211,47 +6416,83 @@
     }
     if (!isSupportedPushEndpoint(subscription.endpoint)) {
       await subscription.unsubscribe();
-      throw new Error("This browser's push service is not currently supported.");
+      throw new Error(
+        "This browser's push service is not currently supported.",
+      );
     }
-    const { error } = await supabase.from("push_subscriptions").upsert({
-      user_id: session.user.id,
-      endpoint: subscription.endpoint,
-      p256dh,
-      auth_secret: authSecret,
-    }, { onConflict: "user_id,endpoint" });
+    const { error } = await supabase.from("push_subscriptions").upsert(
+      {
+        user_id: session.user.id,
+        endpoint: subscription.endpoint,
+        p256dh,
+        auth_secret: authSecret,
+      },
+      { onConflict: "user_id,endpoint" },
+    );
     if (error) {
       await subscription.unsubscribe();
       throw error;
     }
     const localTime = String(dailyReminderPreference.local_time || "09:00");
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-    const { error: reminderError } = await supabase.from("daily_reminder_preferences").upsert({
-      user_id: session.user.id,
+    const { error: reminderError } = await supabase
+      .from("daily_reminder_preferences")
+      .upsert(
+        {
+          user_id: session.user.id,
+          enabled: true,
+          local_time: localTime,
+          timezone,
+        },
+        { onConflict: "user_id" },
+      );
+    if (reminderError) throw reminderError;
+    dailyReminderPreference = {
       enabled: true,
       local_time: localTime,
       timezone,
-    }, { onConflict: "user_id" });
-    if (reminderError) throw reminderError;
-    dailyReminderPreference = { enabled: true, local_time: localTime, timezone };
+    };
     render();
-    showToast(appLanguage === "ar" ? "تم تفعيل إشعارات المهام." : "Task notifications enabled.");
+    showToast(
+      appLanguage === "ar"
+        ? "تم تفعيل إشعارات المهام."
+        : "Task notifications enabled.",
+    );
   }
 
   function notificationsPage() {
     const items = session ? userNotifications : [];
-    const rows = items.map((item) => `<article class="notification-card ${item.read_at ? "" : "unread"}"><i class="notification-indicator"></i><div><strong dir="auto">${escapeHtml(item.title)}</strong><p dir="auto">${escapeHtml(item.message)}</p></div><time dir="auto">${escapeHtml(new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.created_at)))}</time></article>`).join("");
+    const rows = items
+      .map(
+        (item) =>
+          `<article class="notification-card ${item.read_at ? "" : "unread"}"><i class="notification-indicator"></i><div><strong dir="auto">${escapeHtml(item.title)}</strong><p dir="auto">${escapeHtml(item.message)}</p></div><time dir="auto">${escapeHtml(new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.created_at)))}</time></article>`,
+      )
+      .join("");
     const empty = `<div class="empty-state"><strong>${session ? "All caught up" : "Sign in to sync notifications"}</strong>${session ? "Deadline reminders will appear here when generated." : "Your private deadline notifications are attached to your account."}</div>`;
     const dndActive = isDoNotDisturbActive();
     const soundLabel = notificationPrefs.sound
-      ? (dndActive ? (appLanguage === "ar" ? "الصوت مكتوم الآن (عدم الإزعاج)" : "Sound is muted right now (do not disturb)") : (appLanguage === "ar" ? "صوت الإشعارات مفعّل" : "Notification sound is on"))
-      : (appLanguage === "ar" ? "صوت الإشعارات متوقف" : "Notification sound is off");
+      ? dndActive
+        ? appLanguage === "ar"
+          ? "الصوت مكتوم الآن (عدم الإزعاج)"
+          : "Sound is muted right now (do not disturb)"
+        : appLanguage === "ar"
+          ? "صوت الإشعارات مفعّل"
+          : "Notification sound is on"
+      : appLanguage === "ar"
+        ? "صوت الإشعارات متوقف"
+        : "Notification sound is off";
     return `${pageHeading("UPDATES", appLanguage === "ar" ? "الإشعارات" : "Notifications", appLanguage === "ar" ? "مكان هادئ للتذكيرات والإنجازات والتحديثات المهمة." : "A quiet place for reminders, milestones, and important updates.", `<button class="button button-secondary button-small" data-navigate="settings">${appLanguage === "ar" ? "إعدادات الصوت" : "Sound settings"}</button><button class="button button-secondary button-small" data-action="mark-notifications-read" ${items.every((item) => item.read_at) ? "disabled" : ""}>${appLanguage === "ar" ? "تعليم الكل كمقروء" : "Mark all read"}</button>`)}<p class="data-caption notification-sound-state">${escapeHtml(soundLabel)}</p><section class="panel"><div class="notification-list">${rows || empty}</div>${session ? `<div class="notifications-actions"><button class="button button-primary button-small" data-action="notifications-enable-task-reminders">${appLanguage === "ar" ? "تفعيل إشعارات المهام" : "Enable task notifications"}</button></div>` : ""}</section>`;
   }
 
   function profilePage() {
-    const displayName = accountProfile?.display_name || session?.user?.user_metadata?.full_name || "Alex Morgan";
+    const displayName =
+      accountProfile?.display_name ||
+      session?.user?.user_metadata?.full_name ||
+      "Alex Morgan";
     const email = session?.user?.email || "Student account";
-    const timezone = accountProfile?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const timezone =
+      accountProfile?.timezone ||
+      Intl.DateTimeFormat().resolvedOptions().timeZone;
     const avatar = accountProfile?.avatar_display_url
       ? `<img src="${escapeHtml(accountProfile.avatar_display_url)}" alt="" referrerpolicy="no-referrer">`
       : initials(displayName);
@@ -4263,7 +6504,12 @@
       ["full", "Full Motion", "Layered transitions and celebrations"],
       ["reduced", "Reduced Motion", "Short, gentle transitions"],
       ["off", "Motion Off", "Disable nonessential animation"],
-    ].map(([level, title, description]) => `<button class="motion-option ${motionLevel === level ? "selected" : ""}" type="button" data-motion-level="${level}" aria-pressed="${motionLevel === level}"><strong>${title}</strong><small>${description}</small></button>`).join("");
+    ]
+      .map(
+        ([level, title, description]) =>
+          `<button class="motion-option ${motionLevel === level ? "selected" : ""}" type="button" data-motion-level="${level}" aria-pressed="${motionLevel === level}"><strong>${title}</strong><small>${description}</small></button>`,
+      )
+      .join("");
     const reminderForm = session
       ? `<form id="daily-reminder-form" class="form-stack daily-reminder-form"><label class="focus-setting-toggle"><span>${translateUiText("Enable push reminders")}</span><input type="checkbox" name="enabled" ${dailyReminderPreference.enabled ? "checked" : ""}><i aria-hidden="true"></i></label><p class="data-caption">${translateUiText("Get a daily task check-in plus deadline and achievement notifications, even when Study Zone is closed.")}</p><label>${translateUiText("Reminder time")}<input type="time" name="local_time" value="${escapeHtml(String(dailyReminderPreference.local_time || "09:00").slice(0, 5))}" required></label><small>${translateUiText("Uses this device’s timezone.")}</small><button class="button button-primary button-small" type="submit">${translateUiText("Save reminder")}</button><p class="data-caption">${translateUiText("Push reminders need notification permission and the server setup described in README.md.")}</p><p class="form-error" data-reminder-error role="alert"></p></form>`
       : `<p class="data-caption">${translateUiText("Sign in to configure daily reminders.")}</p>`;
@@ -4274,12 +6520,20 @@
     if (!value) return "—";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "—";
-    return new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "medium" }).format(date);
+    return new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", {
+      dateStyle: "medium",
+    }).format(date);
   }
 
   async function loadAdminUsers() {
     const userId = session?.user?.id;
-    if (!supabase || !userId || adminAuthorization.status !== "authorized" || adminAuthorization.userId !== userId) return;
+    if (
+      !supabase ||
+      !userId ||
+      adminAuthorization.status !== "authorized" ||
+      adminAuthorization.userId !== userId
+    )
+      return;
     const requestId = ++adminUsersRequest;
     adminUsersLoading = true;
     adminUsersError = "";
@@ -4304,12 +6558,24 @@
   }
 
   function adminPage() {
-    if (!session || adminAuthorization.status !== "authorized" || adminAuthorization.userId !== session.user.id) {
+    if (
+      !session ||
+      adminAuthorization.status !== "authorized" ||
+      adminAuthorization.userId !== session.user.id
+    ) {
       return adminAccessPage();
     }
-    const users = adminUsers.map((user) => `<tr><td><strong>${escapeHtml(user.display_name || "Student")}</strong><small>${escapeHtml(user.email || "—")}</small></td><td>${escapeHtml(translateUiText(user.role || "student"))}</td><td>${escapeHtml(formatAdminDate(user.created_at))}</td><td>${escapeHtml(formatAdminDate(user.last_sign_in_at))}</td><td><span class="admin-user-status ${user.email_confirmed_at ? "confirmed" : "unconfirmed"}">${user.email_confirmed_at ? translateUiText("Confirmed") : translateUiText("Pending confirmation")}</span></td></tr>`).join("");
+    const users = adminUsers
+      .map(
+        (user) =>
+          `<tr><td><strong>${escapeHtml(user.display_name || "Student")}</strong><small>${escapeHtml(user.email || "—")}</small></td><td>${escapeHtml(translateUiText(user.role || "student"))}</td><td>${escapeHtml(formatAdminDate(user.created_at))}</td><td>${escapeHtml(formatAdminDate(user.last_sign_in_at))}</td><td><span class="admin-user-status ${user.email_confirmed_at ? "confirmed" : "unconfirmed"}">${user.email_confirmed_at ? translateUiText("Confirmed") : translateUiText("Pending confirmation")}</span></td></tr>`,
+      )
+      .join("");
     const from = adminUsersTotal ? adminUsersPage * adminUsersPageSize + 1 : 0;
-    const to = Math.min((adminUsersPage + 1) * adminUsersPageSize, adminUsersTotal);
+    const to = Math.min(
+      (adminUsersPage + 1) * adminUsersPageSize,
+      adminUsersTotal,
+    );
     const content = adminUsersLoading
       ? `<div class="empty-state" role="status">${translateUiText("Loading users…")}</div>`
       : adminUsersError
@@ -4321,32 +6587,66 @@
   }
 
   function adminAccessPage() {
-    const message = adminAuthorization.status === "checking" || adminAuthorization.status === "unknown"
-      ? "Checking administrator access…"
-      : adminAuthorization.status === "error"
-        ? "Could not verify administrator access."
-        : "Administrator access denied.";
+    const message =
+      adminAuthorization.status === "checking" ||
+      adminAuthorization.status === "unknown"
+        ? "Checking administrator access…"
+        : adminAuthorization.status === "error"
+          ? "Could not verify administrator access."
+          : "Administrator access denied.";
     return `${pageHeading("ADMINISTRATION", "Admin dashboard", "Protected operational metrics and account administration.", "")}<section class="panel" role="status" aria-live="polite"><p class="panel-copy">${translateUiText(message)}</p></section>`;
   }
 
   const pageRenderers = {
-    dashboard: dashboardPage, planner: plannerPage, tasks: taskPage, deadlines: deadlinesPage, subjects: subjectsPage,
-    files: filesPage, notes: notesPage, voice: voicePage, teams: teamsPage, focus: focusPage, analytics: analyticsPage,
-    goals: goalsPage, exams: examsPage, achievements: achievementsPage,
-    notifications: notificationsPage, profile: profilePage, settings: settingsPage, admin: adminPage,
+    dashboard: dashboardPage,
+    planner: plannerPage,
+    tasks: taskPage,
+    deadlines: deadlinesPage,
+    subjects: subjectsPage,
+    files: filesPage,
+    notes: notesPage,
+    voice: voicePage,
+    teams: teamsPage,
+    focus: focusPage,
+    analytics: analyticsPage,
+    goals: goalsPage,
+    exams: examsPage,
+    achievements: achievementsPage,
+    notifications: notificationsPage,
+    profile: profilePage,
+    settings: settingsPage,
+    admin: adminPage,
   };
   const pageTitles = {
-    dashboard: "Dashboard", planner: "Study planner", tasks: "Tasks", deadlines: "Deadlines", subjects: "Subjects",
-    files: "Study files", notes: "Notes", voice: "Voice notes", teams: "Teams", focus: "Focus timer", analytics: "Analytics",
-    goals: "Goals", exams: "Exams & results", achievements: "Achievements",
-    notifications: "Notifications", profile: "Profile", settings: "Settings", admin: "Admin",
+    dashboard: "Dashboard",
+    planner: "Study planner",
+    tasks: "Tasks",
+    deadlines: "Deadlines",
+    subjects: "Subjects",
+    files: "Study files",
+    notes: "Notes",
+    voice: "Voice notes",
+    teams: "Teams",
+    focus: "Focus timer",
+    analytics: "Analytics",
+    goals: "Goals",
+    exams: "Exams & results",
+    achievements: "Achievements",
+    notifications: "Notifications",
+    profile: "Profile",
+    settings: "Settings",
+    admin: "Admin",
   };
 
   function updateScrollProgress() {
     const root = document.documentElement;
     const range = root.scrollHeight - window.innerHeight;
-    const progress = range > 0 ? Math.min(1, Math.max(0, window.scrollY / range)) : 0;
-    document.documentElement.style.setProperty("--scroll-progress", String(progress));
+    const progress =
+      range > 0 ? Math.min(1, Math.max(0, window.scrollY / range)) : 0;
+    document.documentElement.style.setProperty(
+      "--scroll-progress",
+      String(progress),
+    );
     const indicator = document.getElementById("scroll-progress");
     if (indicator) indicator.style.transform = `scaleX(${progress})`;
   }
@@ -4384,7 +6684,10 @@
       scheduledRenderHandle = 0;
     }
     if (!pageRenderers[currentPage]) currentPage = "dashboard";
-    document.body.classList.toggle("focus-distraction", currentPage === "focus" && distractionFree);
+    document.body.classList.toggle(
+      "focus-distraction",
+      currentPage === "focus" && distractionFree,
+    );
     document.documentElement.lang = appLanguage;
     document.documentElement.dir = appLanguage === "ar" ? "rtl" : "ltr";
     document.documentElement.dataset.motion = motionLevel;
@@ -4404,90 +6707,128 @@
         if (!targetWidth || targetWidth === "0%") return;
         fill.style.width = "0%";
         requestAnimationFrame(() => {
-          if (fill.isConnected && document.visibilityState === "visible") fill.style.width = targetWidth;
+          if (fill.isConnected && document.visibilityState === "visible")
+            fill.style.width = targetWidth;
         });
       });
     }
-    document.getElementById("page-crumb").textContent = currentPage === "deadlines" ? deadlineText[appLanguage].title : pageTitles[currentPage];
+    document.getElementById("page-crumb").textContent =
+      currentPage === "deadlines"
+        ? deadlineText[appLanguage].title
+        : pageTitles[currentPage];
     document.querySelectorAll(".nav-link[data-page]").forEach((link) => {
       link.classList.toggle("active", link.dataset.page === currentPage);
     });
-    document.getElementById("task-count").textContent = String(tasks.filter((task) => task.status !== "completed").length);
-    document.getElementById("deadline-count").textContent = String(getDeadlines().filter((deadline) => getDeadlineStatus(deadline) !== "completed").length);
-    document.getElementById("today-date").textContent = new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { weekday: "short", month: "short", day: "numeric" }).format(new Date());
+    document.getElementById("task-count").textContent = String(
+      tasks.filter((task) => task.status !== "completed").length,
+    );
+    document.getElementById("deadline-count").textContent = String(
+      getDeadlines().filter(
+        (deadline) => getDeadlineStatus(deadline) !== "completed",
+      ).length,
+    );
+    document.getElementById("today-date").textContent = new Intl.DateTimeFormat(
+      appLanguage === "ar" ? "ar-EG" : "en",
+      { weekday: "short", month: "short", day: "numeric" },
+    ).format(new Date());
     updateStreakSidebar();
     updateAdminNavigation();
     if (currentPage === "tasks") {
-      document.getElementById("task-search")?.addEventListener("input", (event) => {
-        searchTerm = event.target.value;
-        const cursor = event.target.selectionStart;
-        render();
-        const input = document.getElementById("task-search");
-        input.focus();
-        input.setSelectionRange(cursor, cursor);
-      });
-      document.getElementById("task-filter")?.addEventListener("change", (event) => {
-        statusFilter = event.target.value;
-        render();
-      });
-      document.getElementById("task-date")?.addEventListener("change", (event) => {
-        const nextDate = parseLocalDateKey(event.target.value);
-        if (nextDate) {
-          taskViewDate = nextDate;
-          taskViewMode = "day";
+      document
+        .getElementById("task-search")
+        ?.addEventListener("input", (event) => {
+          searchTerm = event.target.value;
+          const cursor = event.target.selectionStart;
           render();
-        }
-      });
+          const input = document.getElementById("task-search");
+          input.focus();
+          input.setSelectionRange(cursor, cursor);
+        });
+      document
+        .getElementById("task-filter")
+        ?.addEventListener("change", (event) => {
+          statusFilter = event.target.value;
+          render();
+        });
+      document
+        .getElementById("task-date")
+        ?.addEventListener("change", (event) => {
+          const nextDate = parseLocalDateKey(event.target.value);
+          if (nextDate) {
+            taskViewDate = nextDate;
+            taskViewMode = "day";
+            render();
+          }
+        });
     }
     if (currentPage === "admin" && adminAuthorization.status === "authorized") {
-      document.getElementById("admin-users-search")?.addEventListener("submit", (event) => {
-        event.preventDefault();
-        adminUsersSearch = String(new FormData(event.currentTarget).get("search") || "").trim();
-        adminUsersPage = 0;
-        void loadAdminUsers();
-      });
+      document
+        .getElementById("admin-users-search")
+        ?.addEventListener("submit", (event) => {
+          event.preventDefault();
+          adminUsersSearch = String(
+            new FormData(event.currentTarget).get("search") || "",
+          ).trim();
+          adminUsersPage = 0;
+          void loadAdminUsers();
+        });
     }
     if (currentPage === "focus") {
       attachFocusListeners();
       updateTimerUi();
     }
     if (currentPage === "deadlines") {
-      document.getElementById("deadline-search")?.addEventListener("input", (event) => {
-        deadlineSearch = event.target.value;
-        const cursor = event.target.selectionStart;
-        render();
-        const input = document.getElementById("deadline-search");
-        input.focus();
-        input.setSelectionRange(cursor, cursor);
-      });
-      document.getElementById("deadline-sort")?.addEventListener("change", (event) => {
-        deadlineSort = event.target.value;
-        render();
-      });
+      document
+        .getElementById("deadline-search")
+        ?.addEventListener("input", (event) => {
+          deadlineSearch = event.target.value;
+          const cursor = event.target.selectionStart;
+          render();
+          const input = document.getElementById("deadline-search");
+          input.focus();
+          input.setSelectionRange(cursor, cursor);
+        });
+      document
+        .getElementById("deadline-sort")
+        ?.addEventListener("change", (event) => {
+          deadlineSort = event.target.value;
+          render();
+        });
     }
     if (currentPage === "teams" && session && !teamsLoaded && !teamsLoading) {
       void loadTeams();
     }
-    if (currentPage === "voice" && session && !voiceNotesLoaded && !voiceNotesLoading) {
+    if (
+      currentPage === "voice" &&
+      session &&
+      !voiceNotesLoaded &&
+      !voiceNotesLoading
+    ) {
       void loadVoiceNotes();
     }
     if (currentPage === "notes") {
-      document.getElementById("note-search")?.addEventListener("input", (event) => {
-        noteSearch = event.target.value;
-        const cursor = event.target.selectionStart;
-        render();
-        const input = document.getElementById("note-search");
-        input.focus();
-        input.setSelectionRange(cursor, cursor);
-      });
-      document.getElementById("note-subject-filter")?.addEventListener("change", (event) => {
-        noteSubjectFilter = event.target.value;
-        render();
-      });
-      document.getElementById("note-sort")?.addEventListener("change", (event) => {
-        noteSort = event.target.value;
-        render();
-      });
+      document
+        .getElementById("note-search")
+        ?.addEventListener("input", (event) => {
+          noteSearch = event.target.value;
+          const cursor = event.target.selectionStart;
+          render();
+          const input = document.getElementById("note-search");
+          input.focus();
+          input.setSelectionRange(cursor, cursor);
+        });
+      document
+        .getElementById("note-subject-filter")
+        ?.addEventListener("change", (event) => {
+          noteSubjectFilter = event.target.value;
+          render();
+        });
+      document
+        .getElementById("note-sort")
+        ?.addEventListener("change", (event) => {
+          noteSort = event.target.value;
+          render();
+        });
     }
     translateInterface();
     animateRewardCounters();
@@ -4505,11 +6846,17 @@
     window.location.hash = page;
     document.getElementById("sidebar").classList.remove("open");
     if (page === "admin") {
-      adminAuthorization = { status: "checking", userId: session?.user?.id || null };
+      adminAuthorization = {
+        status: "checking",
+        userId: session?.user?.id || null,
+      };
       updateAdminNavigation();
     }
     const updatePage = () => render();
-    if (shouldUseFullMotion() && typeof document.startViewTransition === "function") {
+    if (
+      shouldUseFullMotion() &&
+      typeof document.startViewTransition === "function"
+    ) {
       document.startViewTransition(updatePage);
     } else {
       updatePage();
@@ -4521,15 +6868,20 @@
   function updateAdminNavigation() {
     const link = document.getElementById("admin-navigation");
     if (link) {
-      link.hidden = !session || adminAuthorization.status !== "authorized"
-        || adminAuthorization.userId !== session.user.id;
+      link.hidden =
+        !session ||
+        adminAuthorization.status !== "authorized" ||
+        adminAuthorization.userId !== session.user.id;
     }
   }
 
   async function verifyAdminAccess() {
     const userId = session?.user?.id || null;
     const requestId = ++adminVerificationRequest;
-    adminAuthorization = { status: userId && supabase ? "checking" : "denied", userId };
+    adminAuthorization = {
+      status: userId && supabase ? "checking" : "denied",
+      userId,
+    };
     updateAdminNavigation();
     if (currentPage === "admin") render();
 
@@ -4546,13 +6898,17 @@
       console.error("Could not verify administrator access.", reason);
       error = reason;
     }
-    if (requestId !== adminVerificationRequest || session?.user?.id !== userId) return false;
+    if (requestId !== adminVerificationRequest || session?.user?.id !== userId)
+      return false;
 
     if (error) {
       console.error("Could not verify administrator access.", error);
       adminAuthorization = { status: "error", userId };
     } else {
-      adminAuthorization = { status: data === true ? "authorized" : "denied", userId };
+      adminAuthorization = {
+        status: data === true ? "authorized" : "denied",
+        userId,
+      };
     }
     updateAdminNavigation();
 
@@ -4571,17 +6927,25 @@
     currentPage = "dashboard";
     window.location.hash = "dashboard";
     render();
-    showToast(translateUiText(verificationFailed
-      ? "Could not verify administrator access."
-      : "Administrator access denied."));
+    showToast(
+      translateUiText(
+        verificationFailed
+          ? "Could not verify administrator access."
+          : "Administrator access denied.",
+      ),
+    );
   }
 
   function updateUserUi() {
     const user = session?.user;
-    const name = accountProfile?.display_name || user?.user_metadata?.full_name || (user?.email ? user.email.split("@")[0] : "Alex Morgan");
+    const name =
+      accountProfile?.display_name ||
+      user?.user_metadata?.full_name ||
+      (user?.email ? user.email.split("@")[0] : "Alex Morgan");
     const initialsText = initials(name);
     document.getElementById("user-name").textContent = name;
-    document.getElementById("user-email").textContent = user?.email || "Student account";
+    document.getElementById("user-email").textContent =
+      user?.email || "Student account";
     document.querySelectorAll(".avatar").forEach((avatar) => {
       if (accountProfile?.avatar_display_url) {
         const image = document.createElement("img");
@@ -4589,9 +6953,13 @@
         image.alt = "";
         image.decoding = "async";
         image.referrerPolicy = "no-referrer";
-        image.addEventListener("error", () => {
-          avatar.textContent = initialsText;
-        }, { once: true });
+        image.addEventListener(
+          "error",
+          () => {
+            avatar.textContent = initialsText;
+          },
+          { once: true },
+        );
         avatar.replaceChildren(image);
       } else {
         avatar.textContent = initialsText;
@@ -4600,11 +6968,22 @@
     document.getElementById("sign-out").hidden = !user;
     updateAdminNavigation();
     document.getElementById("auth-help").textContent = configured
-      ? user ? `Signed in as ${user.email}` : "Sign in to sync your private study workspace."
+      ? user
+        ? `Signed in as ${user.email}`
+        : "Sign in to sync your private study workspace."
       : "This is a local preview. Add your Supabase project details to enable authentication.";
     document.getElementById("auth-submit").disabled = !supabase;
-    document.getElementById("auth-submit").title = supabase ? "" : "Add your Supabase URL and public anon key in supabase-config.js and allow the SDK to load";
-    setConnectionState(user ? "Supabase connected" : supabase ? "Supabase ready" : "Demo workspace", Boolean(user));
+    document.getElementById("auth-submit").title = supabase
+      ? ""
+      : "Add your Supabase URL and public anon key in supabase-config.js and allow the SDK to load";
+    setConnectionState(
+      user
+        ? "Supabase connected"
+        : supabase
+          ? "Supabase ready"
+          : "Demo workspace",
+      Boolean(user),
+    );
     translateInterface();
   }
 
@@ -4612,7 +6991,8 @@
     if (!supabase || !session) return;
     deadlinesLoading = true;
     scheduleRender();
-    const { data: subjectData, error: subjectError } = await supabase.from("subjects")
+    const { data: subjectData, error: subjectError } = await supabase
+      .from("subjects")
       .select("id,name,color,credit_hours")
       .order("name");
     if (subjectError) {
@@ -4626,16 +7006,26 @@
         progress: null,
       }));
     }
-    const baseTaskColumns = "id,title,description,subject_id,starts_at,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,completed_at,subjects(name)";
-    const recurrenceColumns = "recurrence_group_id,recurrence_type,recurrence_days,recurrence_until";
-    let taskResult = await supabase.from("tasks")
+    const baseTaskColumns =
+      "id,title,description,subject_id,starts_at,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,completed_at,subjects(name)";
+    const recurrenceColumns =
+      "recurrence_group_id,recurrence_type,recurrence_days,recurrence_until";
+    let taskResult = await supabase
+      .from("tasks")
       .select(`${baseTaskColumns},${recurrenceColumns}`)
       .order("due_at", { ascending: true, nullsFirst: false });
     // The recurrence columns ship with migration 001. Until it is applied, keep the
     // existing task feature (and existing task data) working without repeating.
-    if (taskResult.error && /(recurrence_|column .* does not exist|42703|PGRST204)/i.test(`${taskResult.error.code || ""} ${taskResult.error.message || ""}`)) {
+    if (
+      taskResult.error &&
+      /(recurrence_|column .* does not exist|42703|PGRST204)/i.test(
+        `${taskResult.error.code || ""} ${taskResult.error.message || ""}`,
+      )
+    ) {
       recurrenceSupported = false;
-      taskResult = await supabase.from("tasks").select(baseTaskColumns)
+      taskResult = await supabase
+        .from("tasks")
+        .select(baseTaskColumns)
         .order("due_at", { ascending: true, nullsFirst: false });
     } else if (!taskResult.error) {
       recurrenceSupported = true;
@@ -4665,26 +7055,66 @@
     if (!supabase || !session) return;
     const userId = session.user.id;
     const loadNoteRows = async () => {
-      const withColor = await supabase.from("notes")
-        .select("id,title,content,subject_id,is_favorite,color,created_at,updated_at")
+      const withColor = await supabase
+        .from("notes")
+        .select(
+          "id,title,content,subject_id,is_favorite,color,created_at,updated_at",
+        )
         .order("updated_at", { ascending: false });
       if (withColor.error && /color/i.test(withColor.error.message || "")) {
         notesColorSupported = false;
-        return supabase.from("notes")
-          .select("id,title,content,subject_id,is_favorite,created_at,updated_at")
+        return supabase
+          .from("notes")
+          .select(
+            "id,title,content,subject_id,is_favorite,created_at,updated_at",
+          )
           .order("updated_at", { ascending: false });
       }
       notesColorSupported = !withColor.error;
       return withColor;
     };
-    const [scheduleResult, fileResult, noteResult, goalResult, examResult, profileResult, reminderResult] = await Promise.all([
-      supabase.from("schedules").select("id,title,details,subject_id,starts_at,ends_at,recurrence").order("starts_at"),
-      supabase.from("study_files").select("id,name,storage_path,mime_type,size_bytes,subject_id,is_favorite,created_at").order("created_at", { ascending: false }),
+    const [
+      scheduleResult,
+      fileResult,
+      noteResult,
+      goalResult,
+      examResult,
+      profileResult,
+      reminderResult,
+    ] = await Promise.all([
+      supabase
+        .from("schedules")
+        .select("id,title,details,subject_id,starts_at,ends_at,recurrence")
+        .order("starts_at"),
+      supabase
+        .from("study_files")
+        .select(
+          "id,name,storage_path,mime_type,size_bytes,subject_id,is_favorite,created_at",
+        )
+        .order("created_at", { ascending: false }),
       loadNoteRows(),
-      supabase.from("goals").select("id,title,details,period,target_value,current_value,unit,starts_at,due_at,completed_at").order("created_at", { ascending: false }),
-      supabase.from("exams").select("id,title,details,subject_id,exam_at,max_marks,exam_results(obtained_marks,notes)").order("exam_at"),
-      supabase.from("profiles").select("id,display_name,avatar_url,timezone,language").eq("id", userId).maybeSingle(),
-      supabase.from("daily_reminder_preferences").select("enabled,local_time,timezone").eq("user_id", userId).maybeSingle(),
+      supabase
+        .from("goals")
+        .select(
+          "id,title,details,period,target_value,current_value,unit,starts_at,due_at,completed_at",
+        )
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("exams")
+        .select(
+          "id,title,details,subject_id,exam_at,max_marks,exam_results(obtained_marks,notes)",
+        )
+        .order("exam_at"),
+      supabase
+        .from("profiles")
+        .select("id,display_name,avatar_url,timezone,language")
+        .eq("id", userId)
+        .maybeSingle(),
+      supabase
+        .from("daily_reminder_preferences")
+        .select("enabled,local_time,timezone")
+        .eq("user_id", userId)
+        .maybeSingle(),
     ]);
     notesSchemaChecked = true;
 
@@ -4697,52 +7127,84 @@
     };
 
     if (reportError("study schedule", scheduleResult)) schedule = [];
-    else schedule = (scheduleResult.data || []).map((block) => ({
-      ...block,
-      day: new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(new Date(block.starts_at)),
-      time: new Intl.DateTimeFormat(appLanguage, { hour: "2-digit", minute: "2-digit" }).format(new Date(block.starts_at)),
-      length: `${Math.max(1, Math.round((new Date(block.ends_at) - new Date(block.starts_at)) / 60000))} min`,
-      subject: subjectName(block.subject_id),
-    }));
+    else
+      schedule = (scheduleResult.data || []).map((block) => ({
+        ...block,
+        day: new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(
+          new Date(block.starts_at),
+        ),
+        time: new Intl.DateTimeFormat(appLanguage, {
+          hour: "2-digit",
+          minute: "2-digit",
+        }).format(new Date(block.starts_at)),
+        length: `${Math.max(1, Math.round((new Date(block.ends_at) - new Date(block.starts_at)) / 60000))} min`,
+        subject: subjectName(block.subject_id),
+      }));
 
     if (reportError("study files", fileResult)) sampleFiles = [];
-    else sampleFiles = (fileResult.data || []).map((file) => ({
-      ...file,
-      type: file.mime_type,
-      subject: subjectName(file.subject_id),
-    }));
+    else
+      sampleFiles = (fileResult.data || []).map((file) => ({
+        ...file,
+        type: file.mime_type,
+        subject: subjectName(file.subject_id),
+      }));
 
     if (reportError("notes", noteResult)) notes = [];
-    else notes = (noteResult.data || []).map((note) => ({
-      ...note,
-      subject: subjectName(note.subject_id),
-      updated: new Intl.DateTimeFormat(appLanguage, { dateStyle: "medium" }).format(new Date(note.updated_at)),
-    }));
+    else
+      notes = (noteResult.data || []).map((note) => ({
+        ...note,
+        subject: subjectName(note.subject_id),
+        updated: new Intl.DateTimeFormat(appLanguage, {
+          dateStyle: "medium",
+        }).format(new Date(note.updated_at)),
+      }));
 
     if (reportError("goals", goalResult)) goals = [];
-    else goals = (goalResult.data || []).map((goal) => ({
-      ...goal,
-      progress: Math.min(100, Math.round((Number(goal.current_value) / Number(goal.target_value)) * 100)),
-      due: goal.completed_at ? "Completed" : goal.due_at
-        ? Math.max(0, Math.ceil((new Date(goal.due_at) - Date.now()) / 86400000)) + " days"
-        : goal.period,
-      detail: goal.details || `${goal.current_value} / ${goal.target_value} ${goal.unit}`,
-    }));
+    else
+      goals = (goalResult.data || []).map((goal) => ({
+        ...goal,
+        progress: Math.min(
+          100,
+          Math.round(
+            (Number(goal.current_value) / Number(goal.target_value)) * 100,
+          ),
+        ),
+        due: goal.completed_at
+          ? "Completed"
+          : goal.due_at
+            ? Math.max(
+                0,
+                Math.ceil((new Date(goal.due_at) - Date.now()) / 86400000),
+              ) + " days"
+            : goal.period,
+        detail:
+          goal.details ||
+          `${goal.current_value} / ${goal.target_value} ${goal.unit}`,
+      }));
 
     if (reportError("exams", examResult)) examResults = [];
-    else examResults = (examResult.data || []).map((exam) => ({
-      ...exam,
-      subject: subjectName(exam.subject_id),
-    }));
+    else
+      examResults = (examResult.data || []).map((exam) => ({
+        ...exam,
+        subject: subjectName(exam.subject_id),
+      }));
 
     if (reportError("profile", profileResult)) accountProfile = null;
     else {
       accountProfile = profileResult.data;
-      if (accountProfile) accountProfile.avatar_display_url = await resolveProfileAvatarUrl(accountProfile.avatar_url, userId);
+      if (accountProfile)
+        accountProfile.avatar_display_url = await resolveProfileAvatarUrl(
+          accountProfile.avatar_url,
+          userId,
+        );
     }
 
     if (reportError("daily reminder preferences", reminderResult)) {
-      dailyReminderPreference = { enabled: false, local_time: "09:00", timezone: "UTC" };
+      dailyReminderPreference = {
+        enabled: false,
+        local_time: "09:00",
+        timezone: "UTC",
+      };
     } else {
       dailyReminderPreference = {
         enabled: Boolean(reminderResult.data?.enabled),
@@ -4751,23 +7213,46 @@
       };
     }
 
-    const notificationResult = await supabase.from("user_notification_preferences")
+    const notificationResult = await supabase
+      .from("user_notification_preferences")
       .select("sound_enabled,dnd_enabled,dnd_start,dnd_end")
-      .eq("user_id", userId).maybeSingle();
+      .eq("user_id", userId)
+      .maybeSingle();
     if (!notificationResult.error && notificationResult.data) {
       notificationPrefs = {
         sound: notificationResult.data.sound_enabled !== false,
         dnd: notificationResult.data.dnd_enabled === true,
         start: String(notificationResult.data.dnd_start || "22:00").slice(0, 5),
         end: String(notificationResult.data.dnd_end || "07:00").slice(0, 5),
-        taskSound: ALERT_SOUNDS.some((sound) => sound.id === notificationPrefs.taskSound) ? notificationPrefs.taskSound : "task-reminder",
-        taskVolume: [0, 10, 25, 50, 75, 100].includes(Number(notificationPrefs.taskVolume)) ? Number(notificationPrefs.taskVolume) : 80,
-        taskDuration: [3, 5, 10, 15].includes(Number(notificationPrefs.taskDuration)) ? Number(notificationPrefs.taskDuration) : 5,
+        taskSound: ALERT_SOUNDS.some(
+          (sound) => sound.id === notificationPrefs.taskSound,
+        )
+          ? notificationPrefs.taskSound
+          : "task-reminder",
+        taskVolume: [0, 10, 25, 50, 75, 100].includes(
+          Number(notificationPrefs.taskVolume),
+        )
+          ? Number(notificationPrefs.taskVolume)
+          : 80,
+        taskDuration: [3, 5, 10, 15].includes(
+          Number(notificationPrefs.taskDuration),
+        )
+          ? Number(notificationPrefs.taskDuration)
+          : 5,
         taskRepeat: notificationPrefs.taskRepeat === true,
       };
-      localStorage.setItem(notificationPrefsKey, JSON.stringify(notificationPrefs));
-    } else if (notificationResult.error && !isMissingRelation(notificationResult.error)) {
-      console.error("Could not load notification preferences.", notificationResult.error);
+      localStorage.setItem(
+        notificationPrefsKey,
+        JSON.stringify(notificationPrefs),
+      );
+    } else if (
+      notificationResult.error &&
+      !isMissingRelation(notificationResult.error)
+    ) {
+      console.error(
+        "Could not load notification preferences.",
+        notificationResult.error,
+      );
     }
     updateUserUi();
     scheduleRender();
@@ -4776,7 +7261,9 @@
   async function resolveProfileAvatarUrl(avatarPath, userId) {
     if (!avatarPath) return "";
     if (avatarPath.startsWith(`${userId}/`)) {
-      const { data, error } = await supabase.storage.from("studyflow-files").createSignedUrl(avatarPath, 86400);
+      const { data, error } = await supabase.storage
+        .from("studyflow-files")
+        .createSignedUrl(avatarPath, 86400);
       if (error) {
         console.error("Could not create a private profile photo URL.", error);
         showToast(`Could not load profile photo: ${error.message}`);
@@ -4817,7 +7304,10 @@
 
   function clearAccountWorkspace() {
     accountProfile = null;
-    activity = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => ({ day, hours: 0 }));
+    activity = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => ({
+      day,
+      hours: 0,
+    }));
     schedule = [];
     goals = [];
     examResults = [];
@@ -4839,7 +7329,11 @@
 
   async function loadLanguagePreference() {
     if (!supabase || !session) return;
-    const { data, error } = await supabase.from("profiles").select("language").eq("id", session.user.id).maybeSingle();
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("language")
+      .eq("id", session.user.id)
+      .maybeSingle();
     if (error) {
       console.error("Could not load language preference.", error);
       return;
@@ -4853,8 +7347,10 @@
   }
 
   function vapidApplicationServerKey(encodedKey) {
-    const padding = "=".repeat((4 - encodedKey.length % 4) % 4);
-    const base64 = `${encodedKey}${padding}`.replace(/-/g, "+").replace(/_/g, "/");
+    const padding = "=".repeat((4 - (encodedKey.length % 4)) % 4);
+    const base64 = `${encodedKey}${padding}`
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
     const raw = window.atob(base64);
     return Uint8Array.from(raw, (character) => character.charCodeAt(0));
   }
@@ -4863,76 +7359,128 @@
     try {
       const url = new URL(endpoint);
       const host = url.hostname.toLowerCase();
-      const allowedHosts = ["fcm.googleapis.com", "push.services.mozilla.com", "web.push.apple.com"];
-      return url.protocol === "https:"
-        && !url.username
-        && !url.password
-        && (!url.port || url.port === "443")
-        && allowedHosts.some((allowedHost) => host === allowedHost || host.endsWith(`.${allowedHost}`));
+      const allowedHosts = [
+        "fcm.googleapis.com",
+        "push.services.mozilla.com",
+        "web.push.apple.com",
+      ];
+      return (
+        url.protocol === "https:" &&
+        !url.username &&
+        !url.password &&
+        (!url.port || url.port === "443") &&
+        allowedHosts.some(
+          (allowedHost) =>
+            host === allowedHost || host.endsWith(`.${allowedHost}`),
+        )
+      );
     } catch {
       return false;
     }
   }
 
   async function saveDailyReminder(form) {
-    if (!supabase || !session) throw new Error(translateUiText("Sign in to configure daily reminders."));
+    if (!supabase || !session)
+      throw new Error(translateUiText("Sign in to configure daily reminders."));
     const enabled = form.elements.namedItem("enabled").checked;
     const localTime = String(form.elements.namedItem("local_time").value || "");
-    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(localTime)) throw new Error("Choose a valid reminder time.");
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(localTime))
+      throw new Error("Choose a valid reminder time.");
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
     let subscription;
 
     if (enabled) {
       const vapidPublicKey = window.studyFlowSupabaseConfig?.vapidPublicKey;
-      if (!vapidPublicKey) throw new Error(translateUiText("Daily push is not configured yet. Ask your administrator to finish the VAPID setup."));
-      if (!window.isSecureContext || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
-        throw new Error("Push notifications require a supported browser and HTTPS (localhost is supported for development).");
+      if (!vapidPublicKey)
+        throw new Error(
+          translateUiText(
+            "Daily push is not configured yet. Ask your administrator to finish the VAPID setup.",
+          ),
+        );
+      if (
+        !window.isSecureContext ||
+        !("serviceWorker" in navigator) ||
+        !("PushManager" in window) ||
+        !("Notification" in window)
+      ) {
+        throw new Error(
+          "Push notifications require a supported browser and HTTPS (localhost is supported for development).",
+        );
       }
-      const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
-      if (permission !== "granted") throw new Error(translateUiText("Notification permission is required to enable daily push reminders."));
+      const permission =
+        Notification.permission === "granted"
+          ? "granted"
+          : await Notification.requestPermission();
+      if (permission !== "granted")
+        throw new Error(
+          translateUiText(
+            "Notification permission is required to enable daily push reminders.",
+          ),
+        );
       const registration = await navigator.serviceWorker.ready;
-      subscription = await registration.pushManager.getSubscription()
-        || await registration.pushManager.subscribe({
+      subscription =
+        (await registration.pushManager.getSubscription()) ||
+        (await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: vapidApplicationServerKey(vapidPublicKey),
-        });
+        }));
       const serialized = subscription.toJSON();
       const p256dh = serialized.keys?.p256dh;
       const authSecret = serialized.keys?.auth;
       if (!subscription.endpoint || !p256dh || !authSecret) {
         await subscription.unsubscribe();
-        throw new Error("The browser returned an incomplete push subscription.");
+        throw new Error(
+          "The browser returned an incomplete push subscription.",
+        );
       }
       if (!isSupportedPushEndpoint(subscription.endpoint)) {
         await subscription.unsubscribe();
-        throw new Error("This browser's push service is not currently supported.");
+        throw new Error(
+          "This browser's push service is not currently supported.",
+        );
       }
-      const { error: subscriptionError } = await supabase.from("push_subscriptions").upsert({
-        user_id: session.user.id,
-        endpoint: subscription.endpoint,
-        p256dh,
-        auth_secret: authSecret,
-      }, { onConflict: "user_id,endpoint" });
+      const { error: subscriptionError } = await supabase
+        .from("push_subscriptions")
+        .upsert(
+          {
+            user_id: session.user.id,
+            endpoint: subscription.endpoint,
+            p256dh,
+            auth_secret: authSecret,
+          },
+          { onConflict: "user_id,endpoint" },
+        );
       if (subscriptionError) {
         await subscription.unsubscribe();
         throw subscriptionError;
       }
     }
 
-    const { error } = await supabase.from("daily_reminder_preferences").upsert({
-      user_id: session.user.id,
-      enabled,
-      local_time: localTime,
-      timezone,
-    }, { onConflict: "user_id" });
+    const { error } = await supabase.from("daily_reminder_preferences").upsert(
+      {
+        user_id: session.user.id,
+        enabled,
+        local_time: localTime,
+        timezone,
+      },
+      { onConflict: "user_id" },
+    );
     if (error) {
       if (subscription) {
-        const { error: cleanupError } = await supabase.from("push_subscriptions").delete()
-          .eq("user_id", session.user.id).eq("endpoint", subscription.endpoint);
+        const { error: cleanupError } = await supabase
+          .from("push_subscriptions")
+          .delete()
+          .eq("user_id", session.user.id)
+          .eq("endpoint", subscription.endpoint);
         await subscription.unsubscribe();
         if (cleanupError) {
-          console.error("Could not remove push subscription after saving reminder preferences failed.", cleanupError);
-          throw new Error(`${error.message} Subscription cleanup also failed: ${cleanupError.message}`);
+          console.error(
+            "Could not remove push subscription after saving reminder preferences failed.",
+            cleanupError,
+          );
+          throw new Error(
+            `${error.message} Subscription cleanup also failed: ${cleanupError.message}`,
+          );
         }
       }
       throw error;
@@ -4941,7 +7489,9 @@
     dailyReminderPreference = { enabled, local_time: localTime, timezone };
     if (!enabled) {
       await removeCurrentPushSubscription(session.user.id);
-      const { error: deleteError } = await supabase.from("push_subscriptions").delete()
+      const { error: deleteError } = await supabase
+        .from("push_subscriptions")
+        .delete()
         .eq("user_id", session.user.id);
       if (deleteError) throw deleteError;
     }
@@ -4956,9 +7506,13 @@
     if (!subscription) return;
     const endpoint = subscription.endpoint;
     const unsubscribed = await subscription.unsubscribe();
-    if (!unsubscribed) throw new Error("The browser could not disable this push subscription.");
-    const { error } = await supabase.from("push_subscriptions").delete()
-      .eq("user_id", userId).eq("endpoint", endpoint);
+    if (!unsubscribed)
+      throw new Error("The browser could not disable this push subscription.");
+    const { error } = await supabase
+      .from("push_subscriptions")
+      .delete()
+      .eq("user_id", userId)
+      .eq("endpoint", endpoint);
     if (error) throw error;
   }
 
@@ -4968,8 +7522,11 @@
       notificationsPrimed = false;
       return;
     }
-    const previousIds = new Set(userNotifications.map((item) => String(item.id)));
-    const { data, error } = await supabase.from("notifications")
+    const previousIds = new Set(
+      userNotifications.map((item) => String(item.id)),
+    );
+    const { data, error } = await supabase
+      .from("notifications")
       .select("id,type,title,message,read_at,created_at")
       .order("created_at", { ascending: false })
       .limit(50);
@@ -4979,12 +7536,18 @@
       return;
     }
     const nextItems = data || [];
-    const freshUnread = nextItems.filter((item) => !item.read_at && !previousIds.has(String(item.id)));
+    const freshUnread = nextItems.filter(
+      (item) => !item.read_at && !previousIds.has(String(item.id)),
+    );
     userNotifications = nextItems;
     if (notificationsPrimed && freshUnread.length) {
       playNotificationSound();
       if (!silent && currentPage !== "notifications") {
-        showToast(freshUnread.length === 1 ? freshUnread[0].title : `${freshUnread.length} new notifications`);
+        showToast(
+          freshUnread.length === 1
+            ? freshUnread[0].title
+            : `${freshUnread.length} new notifications`,
+        );
       }
     }
     notificationsPrimed = true;
@@ -5002,7 +7565,8 @@
       showToast("Sign in to manage your notifications.");
       return;
     }
-    const { error } = await supabase.from("notifications")
+    const { error } = await supabase
+      .from("notifications")
       .update({ read_at: new Date().toISOString() })
       .is("read_at", null);
     if (error) {
@@ -5011,7 +7575,9 @@
       return;
     }
     const readAt = new Date().toISOString();
-    userNotifications = userNotifications.map((item) => item.read_at ? item : { ...item, read_at: readAt });
+    userNotifications = userNotifications.map((item) =>
+      item.read_at ? item : { ...item, read_at: readAt },
+    );
     render();
     showToast("Notifications marked as read.");
   }
@@ -5024,10 +7590,18 @@
     document.documentElement.dir = language === "ar" ? "rtl" : "ltr";
     render();
     if (supabase && session) {
-      const { error } = await supabase.from("profiles").update({ language }).eq("id", session.user.id);
+      const { error } = await supabase
+        .from("profiles")
+        .update({ language })
+        .eq("id", session.user.id);
       if (error) {
-        console.error("Could not save language preference to the profile.", error);
-        showToast(`Language saved on this device, but account sync failed: ${error.message}`);
+        console.error(
+          "Could not save language preference to the profile.",
+          error,
+        );
+        showToast(
+          `Language saved on this device, but account sync failed: ${error.message}`,
+        );
         return;
       }
     }
@@ -5044,9 +7618,15 @@
       throw new Error("The start time must be on or before the due time.");
     }
     if (repeatType !== "none" && !recurrenceSupported && supabase && session) {
-      throw new Error("Repeating tasks need the latest Supabase migration. Apply supabase/migrations/001_studyzone_enhancements.sql first.");
+      throw new Error(
+        "Repeating tasks need the latest Supabase migration. Apply supabase/migrations/001_studyzone_enhancements.sql first.",
+      );
     }
-    const recurrence = buildRecurrencePlan(formData, dueValue.slice(0, 10), repeatType);
+    const recurrence = buildRecurrencePlan(
+      formData,
+      dueValue.slice(0, 10),
+      repeatType,
+    );
     const groupId = repeatType === "none" ? null : focusId();
     const startTime = startsValue.slice(11, 16);
     const dueTime = dueValue.slice(11, 16) || "23:59";
@@ -5056,28 +7636,40 @@
       subject_id: formData.get("subject_id") || null,
       priority: formData.get("priority") || "medium",
       estimated_minutes: Number(formData.get("estimated_minutes")) || 45,
-      reminder_before_minutes: Number(formData.get("reminder_before_minutes")) || 0,
+      reminder_before_minutes:
+        Number(formData.get("reminder_before_minutes")) || 0,
       status: String(formData.get("status") || "not_started"),
-      completed_at: String(formData.get("status") || "") === "completed" ? new Date().toISOString() : null,
+      completed_at:
+        String(formData.get("status") || "") === "completed"
+          ? new Date().toISOString()
+          : null,
     };
     if (startsValue) baseTask.starts_at = new Date(startsValue).toISOString();
     if (dueValue) baseTask.due_at = new Date(dueValue).toISOString();
     const recurrenceFields = recurrenceSupported
       ? {
-        recurrence_group_id: groupId,
-        recurrence_type: repeatType,
-        recurrence_days: recurrence.days,
-        recurrence_until: recurrence.until,
-      }
+          recurrence_group_id: groupId,
+          recurrence_type: repeatType,
+          recurrence_days: recurrence.days,
+          recurrence_until: recurrence.until,
+        }
       : {};
     const baseDueKey = dueValue.slice(0, 10);
     const instances = recurrence.dateKeys.map((occurrenceKey) => {
       const occurrence = { ...baseTask, ...recurrenceFields };
       if (dueValue && occurrenceKey) {
-        occurrence.due_at = new Date(`${occurrenceKey}T${dueTime}`).toISOString();
+        occurrence.due_at = new Date(
+          `${occurrenceKey}T${dueTime}`,
+        ).toISOString();
         if (startsValue) {
-          const dayShift = Math.round((parseLocalDateKey(occurrenceKey) - parseLocalDateKey(baseDueKey)) / 86400000);
-          const shiftedStart = addLocalDays(new Date(`${baseDueKey}T${startTime}`), dayShift);
+          const dayShift = Math.round(
+            (parseLocalDateKey(occurrenceKey) - parseLocalDateKey(baseDueKey)) /
+              86400000,
+          );
+          const shiftedStart = addLocalDays(
+            new Date(`${baseDueKey}T${startTime}`),
+            dayShift,
+          );
           occurrence.starts_at = shiftedStart.toISOString();
         }
       }
@@ -5085,64 +7677,96 @@
     });
     if (supabase && session) {
       const selectColumns = `id,title,description,subject_id,starts_at,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,subjects(name)${recurrenceSupported ? ",recurrence_group_id,recurrence_type,recurrence_days,recurrence_until" : ""}`;
-      const { data, error } = await supabase.from("tasks").insert(instances).select(selectColumns);
+      const { data, error } = await supabase
+        .from("tasks")
+        .insert(instances)
+        .select(selectColumns);
       if (error) throw error;
-      tasks.unshift(...(data || []).map((item) => ({
-        recurrence_group_id: null,
-        recurrence_type: "none",
-        recurrence_days: [],
-        recurrence_until: null,
-        ...item,
-        subject: item.subjects?.name || "Independent study",
-      })));
+      tasks.unshift(
+        ...(data || []).map((item) => ({
+          recurrence_group_id: null,
+          recurrence_type: "none",
+          recurrence_days: [],
+          recurrence_until: null,
+          ...item,
+          subject: item.subjects?.name || "Independent study",
+        })),
+      );
     } else {
-      tasks.unshift(...instances.map((instance, index) => ({
-        ...instance,
-        id: `local-${Date.now()}-${index}`,
-        subject: subjectName(instance.subject_id),
-        created_at: new Date().toISOString(),
-      })));
+      tasks.unshift(
+        ...instances.map((instance, index) => ({
+          ...instance,
+          id: `local-${Date.now()}-${index}`,
+          subject: subjectName(instance.subject_id),
+          created_at: new Date().toISOString(),
+        })),
+      );
       saveLocalTasks();
     }
     document.getElementById("task-modal").hidden = true;
     render();
-    showToast(supabase && session
-      ? `${instances.length} task${instances.length === 1 ? "" : "s"} saved to your account.`
-      : `${instances.length} task${instances.length === 1 ? "" : "s"} saved in this browser.`);
+    showToast(
+      supabase && session
+        ? `${instances.length} task${instances.length === 1 ? "" : "s"} saved to your account.`
+        : `${instances.length} task${instances.length === 1 ? "" : "s"} saved in this browser.`,
+    );
   }
 
   function buildRecurrencePlan(formData, startDateValue, repeatType) {
-    if (repeatType === "none") return { dateKeys: [startDateValue || null], days: [], until: null };
-    if (!startDateValue) throw new Error("Choose a due date before setting a repeat schedule.");
+    if (repeatType === "none")
+      return { dateKeys: [startDateValue || null], days: [], until: null };
+    if (!startDateValue)
+      throw new Error("Choose a due date before setting a repeat schedule.");
     const start = new Date(`${startDateValue}T00:00:00`);
     const untilValue = String(formData.get("repeat_until") || "");
     const until = untilValue ? new Date(`${untilValue}T00:00:00`) : null;
     if (!until || Number.isNaN(until.getTime()) || until < start) {
-      throw new Error("Choose a repeat end date on or after the first occurrence.");
+      throw new Error(
+        "Choose a repeat end date on or after the first occurrence.",
+      );
     }
     const maxUntil = new Date(start);
     maxUntil.setDate(maxUntil.getDate() + 365);
-    if (until > maxUntil) throw new Error("Repeat schedules can be created for up to one year at a time.");
+    if (until > maxUntil)
+      throw new Error(
+        "Repeat schedules can be created for up to one year at a time.",
+      );
     if (!["daily", "weekly", "monthly", "custom"].includes(repeatType)) {
       throw new Error("Choose a valid repeat schedule.");
     }
-    const days = repeatType === "custom"
-      ? [...new Set(formData.getAll("repeat_days").map(Number))].filter((day) => Number.isInteger(day) && day >= 0 && day <= 6).sort()
-      : [];
-    if (repeatType === "custom" && !days.length) throw new Error("Choose at least one weekday.");
+    const days =
+      repeatType === "custom"
+        ? [...new Set(formData.getAll("repeat_days").map(Number))]
+            .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+            .sort()
+        : [];
+    if (repeatType === "custom" && !days.length)
+      throw new Error("Choose at least one weekday.");
 
     const dateKeys = [];
-    for (const cursor = new Date(start); cursor <= until; cursor.setDate(cursor.getDate() + 1)) {
-      let matches = repeatType === "daily"
-        || repeatType === "weekly" && cursor.getDay() === start.getDay()
-        || repeatType === "custom" && days.includes(cursor.getDay());
+    for (
+      const cursor = new Date(start);
+      cursor <= until;
+      cursor.setDate(cursor.getDate() + 1)
+    ) {
+      let matches =
+        repeatType === "daily" ||
+        (repeatType === "weekly" && cursor.getDay() === start.getDay()) ||
+        (repeatType === "custom" && days.includes(cursor.getDay()));
       if (repeatType === "monthly") {
-        const lastDay = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
+        const lastDay = new Date(
+          cursor.getFullYear(),
+          cursor.getMonth() + 1,
+          0,
+        ).getDate();
         matches = cursor.getDate() === Math.min(start.getDate(), lastDay);
       }
       if (matches) {
         dateKeys.push(dateKey(cursor));
-        if (dateKeys.length > 366) throw new Error("A repeat schedule cannot contain more than 366 occurrences.");
+        if (dateKeys.length > 366)
+          throw new Error(
+            "A repeat schedule cannot contain more than 366 occurrences.",
+          );
       }
     }
     return { dateKeys, days, until: untilValue };
@@ -5164,7 +7788,10 @@
 
   async function applyTaskEdit(task, payload) {
     if (supabase && session) {
-      const { error } = await supabase.from("tasks").update(payload).eq("id", task.id);
+      const { error } = await supabase
+        .from("tasks")
+        .update(payload)
+        .eq("id", task.id);
       if (error) throw error;
     }
     Object.assign(task, payload);
@@ -5179,14 +7806,18 @@
     if (!value) return "";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "";
-    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
   }
 
   function openTaskModal(id = null, presetDate = null) {
     const select = document.getElementById("task-subject");
     select.innerHTML = `<option value="">${deadlineText[appLanguage].independent}</option>${subjects.map((subject) => `<option value="${escapeHtml(subject.id)}">${escapeHtml(subject.name)}</option>`).join("")}`;
     const form = document.getElementById("task-form");
-    const task = id ? tasks.find((item) => String(item.id) === String(id)) : null;
+    const task = id
+      ? tasks.find((item) => String(item.id) === String(id))
+      : null;
     taskEditingId = task ? task.id : null;
     form.reset();
     const seriesNote = form.querySelector("[data-series-note]");
@@ -5194,14 +7825,26 @@
     const stopButton = form.querySelector('[data-action="task-stop-series"]');
     document.getElementById("task-error").textContent = "";
     document.getElementById("task-modal-title").textContent = task
-      ? (appLanguage === "ar" ? "تعديل المهمة" : "Edit task")
-      : (appLanguage === "ar" ? "إضافة مهمة" : "Add a task");
+      ? appLanguage === "ar"
+        ? "تعديل المهمة"
+        : "Edit task"
+      : appLanguage === "ar"
+        ? "إضافة مهمة"
+        : "Add a task";
     document.getElementById("task-modal-help").textContent = task
-      ? (appLanguage === "ar" ? "حدّث التفاصيل، أو انقل المهمة إلى يوم آخر." : "Update the details, or move it to another day.")
-      : (appLanguage === "ar" ? "أضف ما تحتاج تذكّره، وحدد موعده." : "Add what you need to remember and set when it is due.");
+      ? appLanguage === "ar"
+        ? "حدّث التفاصيل، أو انقل المهمة إلى يوم آخر."
+        : "Update the details, or move it to another day."
+      : appLanguage === "ar"
+        ? "أضف ما تحتاج تذكّره، وحدد موعده."
+        : "Add what you need to remember and set when it is due.";
     document.getElementById("task-submit").innerHTML = task
-      ? (appLanguage === "ar" ? "حفظ التغييرات →" : "Save changes →")
-      : (appLanguage === "ar" ? "حفظ المهمة →" : "Save task →");
+      ? appLanguage === "ar"
+        ? "حفظ التغييرات →"
+        : "Save changes →"
+      : appLanguage === "ar"
+        ? "حفظ المهمة →"
+        : "Save task →";
     if (task) {
       form.elements.task_id.value = task.id;
       form.elements.title.value = task.title || "";
@@ -5209,19 +7852,24 @@
       form.elements.subject_id.value = task.subject_id || "";
       form.elements.priority.value = task.priority || "medium";
       form.elements.status.value = task.status || "not_started";
-      form.elements.estimated_minutes.value = String(task.estimated_minutes || 45);
+      form.elements.estimated_minutes.value = String(
+        task.estimated_minutes || 45,
+      );
       form.elements.starts_at.value = localInputValue(task.starts_at);
       form.elements.due_at.value = localInputValue(task.due_at);
-      form.elements.reminder_before_minutes.value = String(task.reminder_before_minutes || 0);
+      form.elements.reminder_before_minutes.value = String(
+        task.reminder_before_minutes || 0,
+      );
       const isSeries = Boolean(task.recurrence_group_id);
       repeatConfig.hidden = true;
       seriesNote.hidden = !isSeries;
       stopButton.hidden = !isSeries;
       if (isSeries) {
         const group = taskSeries(task);
-        seriesNote.textContent = appLanguage === "ar"
-          ? `هذه المهمة جزء من سلسلة متكررة (${group.length} نسخة). سيُطلب منك اختيار نطاق التعديل عند الحفظ.`
-          : `This task is part of a repeating series (${group.length} occurrence${group.length === 1 ? "" : "s"}). You will choose which occurrences to update when you save.`;
+        seriesNote.textContent =
+          appLanguage === "ar"
+            ? `هذه المهمة جزء من سلسلة متكررة (${group.length} نسخة). سيُطلب منك اختيار نطاق التعديل عند الحفظ.`
+            : `This task is part of a repeating series (${group.length} occurrence${group.length === 1 ? "" : "s"}). You will choose which occurrences to update when you save.`;
       }
     } else {
       form.elements.task_id.value = "";
@@ -5233,7 +7881,13 @@
       if (presetDate) {
         const date = parseLocalDateKey(presetDate);
         if (date) {
-          const fallback = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 17, 0);
+          const fallback = new Date(
+            date.getFullYear(),
+            date.getMonth(),
+            date.getDate(),
+            17,
+            0,
+          );
           form.elements.due_at.value = localInputValue(fallback.toISOString());
         }
       }
@@ -5259,24 +7913,32 @@
       priority: String(formData.get("priority") || "medium"),
       status: String(formData.get("status") || "not_started"),
       estimated_minutes: Number(formData.get("estimated_minutes")) || 45,
-      reminder_before_minutes: Number(formData.get("reminder_before_minutes")) || 0,
+      reminder_before_minutes:
+        Number(formData.get("reminder_before_minutes")) || 0,
       starts_at: startsValue ? new Date(startsValue).toISOString() : null,
       due_at: dueValue ? new Date(dueValue).toISOString() : null,
-      completed_at: String(formData.get("status") || "") === "completed" ? new Date().toISOString() : null,
+      completed_at:
+        String(formData.get("status") || "") === "completed"
+          ? new Date().toISOString()
+          : null,
     };
   }
 
   async function persistTaskPatch(ids, patchForTask) {
     if (!ids.length) return;
     if (supabase && session) {
-      const results = await Promise.all(ids.map((id) => {
-        const task = tasks.find((item) => item.id === id);
-        return supabase.from("tasks").update(patchForTask(task)).eq("id", id);
-      }));
+      const results = await Promise.all(
+        ids.map((id) => {
+          const task = tasks.find((item) => item.id === id);
+          return supabase.from("tasks").update(patchForTask(task)).eq("id", id);
+        }),
+      );
       const failed = results.find((result) => result.error);
       if (failed) throw failed.error;
     }
-    tasks = tasks.map((task) => ids.includes(task.id) ? { ...task, ...patchForTask(task) } : task);
+    tasks = tasks.map((task) =>
+      ids.includes(task.id) ? { ...task, ...patchForTask(task) } : task,
+    );
     if (!supabase || !session) saveLocalTasks();
     render();
   }
@@ -5286,28 +7948,68 @@
     const group = taskSeries(task);
     const futureCount = seriesScopeIds(task, "future").length;
     const allCount = group.length;
-    const singleLabel = kind === "delete"
-      ? (appLanguage === "ar" ? "حذف هذه المهمة فقط" : "Delete this task only")
-      : (appLanguage === "ar" ? "تعديل هذه المهمة فقط" : "Edit this task only");
-    const futureLabel = kind === "delete"
-      ? (appLanguage === "ar" ? "حذف هذه المهمة والتكرارات القادمة" : "Delete this and all future occurrences")
-      : (appLanguage === "ar" ? "تعديل هذه المهمة والتكرارات القادمة" : "Edit this and all future occurrences");
-    const allLabel = kind === "delete"
-      ? (appLanguage === "ar" ? "حذف السلسلة بالكامل" : "Delete the entire series")
-      : (appLanguage === "ar" ? "تعديل السلسلة بالكامل" : "Edit the entire series");
-    const option = (scope, title, detail, tone = "") => `<button class="scope-option ${tone}" data-action="series-scope" data-scope="${scope}"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(detail)}</small></button>`;
+    const singleLabel =
+      kind === "delete"
+        ? appLanguage === "ar"
+          ? "حذف هذه المهمة فقط"
+          : "Delete this task only"
+        : appLanguage === "ar"
+          ? "تعديل هذه المهمة فقط"
+          : "Edit this task only";
+    const futureLabel =
+      kind === "delete"
+        ? appLanguage === "ar"
+          ? "حذف هذه المهمة والتكرارات القادمة"
+          : "Delete this and all future occurrences"
+        : appLanguage === "ar"
+          ? "تعديل هذه المهمة والتكرارات القادمة"
+          : "Edit this and all future occurrences";
+    const allLabel =
+      kind === "delete"
+        ? appLanguage === "ar"
+          ? "حذف السلسلة بالكامل"
+          : "Delete the entire series"
+        : appLanguage === "ar"
+          ? "تعديل السلسلة بالكامل"
+          : "Edit the entire series";
+    const option = (scope, title, detail, tone = "") =>
+      `<button class="scope-option ${tone}" data-action="series-scope" data-scope="${scope}"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(detail)}</small></button>`;
     pendingSeriesAction = { kind, taskId: task.id, payload };
-    document.getElementById("scope-kicker").textContent = kind === "delete" ? "REPEATING TASK" : "REPEATING TASK · EDIT";
-    document.getElementById("scope-title").textContent = kind === "delete"
-      ? (appLanguage === "ar" ? "ماذا تريد أن تحذف؟" : "What should be deleted?")
-      : (appLanguage === "ar" ? "أي النسخ تريد تعديلها؟" : "Which occurrences should change?");
-    document.getElementById("scope-description").textContent = appLanguage === "ar"
-      ? `سلسلة "${task.title}" تحتوي على ${allCount} مهمة. لن تتأثر أي مهمة خارج هذه السلسلة.`
-      : `"${task.title}" has ${allCount} occurrence${allCount === 1 ? "" : "s"} in this series. Nothing outside the series is affected.`;
+    document.getElementById("scope-kicker").textContent =
+      kind === "delete" ? "REPEATING TASK" : "REPEATING TASK · EDIT";
+    document.getElementById("scope-title").textContent =
+      kind === "delete"
+        ? appLanguage === "ar"
+          ? "ماذا تريد أن تحذف؟"
+          : "What should be deleted?"
+        : appLanguage === "ar"
+          ? "أي النسخ تريد تعديلها؟"
+          : "Which occurrences should change?";
+    document.getElementById("scope-description").textContent =
+      appLanguage === "ar"
+        ? `سلسلة "${task.title}" تحتوي على ${allCount} مهمة. لن تتأثر أي مهمة خارج هذه السلسلة.`
+        : `"${task.title}" has ${allCount} occurrence${allCount === 1 ? "" : "s"} in this series. Nothing outside the series is affected.`;
     document.getElementById("scope-options").innerHTML = [
-      option("single", singleLabel, appLanguage === "ar" ? "تتأثر مهمة واحدة فقط" : "Affects 1 occurrence"),
-      option("future", futureLabel, appLanguage === "ar" ? `تتأثر ${futureCount} مهمة` : `Affects ${futureCount} occurrence${futureCount === 1 ? "" : "s"}`),
-      option("all", allLabel, appLanguage === "ar" ? `تتأثر ${allCount} مهمة` : `Affects all ${allCount} occurrence${allCount === 1 ? "" : "s"}`, "danger"),
+      option(
+        "single",
+        singleLabel,
+        appLanguage === "ar" ? "تتأثر مهمة واحدة فقط" : "Affects 1 occurrence",
+      ),
+      option(
+        "future",
+        futureLabel,
+        appLanguage === "ar"
+          ? `تتأثر ${futureCount} مهمة`
+          : `Affects ${futureCount} occurrence${futureCount === 1 ? "" : "s"}`,
+      ),
+      option(
+        "all",
+        allLabel,
+        appLanguage === "ar"
+          ? `تتأثر ${allCount} مهمة`
+          : `Affects all ${allCount} occurrence${allCount === 1 ? "" : "s"}`,
+        "danger",
+      ),
     ].join("");
     document.getElementById("scope-modal").hidden = false;
     translateInterface();
@@ -5317,10 +8019,15 @@
     const pending = pendingSeriesAction;
     if (!pending) return;
     const task = tasks.find((item) => item.id === pending.taskId);
-    if (!task) { pendingSeriesAction = null; return; }
+    if (!task) {
+      pendingSeriesAction = null;
+      return;
+    }
     const ids = scope === "single" ? [task.id] : seriesScopeIds(task, scope);
     const modal = document.getElementById("scope-modal");
-    modal.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+    modal.querySelectorAll("button").forEach((button) => {
+      button.disabled = true;
+    });
     try {
       if (pending.kind === "delete") {
         if (supabase && session) {
@@ -5330,31 +8037,56 @@
         tasks = tasks.filter((item) => !ids.includes(item.id));
         if (!supabase || !session) saveLocalTasks();
         render();
-        showToast(appLanguage === "ar" ? `تم حذف ${ids.length} مهمة.` : `${ids.length} task${ids.length === 1 ? "" : "s"} deleted.`);
+        showToast(
+          appLanguage === "ar"
+            ? `تم حذف ${ids.length} مهمة.`
+            : `${ids.length} task${ids.length === 1 ? "" : "s"} deleted.`,
+        );
       } else {
         const baseDueMs = task.due_at ? new Date(task.due_at).getTime() : null;
-        const newDueMs = pending.payload.due_at ? new Date(pending.payload.due_at).getTime() : null;
-        const baseStartMs = task.starts_at ? new Date(task.starts_at).getTime() : null;
-        const newStartMs = pending.payload.starts_at ? new Date(pending.payload.starts_at).getTime() : null;
-        const dueShift = baseDueMs != null && newDueMs != null ? newDueMs - baseDueMs : 0;
-        const startShift = baseStartMs != null && newStartMs != null ? newStartMs - baseStartMs : 0;
-        const startOffset = newStartMs != null && newDueMs != null ? newStartMs - newDueMs : null;
+        const newDueMs = pending.payload.due_at
+          ? new Date(pending.payload.due_at).getTime()
+          : null;
+        const baseStartMs = task.starts_at
+          ? new Date(task.starts_at).getTime()
+          : null;
+        const newStartMs = pending.payload.starts_at
+          ? new Date(pending.payload.starts_at).getTime()
+          : null;
+        const dueShift =
+          baseDueMs != null && newDueMs != null ? newDueMs - baseDueMs : 0;
+        const startShift =
+          baseStartMs != null && newStartMs != null
+            ? newStartMs - baseStartMs
+            : 0;
+        const startOffset =
+          newStartMs != null && newDueMs != null ? newStartMs - newDueMs : null;
         await persistTaskPatch(ids, (item) => {
           if (scope === "single") return pending.payload;
           // Series details (title, subject, priority, status…) apply to every selected
           // occurrence, but each occurrence keeps its own date unless the edit changes it.
-          const { starts_at: _startsAt, due_at: _dueAt, ...rest } = pending.payload;
+          const {
+            starts_at: _startsAt,
+            due_at: _dueAt,
+            ...rest
+          } = pending.payload;
           const patch = { ...rest };
           if (pending.payload.due_at === null) patch.due_at = null;
           else if (dueShift && item.due_at && newDueMs != null) {
-            patch.due_at = new Date(new Date(item.due_at).getTime() + dueShift).toISOString();
+            patch.due_at = new Date(
+              new Date(item.due_at).getTime() + dueShift,
+            ).toISOString();
           }
           if (pending.payload.starts_at === null) patch.starts_at = null;
           else if (newStartMs != null) {
             if (item.starts_at && baseStartMs != null) {
-              patch.starts_at = new Date(new Date(item.starts_at).getTime() + startShift).toISOString();
+              patch.starts_at = new Date(
+                new Date(item.starts_at).getTime() + startShift,
+              ).toISOString();
             } else if (item.due_at && startOffset != null) {
-              patch.starts_at = new Date(new Date(item.due_at).getTime() + startOffset).toISOString();
+              patch.starts_at = new Date(
+                new Date(item.due_at).getTime() + startOffset,
+              ).toISOString();
             }
           }
           return patch;
@@ -5371,17 +8103,23 @@
       render();
     } catch (error) {
       console.error("Could not apply the repeating task change.", error);
-      showToast(`${appLanguage === "ar" ? "تعذر تحديث المهام:" : "Could not update tasks:"} ${error.message}`);
-      modal.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+      showToast(
+        `${appLanguage === "ar" ? "تعذر تحديث المهام:" : "Could not update tasks:"} ${error.message}`,
+      );
+      modal.querySelectorAll("button").forEach((button) => {
+        button.disabled = false;
+      });
     }
   }
 
   async function stopTaskSeries(task) {
     if (!task?.recurrence_group_id) return;
     const ids = taskSeries(task).map((item) => item.id);
-    const confirmed = window.confirm(appLanguage === "ar"
-      ? `إيقاف التكرار مع الاحتفاظ بـ ${ids.length} مهمة؟ ستبقى المهام كما هي دون تكرار مستقبلي.`
-      : `Stop repeating and keep ${ids.length} task${ids.length === 1 ? "" : "s"}? The tasks stay, but the series ends here.`);
+    const confirmed = window.confirm(
+      appLanguage === "ar"
+        ? `إيقاف التكرار مع الاحتفاظ بـ ${ids.length} مهمة؟ ستبقى المهام كما هي دون تكرار مستقبلي.`
+        : `Stop repeating and keep ${ids.length} task${ids.length === 1 ? "" : "s"}? The tasks stay, but the series ends here.`,
+    );
     if (!confirmed) return;
     try {
       await persistTaskPatch(ids, () => ({
@@ -5392,9 +8130,13 @@
       }));
       document.getElementById("task-modal").hidden = true;
       taskEditingId = null;
-      showToast(appLanguage === "ar" ? "تم إيقاف التكرار." : "Repeating stopped.");
+      showToast(
+        appLanguage === "ar" ? "تم إيقاف التكرار." : "Repeating stopped.",
+      );
     } catch (error) {
-      showToast(`${appLanguage === "ar" ? "تعذر إيقاف التكرار:" : "Could not stop repeating:"} ${error.message}`);
+      showToast(
+        `${appLanguage === "ar" ? "تعذر إيقاف التكرار:" : "Could not stop repeating:"} ${error.message}`,
+      );
       console.error("Could not stop the repeating series.", error);
     }
   }
@@ -5402,19 +8144,25 @@
   async function updateTaskStatus(id) {
     const task = tasks.find((item) => item.id === id);
     if (!task || statusChangesInFlight.has(id)) return;
-    const nextStatus = task.status === "completed" ? "not_started" : "completed";
+    const nextStatus =
+      task.status === "completed" ? "not_started" : "completed";
     const completing = nextStatus === "completed";
     const previousRewards = rewardSummary ? { ...rewardSummary } : null;
-    const row = [...document.querySelectorAll(".task-row")].find((item) => item.dataset.taskId === id);
+    const row = [...document.querySelectorAll(".task-row")].find(
+      (item) => item.dataset.taskId === id,
+    );
     const button = row?.querySelector('[data-action="toggle-task"]');
     statusChangesInFlight.add(id);
     if (button) button.disabled = true;
     try {
       if (supabase && session) {
-        const { error } = await supabase.from("tasks").update({
-          status: nextStatus,
-          completed_at: completing ? new Date().toISOString() : null,
-        }).eq("id", id);
+        const { error } = await supabase
+          .from("tasks")
+          .update({
+            status: nextStatus,
+            completed_at: completing ? new Date().toISOString() : null,
+          })
+          .eq("id", id);
         if (error) throw error;
       }
       if (completing) await animateCompletionCard(row);
@@ -5422,13 +8170,28 @@
       task.completed_at = completing ? new Date().toISOString() : null;
       if (!supabase || !session) saveLocalTasks();
       render();
-      showToast(completing ? task.due_at ? "Deadline completed." : "Task completed." : "Task reopened.");
+      showToast(
+        completing
+          ? task.due_at
+            ? "Deadline completed."
+            : "Task completed."
+          : "Task reopened.",
+      );
       if (completing && !task.due_at && shouldUseFullMotion()) launchConfetti();
-      if (completing && supabase && session) await refreshRewardSummary({ celebrate: true, previous: previousRewards });
+      if (completing && supabase && session)
+        await refreshRewardSummary({
+          celebrate: true,
+          previous: previousRewards,
+        });
       if (completing && task.due_at) {
-        const gained = previousRewards && rewardSummary
-          ? Math.max(0, Number(rewardSummary.total_xp) - Number(previousRewards.total_xp))
-          : 0;
+        const gained =
+          previousRewards && rewardSummary
+            ? Math.max(
+                0,
+                Number(rewardSummary.total_xp) -
+                  Number(previousRewards.total_xp),
+              )
+            : 0;
         openCelebration("Deadline completed", task.title, gained, true);
       }
     } catch (error) {
@@ -5469,8 +8232,11 @@
     form.elements.task_id.value = task.id;
     const due = task.due_at ? new Date(task.due_at) : new Date();
     form.elements.move_date.value = dateKey(due);
-    const noTime = !task.due_at || (due.getHours() === 23 && due.getMinutes() === 59);
-    form.elements.move_time.value = noTime ? "" : `${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`;
+    const noTime =
+      !task.due_at || (due.getHours() === 23 && due.getMinutes() === 59);
+    form.elements.move_time.value = noTime
+      ? ""
+      : `${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`;
     document.getElementById("move-task-help").textContent = task.title;
     document.getElementById("move-task-error").textContent = "";
     document.getElementById("move-task-modal").hidden = false;
@@ -5478,7 +8244,9 @@
   }
 
   async function moveTask(formData) {
-    const task = tasks.find((item) => String(item.id) === String(formData.get("task_id")));
+    const task = tasks.find(
+      (item) => String(item.id) === String(formData.get("task_id")),
+    );
     if (!task) throw new Error("The task could not be found.");
     const dateValue = String(formData.get("move_date") || "");
     if (!dateValue) throw new Error("Choose a new date.");
@@ -5487,12 +8255,19 @@
     if (Number.isNaN(newDue.getTime())) throw new Error("Choose a valid date.");
     const patch = { due_at: newDue.toISOString() };
     if (task.starts_at) {
-      const oldDue = task.due_at ? new Date(task.due_at).getTime() : newDue.getTime();
+      const oldDue = task.due_at
+        ? new Date(task.due_at).getTime()
+        : newDue.getTime();
       const shift = newDue.getTime() - oldDue;
-      patch.starts_at = new Date(new Date(task.starts_at).getTime() + shift).toISOString();
+      patch.starts_at = new Date(
+        new Date(task.starts_at).getTime() + shift,
+      ).toISOString();
     }
     if (supabase && session) {
-      const { error } = await supabase.from("tasks").update(patch).eq("id", task.id);
+      const { error } = await supabase
+        .from("tasks")
+        .update(patch)
+        .eq("id", task.id);
       if (error) throw error;
     }
     Object.assign(task, patch);
@@ -5522,9 +8297,12 @@
     form.reset();
     const subjectSelect = document.getElementById("deadline-subject");
     subjectSelect.innerHTML = `<option value="">${t.independent}</option>${subjects.map((subject) => `<option value="${escapeHtml(subject.id)}">${escapeHtml(subject.name)}</option>`).join("")}`;
-    document.getElementById("deadline-modal-title").textContent = deadline ? t.modalEdit : t.modalAdd;
+    document.getElementById("deadline-modal-title").textContent = deadline
+      ? t.modalEdit
+      : t.modalAdd;
     document.getElementById("deadline-modal-help").textContent = t.modalHelp;
-    document.getElementById("deadline-submit").innerHTML = `${deadline ? t.save : t.save} <span>→</span>`;
+    document.getElementById("deadline-submit").innerHTML =
+      `${deadline ? t.save : t.save} <span>→</span>`;
     document.getElementById("deadline-error").textContent = "";
     if (deadline) {
       const due = new Date(deadline.due_at);
@@ -5536,8 +8314,12 @@
       form.elements.starts_on.value = dateKey(start);
       form.elements.due_date.value = dateKey(due);
       const noTimeSet = due.getHours() === 23 && due.getMinutes() === 59;
-      form.elements.due_time.value = noTimeSet ? "" : `${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`;
-      form.elements.reminder_before_minutes.value = String(deadline.reminder_before_minutes || 0);
+      form.elements.due_time.value = noTimeSet
+        ? ""
+        : `${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`;
+      form.elements.reminder_before_minutes.value = String(
+        deadline.reminder_before_minutes || 0,
+      );
       form.querySelector("[data-repeat-config]").hidden = true;
     } else {
       form.querySelector("[data-repeat-config]").hidden = false;
@@ -5556,12 +8338,21 @@
     const startsOn = String(formData.get("starts_on") || date);
     const startDate = new Date(`${startsOn}T00:00:00`);
     const endDate = new Date(`${date}T00:00:00`);
-    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate > endDate) {
+    if (
+      Number.isNaN(startDate.getTime()) ||
+      Number.isNaN(endDate.getTime()) ||
+      startDate > endDate
+    ) {
       throw new Error("The start date must be on or before the deadline.");
     }
-    const dueAt = localDateTimeToIso(date, String(formData.get("due_time") || ""));
+    const dueAt = localDateTimeToIso(
+      date,
+      String(formData.get("due_time") || ""),
+    );
     if (!dueAt) throw new Error(t.validationDate);
-    const startsAt = localDateTimeToIso(startsOn, String(formData.get("due_time") || "")) || startDate.toISOString();
+    const startsAt =
+      localDateTimeToIso(startsOn, String(formData.get("due_time") || "")) ||
+      startDate.toISOString();
     const subjectId = String(formData.get("subject_id") || "") || null;
     const payload = {
       title,
@@ -5570,11 +8361,15 @@
       starts_at: startsAt,
       due_at: dueAt,
       priority: String(formData.get("priority") || "medium"),
-      reminder_before_minutes: Number(formData.get("reminder_before_minutes") || 0),
+      reminder_before_minutes: Number(
+        formData.get("reminder_before_minutes") || 0,
+      ),
     };
 
     if (editingDeadlineId) {
-      const editing = tasks.find((item) => String(item.id) === String(editingDeadlineId));
+      const editing = tasks.find(
+        (item) => String(item.id) === String(editingDeadlineId),
+      );
       if (editing?.recurrence_group_id) {
         openSeriesScopeDialog("edit", editing, payload);
         return "scoped";
@@ -5582,23 +8377,50 @@
     }
 
     if (supabase && session) {
-      const baseSelectColumns = "id,title,description,subject_id,starts_at,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,completed_at,subjects(name)";
+      const baseSelectColumns =
+        "id,title,description,subject_id,starts_at,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,completed_at,subjects(name)";
       const selectColumns = `${baseSelectColumns}${recurrenceSupported ? ",recurrence_group_id,recurrence_type,recurrence_days,recurrence_until" : ""}`;
       if (editingDeadlineId) {
-        const { data, error } = await supabase.from("tasks").update(payload).eq("id", editingDeadlineId)
-          .select(selectColumns).single();
+        const { data, error } = await supabase
+          .from("tasks")
+          .update(payload)
+          .eq("id", editingDeadlineId)
+          .select(selectColumns)
+          .single();
         if (error) throw error;
-        tasks = tasks.map((item) => item.id === editingDeadlineId
-          ? { recurrence_group_id: null, recurrence_type: "none", recurrence_days: [], recurrence_until: null, ...data, subject: data.subjects?.name || "Independent study" }
-          : item);
+        tasks = tasks.map((item) =>
+          item.id === editingDeadlineId
+            ? {
+                recurrence_group_id: null,
+                recurrence_type: "none",
+                recurrence_days: [],
+                recurrence_until: null,
+                ...data,
+                subject: data.subjects?.name || "Independent study",
+              }
+            : item,
+        );
       } else {
         const repeatType = String(formData.get("repeat_type") || "none");
         if (repeatType !== "none" && !recurrenceSupported) {
-          throw new Error("Repeating deadlines need the latest Supabase migration. Apply supabase/migrations/001_studyzone_enhancements.sql first.");
+          throw new Error(
+            "Repeating deadlines need the latest Supabase migration. Apply supabase/migrations/001_studyzone_enhancements.sql first.",
+          );
         }
         const recurrence = buildRecurrencePlan(formData, date, repeatType);
-        const dateDuration = Math.round((Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate())
-          - Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())) / 86400000);
+        const dateDuration = Math.round(
+          (Date.UTC(
+            endDate.getFullYear(),
+            endDate.getMonth(),
+            endDate.getDate(),
+          ) -
+            Date.UTC(
+              startDate.getFullYear(),
+              startDate.getMonth(),
+              startDate.getDate(),
+            )) /
+            86400000,
+        );
         const groupId = repeatType === "none" ? null : focusId();
         const instances = recurrence.dateKeys.map((occurrenceDate) => {
           const occurrenceEnd = new Date(`${occurrenceDate}T00:00:00`);
@@ -5607,40 +8429,73 @@
           const startKey = dateKey(occurrenceStart);
           return {
             ...payload,
-            starts_at: localDateTimeToIso(startKey, String(formData.get("due_time") || "")) || occurrenceStart.toISOString(),
-            due_at: localDateTimeToIso(occurrenceDate, String(formData.get("due_time") || "")),
-            ...(recurrenceSupported ? {
-              recurrence_group_id: groupId,
-              recurrence_type: repeatType,
-              recurrence_days: recurrence.days,
-              recurrence_until: recurrence.until,
-            } : {}),
+            starts_at:
+              localDateTimeToIso(
+                startKey,
+                String(formData.get("due_time") || ""),
+              ) || occurrenceStart.toISOString(),
+            due_at: localDateTimeToIso(
+              occurrenceDate,
+              String(formData.get("due_time") || ""),
+            ),
+            ...(recurrenceSupported
+              ? {
+                  recurrence_group_id: groupId,
+                  recurrence_type: repeatType,
+                  recurrence_days: recurrence.days,
+                  recurrence_until: recurrence.until,
+                }
+              : {}),
             status: "not_started",
             estimated_minutes: 30,
           };
         });
-        const { data, error } = await supabase.from("tasks").insert(instances).select(selectColumns);
+        const { data, error } = await supabase
+          .from("tasks")
+          .insert(instances)
+          .select(selectColumns);
         if (error) throw error;
-        tasks.unshift(...(data || []).map((item) => ({
-          recurrence_group_id: null,
-          recurrence_type: "none",
-          recurrence_days: [],
-          recurrence_until: null,
-          ...item,
-          subject: item.subjects?.name || "Independent study",
-        })));
+        tasks.unshift(
+          ...(data || []).map((item) => ({
+            recurrence_group_id: null,
+            recurrence_type: "none",
+            recurrence_days: [],
+            recurrence_until: null,
+            ...item,
+            subject: item.subjects?.name || "Independent study",
+          })),
+        );
       }
     } else {
       if (editingDeadlineId) {
-        tasks = tasks.map((item) => item.id === editingDeadlineId
-          ? { ...item, ...payload, subject: subjectName(subjectId), updated_at: new Date().toISOString() }
-          : item);
+        tasks = tasks.map((item) =>
+          item.id === editingDeadlineId
+            ? {
+                ...item,
+                ...payload,
+                subject: subjectName(subjectId),
+                updated_at: new Date().toISOString(),
+              }
+            : item,
+        );
       } else {
         const repeatType = String(formData.get("repeat_type") || "none");
         const recurrence = buildRecurrencePlan(formData, date, repeatType);
-        const dateDuration = Math.round((Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate())
-          - Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())) / 86400000);
-        const groupId = repeatType === "none" ? null : `local-series-${Date.now()}`;
+        const dateDuration = Math.round(
+          (Date.UTC(
+            endDate.getFullYear(),
+            endDate.getMonth(),
+            endDate.getDate(),
+          ) -
+            Date.UTC(
+              startDate.getFullYear(),
+              startDate.getMonth(),
+              startDate.getDate(),
+            )) /
+            86400000,
+        );
+        const groupId =
+          repeatType === "none" ? null : `local-series-${Date.now()}`;
         const instances = recurrence.dateKeys.map((occurrenceDate, index) => {
           const occurrenceEnd = new Date(`${occurrenceDate}T00:00:00`);
           const occurrenceStart = new Date(occurrenceEnd);
@@ -5648,8 +8503,15 @@
           const startKey = dateKey(occurrenceStart);
           return {
             ...payload,
-            starts_at: localDateTimeToIso(startKey, String(formData.get("due_time") || "")) || occurrenceStart.toISOString(),
-            due_at: localDateTimeToIso(occurrenceDate, String(formData.get("due_time") || "")),
+            starts_at:
+              localDateTimeToIso(
+                startKey,
+                String(formData.get("due_time") || ""),
+              ) || occurrenceStart.toISOString(),
+            due_at: localDateTimeToIso(
+              occurrenceDate,
+              String(formData.get("due_time") || ""),
+            ),
             recurrence_group_id: groupId,
             recurrence_type: repeatType,
             recurrence_days: recurrence.days,
@@ -5678,16 +8540,22 @@
     const t = deadlineText[appLanguage];
     const deadline = tasks.find((item) => item.id === id);
     if (!deadline || statusChangesInFlight.has(id)) return;
-    const nextStatus = deadline.status === "completed" ? "not_started" : "completed";
+    const nextStatus =
+      deadline.status === "completed" ? "not_started" : "completed";
     const completing = nextStatus === "completed";
     const previousRewards = rewardSummary ? { ...rewardSummary } : null;
-    const card = [...document.querySelectorAll(".deadline-card")].find((item) => item.dataset.deadlineId === id);
+    const card = [...document.querySelectorAll(".deadline-card")].find(
+      (item) => item.dataset.deadlineId === id,
+    );
     const button = card?.querySelector('[data-action="deadline-toggle"]');
     statusChangesInFlight.add(id);
     if (button) button.disabled = true;
     try {
       if (supabase && session) {
-        const { error } = await supabase.from("tasks").update({ status: nextStatus }).eq("id", id);
+        const { error } = await supabase
+          .from("tasks")
+          .update({ status: nextStatus })
+          .eq("id", id);
         if (error) throw error;
       }
       if (completing) await animateCompletionCard(card);
@@ -5696,11 +8564,20 @@
       if (!supabase || !session) saveLocalTasks();
       render();
       showToast(completing ? t.completeSuccess : t.reopenSuccess);
-      if (completing && supabase && session) await refreshRewardSummary({ celebrate: true, previous: previousRewards });
+      if (completing && supabase && session)
+        await refreshRewardSummary({
+          celebrate: true,
+          previous: previousRewards,
+        });
       if (completing) {
-        const gained = previousRewards && rewardSummary
-          ? Math.max(0, Number(rewardSummary.total_xp) - Number(previousRewards.total_xp))
-          : 0;
+        const gained =
+          previousRewards && rewardSummary
+            ? Math.max(
+                0,
+                Number(rewardSummary.total_xp) -
+                  Number(previousRewards.total_xp),
+              )
+            : 0;
         openCelebration("Deadline completed", deadline.title, gained, true);
       }
     } catch (error) {
@@ -5734,12 +8611,16 @@
     showToast(t.deleteSuccess);
   }
 
-  function showInfo(message) { showToast(message); }
+  function showInfo(message) {
+    showToast(message);
+  }
 
   async function handleAuthSubmit(event) {
     event.preventDefault();
     if (!supabase) {
-      showToast("Set SUPABASE_URL and SUPABASE_ANON_KEY in supabase-config.js to enable sign-in.");
+      showToast(
+        "Set SUPABASE_URL and SUPABASE_ANON_KEY in supabase-config.js to enable sign-in.",
+      );
       return;
     }
     const formData = new FormData(event.currentTarget);
@@ -5750,9 +8631,14 @@
     const errorEl = document.getElementById("auth-error");
     button.disabled = true;
     errorEl.textContent = "";
-    const result = authMode === "signup"
-      ? await supabase.auth.signUp({ email, password, options: { data: { full_name: name } } })
-      : await supabase.auth.signInWithPassword({ email, password });
+    const result =
+      authMode === "signup"
+        ? await supabase.auth.signUp({
+            email,
+            password,
+            options: { data: { full_name: name } },
+          })
+        : await supabase.auth.signInWithPassword({ email, password });
     button.disabled = false;
     if (result.error) {
       errorEl.textContent = result.error.message;
@@ -5780,7 +8666,9 @@
     } finally {
       endRenderBatch();
     }
-    showToast(authMode === "signup" ? "Your account is ready." : "Welcome back.");
+    showToast(
+      authMode === "signup" ? "Your account is ready." : "Welcome back.",
+    );
   }
 
   async function restoreSession() {
@@ -5831,7 +8719,10 @@
     }
     supabase.auth.onAuthStateChange((_event, nextSession) => {
       session = nextSession;
-      adminAuthorization = { status: "unknown", userId: session?.user?.id || null };
+      adminAuthorization = {
+        status: "unknown",
+        userId: session?.user?.id || null,
+      };
       updateUserUi();
       if (currentPage === "admin") render();
       if (session) {
@@ -5852,21 +8743,48 @@
             endRenderBatch();
           }
         }, 0);
-      }
-      else {
+      } else {
         adminAuthorization = { status: "denied", userId: null };
         if (currentPage === "admin") denyAdminRoute(false);
         tasks = readLocalTasks();
         subjects = [
-          { id: "subject-calculus", name: "Calculus II", color: "#06D6A0", credits: 4, progress: 72 },
-          { id: "subject-algorithms", name: "Algorithms", color: "#75CDB1", credits: 3, progress: 81 },
-          { id: "subject-biology", name: "Biology", color: "#9ECDAF", credits: 3, progress: 64 },
-          { id: "subject-history", name: "History", color: "#C1D79D", credits: 2, progress: 55 },
+          {
+            id: "subject-calculus",
+            name: "Calculus II",
+            color: "#06D6A0",
+            credits: 4,
+            progress: 72,
+          },
+          {
+            id: "subject-algorithms",
+            name: "Algorithms",
+            color: "#75CDB1",
+            credits: 3,
+            progress: 81,
+          },
+          {
+            id: "subject-biology",
+            name: "Biology",
+            color: "#9ECDAF",
+            credits: 3,
+            progress: 64,
+          },
+          {
+            id: "subject-history",
+            name: "History",
+            color: "#C1D79D",
+            credits: 2,
+            progress: 55,
+          },
         ];
         resetAccountWorkspacePreview();
         document.getElementById("feature-modal")?.setAttribute("hidden", "");
         userNotifications = [];
-        dailyReminderPreference = { enabled: false, local_time: "09:00", timezone: "UTC" };
+        dailyReminderPreference = {
+          enabled: false,
+          local_time: "09:00",
+          timezone: "UTC",
+        };
         rewardSummary = null;
         earnedAchievements = [];
         focusLoadedIdentity = "";
@@ -5878,9 +8796,14 @@
 
   function setAuthMode(mode) {
     authMode = mode;
-    document.querySelectorAll(".auth-tab").forEach((button) => button.classList.toggle("selected", button.dataset.authMode === mode));
+    document
+      .querySelectorAll(".auth-tab")
+      .forEach((button) =>
+        button.classList.toggle("selected", button.dataset.authMode === mode),
+      );
     document.querySelector(".signup-only").hidden = mode !== "signup";
-    document.getElementById("auth-submit").innerHTML = `${mode === "signup" ? "Create account" : "Sign in"} <span>→</span>`;
+    document.getElementById("auth-submit").innerHTML =
+      `${mode === "signup" ? "Create account" : "Sign in"} <span>→</span>`;
     document.getElementById("auth-error").textContent = "";
     translateInterface();
   }
@@ -5901,21 +8824,57 @@
   function normalizeFocusSettings(value) {
     const source = value && typeof value === "object" ? value : {};
     const normalized = { ...defaultFocusSettings };
-    for (const key of ["focusMinutes", "shortBreakMinutes", "longBreakMinutes"]) {
+    for (const key of [
+      "focusMinutes",
+      "shortBreakMinutes",
+      "longBreakMinutes",
+    ]) {
       const number = Number(source[key]);
-      if (Number.isInteger(number) && number >= 1 && number <= 180) normalized[key] = number;
+      if (Number.isInteger(number) && number >= 1 && number <= 180)
+        normalized[key] = number;
     }
     const interval = Number(source.longBreakInterval);
-    if (Number.isInteger(interval) && interval >= 2 && interval <= 12) normalized.longBreakInterval = interval;
-    for (const key of ["autoStartFocus", "autoStartBreaks", "soundEnabled", "browserNotifications", "showSeconds"]) {
+    if (Number.isInteger(interval) && interval >= 2 && interval <= 12)
+      normalized.longBreakInterval = interval;
+    for (const key of [
+      "autoStartFocus",
+      "autoStartBreaks",
+      "soundEnabled",
+      "browserNotifications",
+      "showSeconds",
+    ]) {
       if (typeof source[key] === "boolean") normalized[key] = source[key];
     }
-    if (typeof source.startSound === "string") normalized.startSound = ALERT_SOUNDS.some((sound) => sound.id === source.startSound) ? source.startSound : "focus-start";
-    if (typeof source.endSound === "string") normalized.endSound = ALERT_SOUNDS.some((sound) => sound.id === source.endSound) ? source.endSound : "focus-end";
-    if (typeof source.breakEndSound === "string") normalized.breakEndSound = ALERT_SOUNDS.some((sound) => sound.id === source.breakEndSound) ? source.breakEndSound : "break-end";
-    if (Number(source.soundVolume) > 0) normalized.soundVolume = Math.max(0, Math.min(100, Number(source.soundVolume)));
-    if (Number(source.soundDuration) > 0) normalized.soundDuration = Math.max(3, Math.min(15, Number(source.soundDuration)));
-    if (typeof source.soundRepeat === "boolean") normalized.soundRepeat = source.soundRepeat;
+    if (typeof source.startSound === "string")
+      normalized.startSound = ALERT_SOUNDS.some(
+        (sound) => sound.id === source.startSound,
+      )
+        ? source.startSound
+        : "focus-start";
+    if (typeof source.endSound === "string")
+      normalized.endSound = ALERT_SOUNDS.some(
+        (sound) => sound.id === source.endSound,
+      )
+        ? source.endSound
+        : "focus-end";
+    if (typeof source.breakEndSound === "string")
+      normalized.breakEndSound = ALERT_SOUNDS.some(
+        (sound) => sound.id === source.breakEndSound,
+      )
+        ? source.breakEndSound
+        : "break-end";
+    if (Number(source.soundVolume) > 0)
+      normalized.soundVolume = Math.max(
+        0,
+        Math.min(100, Number(source.soundVolume)),
+      );
+    if (Number(source.soundDuration) > 0)
+      normalized.soundDuration = Math.max(
+        3,
+        Math.min(15, Number(source.soundDuration)),
+      );
+    if (typeof source.soundRepeat === "boolean")
+      normalized.soundRepeat = source.soundRepeat;
     return normalized;
   }
 
@@ -5931,7 +8890,8 @@
     try {
       const serialized = localStorage.getItem(focusStorageKey(identity));
       saved = serialized ? JSON.parse(serialized) : null;
-      if (saved && typeof saved !== "object") throw new Error("Stored focus data is invalid.");
+      if (saved && typeof saved !== "object")
+        throw new Error("Stored focus data is invalid.");
     } catch (error) {
       console.error("Could not read saved focus data.", error);
       focusDataError = error.message;
@@ -5940,18 +8900,31 @@
     }
     focusSettings = normalizeFocusSettings(saved?.settings);
     const savedSession = saved?.timer;
-    if (savedSession && ["focus", "short_break", "long_break"].includes(savedSession.type)) {
+    if (
+      savedSession &&
+      ["focus", "short_break", "long_break"].includes(savedSession.type)
+    ) {
       focusSession = {
         ...focusSession,
         ...savedSession,
-        cycle: Number.isInteger(savedSession.cycle) && savedSession.cycle > 0 ? savedSession.cycle : 1,
-        remainingMs: Number.isFinite(Number(savedSession.remainingMs)) ? Math.max(0, Number(savedSession.remainingMs)) : getFocusDurationMs(savedSession.type),
+        cycle:
+          Number.isInteger(savedSession.cycle) && savedSession.cycle > 0
+            ? savedSession.cycle
+            : 1,
+        remainingMs: Number.isFinite(Number(savedSession.remainingMs))
+          ? Math.max(0, Number(savedSession.remainingMs))
+          : getFocusDurationMs(savedSession.type),
       };
     } else {
       focusSession = createFocusSession("focus", 1);
     }
-    focusRecords = identity === "guest" && Array.isArray(saved?.records) ? saved.records : [];
-    pendingFocusRecords = Array.isArray(saved?.pendingRecords) ? saved.pendingRecords : [];
+    focusRecords =
+      identity === "guest" && Array.isArray(saved?.records)
+        ? saved.records
+        : [];
+    pendingFocusRecords = Array.isArray(saved?.pendingRecords)
+      ? saved.pendingRecords
+      : [];
     if (!session) {
       reconcileFocusTimer();
       if (currentPage === "focus") scheduleRender();
@@ -5960,17 +8933,24 @@
     }
 
     return (async () => {
-      const { data: settingsRow, error: settingsError } = await supabase.from("user_settings")
-        .select("focus_settings").maybeSingle();
+      const { data: settingsRow, error: settingsError } = await supabase
+        .from("user_settings")
+        .select("focus_settings")
+        .maybeSingle();
       if (settingsError) {
         focusDataError = settingsError.message;
         console.error("Could not load focus settings.", settingsError);
-        showToast(`${focusText[appLanguage].settingsError} ${settingsError.message}`);
+        showToast(
+          `${focusText[appLanguage].settingsError} ${settingsError.message}`,
+        );
       } else if (settingsRow?.focus_settings) {
         focusSettings = normalizeFocusSettings(settingsRow.focus_settings);
       }
-      const { data, error } = await supabase.from("study_sessions")
-        .select("id,idempotency_key,session_type,started_at,ended_at,duration_seconds,completed,subject_id,task_id")
+      const { data, error } = await supabase
+        .from("study_sessions")
+        .select(
+          "id,idempotency_key,session_type,started_at,ended_at,duration_seconds,completed,subject_id,task_id",
+        )
         .order("started_at", { ascending: false })
         .limit(500);
       if (error) {
@@ -5984,10 +8964,16 @@
       updateActivityFromFocusRecords();
       reconcileFocusTimer();
       if (!error && pendingFocusRecords.length) {
-        for (const record of [...pendingFocusRecords]) await persistFocusRecord(record);
+        for (const record of [...pendingFocusRecords])
+          await persistFocusRecord(record);
       }
       updateActivityFromFocusRecords();
-      if (currentPage === "focus" || currentPage === "dashboard" || currentPage === "analytics") scheduleRender();
+      if (
+        currentPage === "focus" ||
+        currentPage === "dashboard" ||
+        currentPage === "analytics"
+      )
+        scheduleRender();
       syncFocusTicker();
     })();
   }
@@ -6015,7 +9001,9 @@
       const value = {
         settings: focusSettings,
         timer: focusSession,
-        ...(session ? { pendingRecords: pendingFocusRecords } : { records: focusRecords }),
+        ...(session
+          ? { pendingRecords: pendingFocusRecords }
+          : { records: focusRecords }),
       };
       localStorage.setItem(focusStorageKey(), JSON.stringify(value));
     } catch (error) {
@@ -6025,7 +9013,11 @@
   }
 
   function reconcileFocusTimer() {
-    if (focusSession.status === "running" && focusSession.endAt && Date.now() >= focusSession.endAt) {
+    if (
+      focusSession.status === "running" &&
+      focusSession.endAt &&
+      Date.now() >= focusSession.endAt
+    ) {
       void finishFocusTimer();
     } else {
       persistFocusState();
@@ -6033,7 +9025,8 @@
   }
 
   function syncFocusTicker() {
-    const shouldTick = currentPage === "focus" && focusSession.status === "running";
+    const shouldTick =
+      currentPage === "focus" && focusSession.status === "running";
     if (!shouldTick) {
       if (focusTicker) window.clearInterval(focusTicker);
       focusTicker = null;
@@ -6060,7 +9053,10 @@
     const seconds = Math.max(0, Math.ceil(remaining / 1000));
     const minutes = String(Math.floor(seconds / 60)).padStart(2, "0");
     const secondText = String(seconds % 60).padStart(2, "0");
-    const digits = [...minutes, ...(focusSettings.showSeconds ? [...secondText] : [])];
+    const digits = [
+      ...minutes,
+      ...(focusSettings.showSeconds ? [...secondText] : []),
+    ];
     clock.setAttribute("aria-label", formatTimer(seconds));
     clock.querySelectorAll(".flip-digit").forEach((element, index) => {
       const next = digits[index];
@@ -6074,35 +9070,52 @@
       window.setTimeout(() => element.classList.remove("flipping"), 320);
     });
     const duration = getFocusDurationMs();
-    const progress = Math.min(100, Math.max(0, ((duration - remaining) / duration) * 100));
+    const progress = Math.min(
+      100,
+      Math.max(0, ((duration - remaining) / duration) * 100),
+    );
     const fill = document.getElementById("focus-progress-fill");
     if (fill) fill.style.width = `${progress}%`;
     const bar = document.querySelector(".focus-progress");
     if (bar) bar.setAttribute("aria-valuenow", String(Math.round(progress)));
     const button = document.getElementById("timer-toggle");
-    if (button) button.textContent = focusSession.status === "running"
-      ? focusText[appLanguage].pause
-      : focusSession.status === "paused" ? focusText[appLanguage].resume : focusText[appLanguage].start;
+    if (button)
+      button.textContent =
+        focusSession.status === "running"
+          ? focusText[appLanguage].pause
+          : focusSession.status === "paused"
+            ? focusText[appLanguage].resume
+            : focusText[appLanguage].start;
     const message = document.getElementById("focus-session-message");
-    if (message) message.textContent = focusSession.type === "focus"
-      ? focusSession.status === "running" ? focusText[appLanguage].stayFocused : focusSession.status === "paused" ? focusText[appLanguage].paused : focusText[appLanguage].focusHint
-      : focusText[appLanguage].breakHint;
+    if (message)
+      message.textContent =
+        focusSession.type === "focus"
+          ? focusSession.status === "running"
+            ? focusText[appLanguage].stayFocused
+            : focusSession.status === "paused"
+              ? focusText[appLanguage].paused
+              : focusText[appLanguage].focusHint
+          : focusText[appLanguage].breakHint;
   }
 
   async function startFocusTimer() {
     if (focusSession.status === "running") return;
     const now = Date.now();
     if (supabase && session) {
-      const method = focusSession.remoteStarted ? "resume_focus_session" : "start_focus_session";
+      const method = focusSession.remoteStarted
+        ? "resume_focus_session"
+        : "start_focus_session";
       const args = focusSession.remoteStarted
         ? { p_session_key: focusSession.id }
         : {
-          p_session_key: focusSession.id,
-          p_target_seconds: Math.round(getFocusDurationMs(focusSession.type) / 1000),
-          p_session_type: focusSession.type,
-          p_subject_id: focusSession.subjectId || null,
-          p_task_id: focusSession.taskId || null,
-        };
+            p_session_key: focusSession.id,
+            p_target_seconds: Math.round(
+              getFocusDurationMs(focusSession.type) / 1000,
+            ),
+            p_session_type: focusSession.type,
+            p_subject_id: focusSession.subjectId || null,
+            p_task_id: focusSession.taskId || null,
+          };
       const { data, error } = await supabase.rpc(method, args);
       if (error) {
         focusDataError = error.message;
@@ -6112,8 +9125,12 @@
       }
       if (!focusSession.startedAt) focusSession.startedAt = data.started_at;
       focusSession.remoteStarted = true;
-      focusSession.elapsedBeforeRunMs = Number(data.elapsed_seconds || 0) * 1000;
-      focusSession.remainingMs = Math.max(0, getFocusDurationMs(focusSession.type) - focusSession.elapsedBeforeRunMs);
+      focusSession.elapsedBeforeRunMs =
+        Number(data.elapsed_seconds || 0) * 1000;
+      focusSession.remainingMs = Math.max(
+        0,
+        getFocusDurationMs(focusSession.type) - focusSession.elapsedBeforeRunMs,
+      );
     } else if (!focusSession.startedAt) {
       focusSession.startedAt = new Date(now).toISOString();
     }
@@ -6139,7 +9156,9 @@
     const now = Date.now();
     let remoteElapsedMs = null;
     if (focusSession.remoteStarted && supabase && session) {
-      const { data, error } = await supabase.rpc("pause_focus_session", { p_session_key: focusSession.id });
+      const { data, error } = await supabase.rpc("pause_focus_session", {
+        p_session_key: focusSession.id,
+      });
       if (error) {
         console.error("Could not pause the verified focus session.", error);
         showToast(`${focusText[appLanguage].sessionError} ${error.message}`);
@@ -6148,11 +9167,15 @@
       remoteElapsedMs = Number(data || 0) * 1000;
     }
     focusSession.remainingMs = Math.max(0, focusSession.endAt - now);
-    focusSession.elapsedBeforeRunMs = remoteElapsedMs ?? (
-      focusSession.elapsedBeforeRunMs + Math.max(0, now - focusSession.runStartedAt)
-    );
+    focusSession.elapsedBeforeRunMs =
+      remoteElapsedMs ??
+      focusSession.elapsedBeforeRunMs +
+        Math.max(0, now - focusSession.runStartedAt);
     if (remoteElapsedMs !== null) {
-      focusSession.remainingMs = Math.max(0, getFocusDurationMs(focusSession.type) - remoteElapsedMs);
+      focusSession.remainingMs = Math.max(
+        0,
+        getFocusDurationMs(focusSession.type) - remoteElapsedMs,
+      );
     }
     focusSession.runStartedAt = null;
     focusSession.endAt = null;
@@ -6182,19 +9205,33 @@
     if (focusRecordSavesInFlight.has(record.idempotency_key)) return false;
     focusRecordSavesInFlight.add(record.idempotency_key);
     if (!session) {
-      if (!focusRecords.some((item) => item.idempotency_key === record.idempotency_key)) focusRecords.unshift(record);
+      if (
+        !focusRecords.some(
+          (item) => item.idempotency_key === record.idempotency_key,
+        )
+      )
+        focusRecords.unshift(record);
       persistFocusState();
       updateActivityFromFocusRecords();
       focusRecordSavesInFlight.delete(record.idempotency_key);
       return true;
     }
-    if (!pendingFocusRecords.some((item) => item.idempotency_key === record.idempotency_key)) pendingFocusRecords.push(record);
+    if (
+      !pendingFocusRecords.some(
+        (item) => item.idempotency_key === record.idempotency_key,
+      )
+    )
+      pendingFocusRecords.push(record);
     focusSaving = true;
     persistFocusState();
-    const rpc = record.completed ? "finish_focus_session" : "cancel_focus_session";
+    const rpc = record.completed
+      ? "finish_focus_session"
+      : "cancel_focus_session";
     let rpcError;
     try {
-      ({ error: rpcError } = await supabase.rpc(rpc, { p_session_key: record.idempotency_key }));
+      ({ error: rpcError } = await supabase.rpc(rpc, {
+        p_session_key: record.idempotency_key,
+      }));
     } catch (error) {
       rpcError = error;
     }
@@ -6211,22 +9248,35 @@
     let data;
     let historyError;
     try {
-      ({ data, error: historyError } = await supabase.from("study_sessions")
-        .select("id,idempotency_key,session_type,started_at,ended_at,duration_seconds,completed,subject_id,task_id")
-        .eq("idempotency_key", record.idempotency_key).maybeSingle());
+      ({ data, error: historyError } = await supabase
+        .from("study_sessions")
+        .select(
+          "id,idempotency_key,session_type,started_at,ended_at,duration_seconds,completed,subject_id,task_id",
+        )
+        .eq("idempotency_key", record.idempotency_key)
+        .maybeSingle());
     } catch (error) {
       historyError = error;
     }
     if (historyError || !data) {
-      focusDataError = historyError?.message || "The verified focus record could not be read back.";
+      focusDataError =
+        historyError?.message ||
+        "The verified focus record could not be read back.";
       focusSaving = false;
       focusRecordSavesInFlight.delete(record.idempotency_key);
-      console.error("Could not refresh the verified focus record.", historyError);
+      console.error(
+        "Could not refresh the verified focus record.",
+        historyError,
+      );
       showToast(`${focusText[appLanguage].dataError} ${focusDataError}`);
       return false;
     }
-    pendingFocusRecords = pendingFocusRecords.filter((item) => item.idempotency_key !== record.idempotency_key);
-    focusRecords = focusRecords.filter((item) => item.idempotency_key !== record.idempotency_key);
+    pendingFocusRecords = pendingFocusRecords.filter(
+      (item) => item.idempotency_key !== record.idempotency_key,
+    );
+    focusRecords = focusRecords.filter(
+      (item) => item.idempotency_key !== record.idempotency_key,
+    );
     focusRecords.unshift(data);
     focusSaving = false;
     focusDataError = "";
@@ -6234,7 +9284,8 @@
     updateActivityFromFocusRecords();
     persistFocusState();
     if (currentPage === "focus") render();
-    if (record.completed && record.session_type === "focus") await refreshRewardSummary({ celebrate: true });
+    if (record.completed && record.session_type === "focus")
+      await refreshRewardSummary({ celebrate: true });
     return true;
   }
 
@@ -6242,31 +9293,52 @@
     if (focusSettings.soundEnabled) {
       void startAlert({
         key: `focus-end-${focusSession.type}-${focusSession.cycle}`,
-        soundId: focusSession.type === "short_break" || focusSession.type === "long_break" ? focusSettings.breakEndSound : focusSettings.endSound,
+        soundId:
+          focusSession.type === "short_break" ||
+          focusSession.type === "long_break"
+            ? focusSettings.breakEndSound
+            : focusSettings.endSound,
         volume: focusSettings.soundVolume,
         duration: focusSettings.soundDuration,
         repeat: focusSettings.soundRepeat,
       });
     }
-    if (focusSettings.browserNotifications && "Notification" in window && Notification.permission === "granted") {
+    if (
+      focusSettings.browserNotifications &&
+      "Notification" in window &&
+      Notification.permission === "granted"
+    ) {
       try {
         const notificationOptions = {
-          body: focusSession.type === "focus" ? focusText[appLanguage].focusCompleted : focusText[appLanguage].breakCompleted,
+          body:
+            focusSession.type === "focus"
+              ? focusText[appLanguage].focusCompleted
+              : focusText[appLanguage].breakCompleted,
           icon: "./icon.svg",
           badge: "./icons/icon-192.png",
           tag: "studyflow-focus-completion",
           renotify: true,
-          data: { url: `${window.location.origin}${window.location.pathname}#/focus` },
+          data: {
+            url: `${window.location.origin}${window.location.pathname}#/focus`,
+          },
         };
         if ("serviceWorker" in navigator) {
           const registration = navigator.serviceWorker.ready;
-          if (registration?.showNotification) registration.showNotification(focusText[appLanguage].title, notificationOptions);
-          else new Notification(focusText[appLanguage].title, notificationOptions);
+          if (registration?.showNotification)
+            registration.showNotification(
+              focusText[appLanguage].title,
+              notificationOptions,
+            );
+          else
+            new Notification(focusText[appLanguage].title, notificationOptions);
         } else {
           new Notification(focusText[appLanguage].title, notificationOptions);
         }
       } catch (error) {
-        console.error("Could not show the focus completion notification.", error);
+        console.error(
+          "Could not show the focus completion notification.",
+          error,
+        );
       }
     }
   }
@@ -6285,26 +9357,45 @@
     playFocusCompletion();
     const text = focusText[appLanguage];
     if (record) await persistFocusRecord(record);
-    const completedFocus = focusRecords.filter((item) => item.session_type === "focus" && item.completed).length;
+    const completedFocus = focusRecords.filter(
+      (item) => item.session_type === "focus" && item.completed,
+    ).length;
     let nextType;
     let nextCycle;
     let autoStart;
     if (finishedType === "focus") {
-      nextType = completedFocus % focusSettings.longBreakInterval === 0 ? "long_break" : "short_break";
-      nextCycle = completedFocus % focusSettings.longBreakInterval + 1;
+      nextType =
+        completedFocus % focusSettings.longBreakInterval === 0
+          ? "long_break"
+          : "short_break";
+      nextCycle = (completedFocus % focusSettings.longBreakInterval) + 1;
       autoStart = focusSettings.autoStartBreaks;
       showToast(text.focusCompleted);
       if (shouldUseFullMotion()) launchConfetti();
       const currentXp = Number(rewardSummary?.total_xp) || 0;
-      const earnedXp = previousRewards ? Math.max(0, currentXp - Number(previousRewards.total_xp)) : 0;
-      const duration = formatFocusDuration(record?.duration_seconds || Math.floor(getFocusDurationMs("focus") / 1000), text);
+      const earnedXp = previousRewards
+        ? Math.max(0, currentXp - Number(previousRewards.total_xp))
+        : 0;
+      const duration = formatFocusDuration(
+        record?.duration_seconds ||
+          Math.floor(getFocusDurationMs("focus") / 1000),
+        text,
+      );
       const count = new Intl.NumberFormat(focusLocale()).format(completedFocus);
-      const detail = text.focusRewardDetail.replace("{duration}", duration).replace("{count}", count);
-      const fullCycle = completedFocus > 0 && completedFocus % focusSettings.longBreakInterval === 0;
-      openCelebration(fullCycle ? text.cycleCompletedTitle : text.focusCompletedTitle, detail, earnedXp);
+      const detail = text.focusRewardDetail
+        .replace("{duration}", duration)
+        .replace("{count}", count);
+      const fullCycle =
+        completedFocus > 0 &&
+        completedFocus % focusSettings.longBreakInterval === 0;
+      openCelebration(
+        fullCycle ? text.cycleCompletedTitle : text.focusCompletedTitle,
+        detail,
+        earnedXp,
+      );
     } else {
       nextType = "focus";
-      nextCycle = completedFocus % focusSettings.longBreakInterval + 1;
+      nextCycle = (completedFocus % focusSettings.longBreakInterval) + 1;
       autoStart = focusSettings.autoStartFocus;
       showToast(text.breakCompleted);
     }
@@ -6315,16 +9406,23 @@
   }
 
   async function skipFocusSession() {
-    const record = focusSession.type === "focus" ? makeFocusRecord(false) : null;
+    const record =
+      focusSession.type === "focus" ? makeFocusRecord(false) : null;
     const currentType = focusSession.type;
     if (focusSession.status === "running") {
       await pauseFocusTimer();
       if (focusSession.status === "running") return;
     }
     if (record) await persistFocusRecord(record);
-    const count = focusRecords.filter((item) => item.session_type === "focus" && item.completed).length;
+    const count = focusRecords.filter(
+      (item) => item.session_type === "focus" && item.completed,
+    ).length;
     const nextType = currentType === "focus" ? "short_break" : "focus";
-    focusSession = createFocusSession(nextType, count % focusSettings.longBreakInterval + 1, focusSession);
+    focusSession = createFocusSession(
+      nextType,
+      (count % focusSettings.longBreakInterval) + 1,
+      focusSession,
+    );
     persistFocusState();
     render();
     syncFocusTicker();
@@ -6333,7 +9431,11 @@
   async function resetFocusSession() {
     const record = makeFocusRecord(false);
     if (record) await persistFocusRecord(record);
-    focusSession = createFocusSession(focusSession.type, focusSession.cycle, focusSession);
+    focusSession = createFocusSession(
+      focusSession.type,
+      focusSession.cycle,
+      focusSession,
+    );
     persistFocusState();
     render();
     syncFocusTicker();
@@ -6358,27 +9460,48 @@
       soundDuration: Number(data.get("soundDuration") || 5),
       soundRepeat: data.has("soundRepeat"),
     });
-    const integerFields = ["focusMinutes", "shortBreakMinutes", "longBreakMinutes", "longBreakInterval"];
-    if (integerFields.some((key) => !Number.isInteger(Number(data.get(key))))
-      || settings.focusMinutes !== Number(data.get("focusMinutes"))
-      || settings.shortBreakMinutes !== Number(data.get("shortBreakMinutes"))
-      || settings.longBreakMinutes !== Number(data.get("longBreakMinutes"))
-      || settings.longBreakInterval !== Number(data.get("longBreakInterval"))) {
+    const integerFields = [
+      "focusMinutes",
+      "shortBreakMinutes",
+      "longBreakMinutes",
+      "longBreakInterval",
+    ];
+    if (
+      integerFields.some((key) => !Number.isInteger(Number(data.get(key)))) ||
+      settings.focusMinutes !== Number(data.get("focusMinutes")) ||
+      settings.shortBreakMinutes !== Number(data.get("shortBreakMinutes")) ||
+      settings.longBreakMinutes !== Number(data.get("longBreakMinutes")) ||
+      settings.longBreakInterval !== Number(data.get("longBreakInterval"))
+    ) {
       throw new Error(focusText[appLanguage].invalidSettings);
     }
     if (settings.browserNotifications) {
-      if (!("Notification" in window)) throw new Error(focusText[appLanguage].notificationsUnsupported);
-      const permission = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
+      if (!("Notification" in window))
+        throw new Error(focusText[appLanguage].notificationsUnsupported);
+      const permission =
+        Notification.permission === "default"
+          ? await Notification.requestPermission()
+          : Notification.permission;
       if (permission !== "granted") {
         settings.browserNotifications = false;
-        throw new Error(permission === "denied" ? focusText[appLanguage].notificationsDenied : focusText[appLanguage].notificationsUnsupported);
+        throw new Error(
+          permission === "denied"
+            ? focusText[appLanguage].notificationsDenied
+            : focusText[appLanguage].notificationsUnsupported,
+        );
       }
     }
     if (session) {
-      const { data: existing, error: readError } = await supabase.from("user_settings").select("user_id").maybeSingle();
+      const { data: existing, error: readError } = await supabase
+        .from("user_settings")
+        .select("user_id")
+        .maybeSingle();
       if (readError) throw readError;
       const query = existing
-        ? supabase.from("user_settings").update({ focus_settings: settings }).eq("user_id", session.user.id)
+        ? supabase
+            .from("user_settings")
+            .update({ focus_settings: settings })
+            .eq("user_id", session.user.id)
         : supabase.from("user_settings").insert({ focus_settings: settings });
       const { error } = await query;
       if (error) throw error;
@@ -6396,45 +9519,57 @@
   }
 
   function updateFocusContext() {
-    const task = tasks.find((item) => String(item.id) === String(focusSession.taskId));
+    const task = tasks.find(
+      (item) => String(item.id) === String(focusSession.taskId),
+    );
     if (task?.subject_id) focusSession.subjectId = task.subject_id;
     persistFocusState();
     render();
   }
 
   function attachFocusListeners() {
-    document.getElementById("focus-settings-form")?.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const form = event.currentTarget;
-      const error = document.getElementById("focus-settings-error");
-      const button = form.querySelector('button[type="submit"]');
-      error.textContent = "";
-      button.disabled = true;
-      try {
-        await saveFocusSettings(form);
-      } catch (reason) {
-        error.textContent = reason?.message || focusText[appLanguage].settingsError;
-        console.error("Focus settings save failed.", reason);
-      } finally {
-        const currentButton = document.querySelector('#focus-settings-form button[type="submit"]');
-        if (currentButton) currentButton.disabled = false;
-      }
-    });
-    document.getElementById("focus-subject")?.addEventListener("change", (event) => {
-      focusSession.subjectId = event.target.value;
-      focusSession.taskId = "";
-      persistFocusState();
-      render();
-    });
-    document.getElementById("focus-task")?.addEventListener("change", (event) => {
-      focusSession.taskId = event.target.value;
-      updateFocusContext();
-    });
+    document
+      .getElementById("focus-settings-form")
+      ?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const error = document.getElementById("focus-settings-error");
+        const button = form.querySelector('button[type="submit"]');
+        error.textContent = "";
+        button.disabled = true;
+        try {
+          await saveFocusSettings(form);
+        } catch (reason) {
+          error.textContent =
+            reason?.message || focusText[appLanguage].settingsError;
+          console.error("Focus settings save failed.", reason);
+        } finally {
+          const currentButton = document.querySelector(
+            '#focus-settings-form button[type="submit"]',
+          );
+          if (currentButton) currentButton.disabled = false;
+        }
+      });
+    document
+      .getElementById("focus-subject")
+      ?.addEventListener("change", (event) => {
+        focusSession.subjectId = event.target.value;
+        focusSession.taskId = "";
+        persistFocusState();
+        render();
+      });
+    document
+      .getElementById("focus-task")
+      ?.addEventListener("change", (event) => {
+        focusSession.taskId = event.target.value;
+        updateFocusContext();
+      });
   }
 
   document.addEventListener("submit", async (event) => {
     const form = event.target;
-    if (!(form instanceof HTMLFormElement) || form.id !== "daily-reminder-form") return;
+    if (!(form instanceof HTMLFormElement) || form.id !== "daily-reminder-form")
+      return;
     event.preventDefault();
     const submit = form.querySelector('[type="submit"]');
     const errorEl = form.querySelector("[data-reminder-error]");
@@ -6444,14 +9579,17 @@
       await saveDailyReminder(form);
     } catch (error) {
       console.error("Could not save daily reminder settings.", error);
-      errorEl.textContent = `${translateUiText("Could not save your reminder.")} ${error.message || ""}`.trim();
+      errorEl.textContent =
+        `${translateUiText("Could not save your reminder.")} ${error.message || ""}`.trim();
     } finally {
       submit.disabled = false;
     }
   });
 
   document.addEventListener("click", async (event) => {
-    const target = event.target.closest("[data-page], [data-navigate], [data-action], [data-motion-level], [data-close-modal], [data-deadline-filter], [data-deadline-view], [data-language], #open-auth, #top-profile, #mobile-menu, #timer-toggle, #timer-reset, #timer-skip, [data-auth-mode], #sign-out");
+    const target = event.target.closest(
+      "[data-page], [data-navigate], [data-action], [data-motion-level], [data-close-modal], [data-deadline-filter], [data-deadline-view], [data-language], #open-auth, #top-profile, #mobile-menu, #timer-toggle, #timer-reset, #timer-skip, [data-auth-mode], #sign-out",
+    );
     if (!target) return;
     if (target.matches("[data-page], [data-navigate]")) {
       event.preventDefault();
@@ -6479,7 +9617,10 @@
       }
     } else if (target.matches('[data-action="task-view-mode"]')) {
       taskViewMode = target.dataset.mode === "all" ? "all" : "day";
-      localStorage.setItem(taskDayStorageKey, JSON.stringify({ mode: taskViewMode }));
+      localStorage.setItem(
+        taskDayStorageKey,
+        JSON.stringify({ mode: taskViewMode }),
+      );
       render();
     } else if (target.matches('[data-action="task-prev-day"]')) {
       taskViewDate = addLocalDays(taskViewDate, -1);
@@ -6490,11 +9631,17 @@
     } else if (target.matches('[data-action="task-today"]')) {
       taskViewDate = startOfLocalDay(new Date());
       taskViewMode = "day";
-      localStorage.setItem(taskDayStorageKey, JSON.stringify({ mode: taskViewMode }));
+      localStorage.setItem(
+        taskDayStorageKey,
+        JSON.stringify({ mode: taskViewMode }),
+      );
       render();
     } else if (target.matches('[data-action="toggle-task-completed"]')) {
       taskShowCompleted = !taskShowCompleted;
-      localStorage.setItem("studyzone.show-completed", String(taskShowCompleted));
+      localStorage.setItem(
+        "studyzone.show-completed",
+        String(taskShowCompleted),
+      );
       render();
     } else if (target.matches('[data-action="toggle-task-section"]')) {
       const key = target.dataset.section;
@@ -6504,7 +9651,9 @@
       await applySeriesAction(target.dataset.scope);
     } else if (target.matches('[data-action="task-stop-series"]')) {
       const form = document.getElementById("task-form");
-      const task = tasks.find((item) => String(item.id) === String(form.elements.task_id.value));
+      const task = tasks.find(
+        (item) => String(item.id) === String(form.elements.task_id.value),
+      );
       if (task) await stopTaskSeries(task);
     } else if (target.matches('[data-action="deadline-add"]')) {
       openDeadlineModal();
@@ -6539,15 +9688,23 @@
     } else if (target.matches('[data-action="team-select"]')) {
       selectedTeamId = target.dataset.id;
       render();
-    } else if (target.matches('[data-action="team-refresh"], [data-action="teams-retry"]')) {
+    } else if (
+      target.matches(
+        '[data-action="team-refresh"], [data-action="teams-retry"]',
+      )
+    ) {
       teamsError = "";
       teamsLoaded = false;
       void loadTeams();
     } else if (target.matches('[data-action="team-delete"]')) {
-      const team = teams.find((item) => String(item.id) === String(selectedTeamId));
+      const team = teams.find(
+        (item) => String(item.id) === String(selectedTeamId),
+      );
       if (team) await deleteTeam(team);
     } else if (target.matches('[data-action="team-leave"]')) {
-      const team = teams.find((item) => String(item.id) === String(selectedTeamId));
+      const team = teams.find(
+        (item) => String(item.id) === String(selectedTeamId),
+      );
       if (team) await leaveTeam(team);
     } else if (target.matches('[data-action="team-task-toggle"]')) {
       await toggleTeamTask(target.dataset.id);
@@ -6573,9 +9730,12 @@
       voiceNotesLoaded = false;
       void loadVoiceNotes();
     } else if (target.matches('[data-action="note-add"]')) {
-      const templateKey = document.getElementById("note-template")?.value || "blank";
+      const templateKey =
+        document.getElementById("note-template")?.value || "blank";
       openNoteEditor(null, templateKey);
-    } else if (target.matches('[data-action="note-open"], [data-action="note-edit"]')) {
+    } else if (
+      target.matches('[data-action="note-open"], [data-action="note-edit"]')
+    ) {
       openNoteEditor(target.dataset.id);
     } else if (target.matches('[data-action="note-pin"]')) {
       await toggleNotePin(target.dataset.id);
@@ -6591,7 +9751,8 @@
         console.error("Manual note save failed.", error);
       }
     } else if (target.matches('[data-action="note-delete-editor"]')) {
-      if (noteEditorState?.id) await deleteNote(noteEditorState.id, { closeEditor: true });
+      if (noteEditorState?.id)
+        await deleteNote(noteEditorState.id, { closeEditor: true });
     } else if (target.matches('[data-action="goal-add"]')) {
       openFeatureForm("goal");
     } else if (target.matches('[data-action="goal-edit"]')) {
@@ -6612,7 +9773,9 @@
       openFeatureForm("profile", session?.user?.id);
     } else if (target.matches('[data-action="mark-notifications-read"]')) {
       await markNotificationsRead();
-    } else if (target.matches('[data-action="notifications-enable-task-reminders"]')) {
+    } else if (
+      target.matches('[data-action="notifications-enable-task-reminders"]')
+    ) {
       try {
         await enableTaskNotifications();
       } catch (error) {
@@ -6631,7 +9794,8 @@
     } else if (target.matches('[data-action="focus-settings"]')) {
       focusSettingsOpen = !focusSettingsOpen;
       render();
-      if (focusSettingsOpen) document.getElementById("focus-settings-title")?.focus();
+      if (focusSettingsOpen)
+        document.getElementById("focus-settings-title")?.focus();
     } else if (target.matches('[data-action="focus-settings-close"]')) {
       focusSettingsOpen = false;
       render();
@@ -6648,7 +9812,9 @@
         try {
           await saveFocusSettings(form);
         } catch (reason) {
-          if (error) error.textContent = reason?.message || focusText[appLanguage].settingsError;
+          if (error)
+            error.textContent =
+              reason?.message || focusText[appLanguage].settingsError;
           console.error("Could not restore focus defaults.", reason);
         }
       }
@@ -6666,13 +9832,25 @@
       selectedDeadlineDate = target.dataset.date;
       render();
     } else if (target.matches('[data-action="calendar-prev"]')) {
-      deadlineMonth = new Date(deadlineMonth.getFullYear(), deadlineMonth.getMonth() - 1, 1);
+      deadlineMonth = new Date(
+        deadlineMonth.getFullYear(),
+        deadlineMonth.getMonth() - 1,
+        1,
+      );
       render();
     } else if (target.matches('[data-action="calendar-next"]')) {
-      deadlineMonth = new Date(deadlineMonth.getFullYear(), deadlineMonth.getMonth() + 1, 1);
+      deadlineMonth = new Date(
+        deadlineMonth.getFullYear(),
+        deadlineMonth.getMonth() + 1,
+        1,
+      );
       render();
     } else if (target.matches('[data-action="calendar-today"]')) {
-      deadlineMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+      deadlineMonth = new Date(
+        new Date().getFullYear(),
+        new Date().getMonth(),
+        1,
+      );
       selectedDeadlineDate = dateKey(new Date());
       render();
     } else if (target.matches('[data-action="toggle-task"]')) {
@@ -6685,15 +9863,23 @@
       target.classList.toggle("on", !light);
       target.setAttribute("aria-pressed", String(light));
       localStorage.setItem("studyflow.theme", light ? "light" : "dark");
-      if (shouldAnimate()) target.animate?.([{ transform: "scale(.92)" }, { transform: "scale(1)" }], { duration: 180, easing: "ease-out" });
+      if (shouldAnimate())
+        target.animate?.(
+          [{ transform: "scale(.92)" }, { transform: "scale(1)" }],
+          { duration: 180, easing: "ease-out" },
+        );
       showToast("Settings saved.");
     } else if (target.matches("[data-motion-level]")) {
       motionLevel = target.dataset.motionLevel;
       animationsEnabled = motionLevel !== "off";
       localStorage.setItem("studyflow.motion", motionLevel);
-      localStorage.setItem("studyflow.animations", animationsEnabled ? "on" : "off");
+      localStorage.setItem(
+        "studyflow.animations",
+        animationsEnabled ? "on" : "off",
+      );
       document.documentElement.dataset.motion = motionLevel;
-      if (!animationsEnabled) document.getAnimations().forEach((animation) => animation.cancel());
+      if (!animationsEnabled)
+        document.getAnimations().forEach((animation) => animation.cancel());
       document.querySelectorAll("[data-motion-level]").forEach((option) => {
         const selected = option.dataset.motionLevel === motionLevel;
         option.classList.toggle("selected", selected);
@@ -6712,17 +9898,23 @@
       }
     } else if (target.matches('[data-action="setting-toggle"]')) {
       target.classList.toggle("on");
-      target.setAttribute("aria-pressed", String(target.classList.contains("on")));
+      target.setAttribute(
+        "aria-pressed",
+        String(target.classList.contains("on")),
+      );
     } else if (target.matches("[data-action]")) {
       const messages = {
-        "read-hint": "Notification read state will sync after connecting your account.",
+        "read-hint":
+          "Notification read state will sync after connecting your account.",
       };
-      if (messages[target.dataset.action]) showInfo(messages[target.dataset.action]);
+      if (messages[target.dataset.action])
+        showInfo(messages[target.dataset.action]);
     } else if (target.matches("[data-close-modal]")) {
       const backdrop = target.closest(".modal-backdrop");
       backdrop.hidden = true;
       if (backdrop.id === "voice-modal") resetVoiceRecorder();
-      if (backdrop.id === "auth-modal") localStorage.setItem(authPromptStorageKey, "seen");
+      if (backdrop.id === "auth-modal")
+        localStorage.setItem(authPromptStorageKey, "seen");
     } else if (target.id === "open-auth" || target.id === "top-profile") {
       document.getElementById("auth-modal").hidden = false;
     } else if (target.id === "mobile-menu") {
@@ -6733,7 +9925,10 @@
       try {
         await removeCurrentPushSubscription(session?.user?.id);
       } catch (error) {
-        console.error("Could not fully remove the current push subscription while signing out.", error);
+        console.error(
+          "Could not fully remove the current push subscription while signing out.",
+          error,
+        );
         showToast(`Push subscription cleanup failed: ${error.message}`);
       }
       const { error } = await supabase.auth.signOut();
@@ -6749,13 +9944,41 @@
       adminUsersTotal = 0;
       resetAccountWorkspacePreview();
       subjects = [
-        { id: "subject-calculus", name: "Calculus II", color: "#06D6A0", credits: 4, progress: 72 },
-        { id: "subject-algorithms", name: "Algorithms", color: "#75CDB1", credits: 3, progress: 81 },
-        { id: "subject-biology", name: "Biology", color: "#9ECDAF", credits: 3, progress: 64 },
-        { id: "subject-history", name: "History", color: "#C1D79D", credits: 2, progress: 55 },
+        {
+          id: "subject-calculus",
+          name: "Calculus II",
+          color: "#06D6A0",
+          credits: 4,
+          progress: 72,
+        },
+        {
+          id: "subject-algorithms",
+          name: "Algorithms",
+          color: "#75CDB1",
+          credits: 3,
+          progress: 81,
+        },
+        {
+          id: "subject-biology",
+          name: "Biology",
+          color: "#9ECDAF",
+          credits: 3,
+          progress: 64,
+        },
+        {
+          id: "subject-history",
+          name: "History",
+          color: "#C1D79D",
+          credits: 2,
+          progress: 55,
+        },
       ];
       userNotifications = [];
-      dailyReminderPreference = { enabled: false, local_time: "09:00", timezone: "UTC" };
+      dailyReminderPreference = {
+        enabled: false,
+        local_time: "09:00",
+        timezone: "UTC",
+      };
       document.getElementById("auth-modal").hidden = true;
       updateUserUi();
       if (currentPage === "admin") {
@@ -6767,92 +9990,108 @@
     }
   });
 
-  document.getElementById("task-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const button = form.querySelector('button[type="submit"]');
-    const error = document.getElementById("task-error");
-    button.disabled = true;
-    error.textContent = "";
-    try {
-      const formData = new FormData(form);
-      const editingTask = tasks.find((item) => String(item.id) === String(formData.get("task_id")));
-      if (editingTask) {
-        const payload = taskPayloadFromForm(formData);
-        if (editingTask.recurrence_group_id) {
-          openSeriesScopeDialog("edit", editingTask, payload);
-          return;
+  document
+    .getElementById("task-form")
+    .addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const button = form.querySelector('button[type="submit"]');
+      const error = document.getElementById("task-error");
+      button.disabled = true;
+      error.textContent = "";
+      try {
+        const formData = new FormData(form);
+        const editingTask = tasks.find(
+          (item) => String(item.id) === String(formData.get("task_id")),
+        );
+        if (editingTask) {
+          const payload = taskPayloadFromForm(formData);
+          if (editingTask.recurrence_group_id) {
+            openSeriesScopeDialog("edit", editingTask, payload);
+            return;
+          }
+          await applyTaskEdit(editingTask, payload);
+        } else {
+          await createTask(formData);
         }
-        await applyTaskEdit(editingTask, payload);
-      } else {
-        await createTask(formData);
+        form.reset();
+      } catch (reason) {
+        error.textContent = reason?.message || "Could not save this task.";
+        translateInterface();
+        console.error("Task save failed.", reason);
+      } finally {
+        button.disabled = false;
       }
-      form.reset();
-    } catch (reason) {
-      error.textContent = reason?.message || "Could not save this task.";
-      translateInterface();
-      console.error("Task save failed.", reason);
-    } finally {
-      button.disabled = false;
-    }
-  });
+    });
 
-  document.getElementById("move-task-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const button = form.querySelector('button[type="submit"]');
-    const error = document.getElementById("move-task-error");
-    button.disabled = true;
-    error.textContent = "";
-    try {
-      await moveTask(new FormData(form));
-    } catch (reason) {
-      error.textContent = reason?.message || "Could not move this task.";
-      console.error("Could not move the task.", reason);
-    } finally {
-      button.disabled = false;
-    }
-  });
+  document
+    .getElementById("move-task-form")
+    .addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const button = form.querySelector('button[type="submit"]');
+      const error = document.getElementById("move-task-error");
+      button.disabled = true;
+      error.textContent = "";
+      try {
+        await moveTask(new FormData(form));
+      } catch (reason) {
+        error.textContent = reason?.message || "Could not move this task.";
+        console.error("Could not move the task.", reason);
+      } finally {
+        button.disabled = false;
+      }
+    });
 
-  document.querySelectorAll("#task-form [name='repeat_type'], #deadline-form [name='repeat_type']").forEach((select) => {
-    select.addEventListener("change", () => updateRepeatControls(select.form));
-  });
+  document
+    .querySelectorAll(
+      "#task-form [name='repeat_type'], #deadline-form [name='repeat_type']",
+    )
+    .forEach((select) => {
+      select.addEventListener("change", () =>
+        updateRepeatControls(select.form),
+      );
+    });
 
-  document.getElementById("team-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const button = form.querySelector('button[type="submit"]');
-    const error = document.getElementById("team-error");
-    button.disabled = true;
-    error.textContent = "";
-    try {
-      await createTeam(new FormData(form));
-      form.reset();
-    } catch (reason) {
-      error.textContent = reason?.message || "Could not create the team.";
-      console.error("Team creation failed.", reason);
-    } finally {
-      button.disabled = false;
-    }
-  });
+  document
+    .getElementById("team-form")
+    .addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const button = form.querySelector('button[type="submit"]');
+      const error = document.getElementById("team-error");
+      button.disabled = true;
+      error.textContent = "";
+      try {
+        await createTeam(new FormData(form));
+        form.reset();
+      } catch (reason) {
+        error.textContent = reason?.message || "Could not create the team.";
+        console.error("Team creation failed.", reason);
+      } finally {
+        button.disabled = false;
+      }
+    });
 
-  document.getElementById("team-join-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const button = form.querySelector('button[type="submit"]');
-    const error = document.getElementById("team-join-error");
-    button.disabled = true;
-    error.textContent = "";
-    try {
-      await joinTeam(new FormData(form));
-      form.reset();
-    } catch (reason) {
-      error.textContent = reason?.message || "Could not join the team.";
-      console.error("Team join failed.", reason);
-    } finally {
-      button.disabled = false;
-    }
-  });
+  document
+    .getElementById("team-join-form")
+    .addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const button = form.querySelector('button[type="submit"]');
+      const error = document.getElementById("team-join-error");
+      button.disabled = true;
+      error.textContent = "";
+      try {
+        await joinTeam(new FormData(form));
+        form.reset();
+      } catch (reason) {
+        error.textContent = reason?.message || "Could not join the team.";
+        console.error("Team join failed.", reason);
+      } finally {
+        button.disabled = false;
+      }
+    });
 
   document.addEventListener("submit", async (event) => {
     if (event.target.id === "notification-prefs-form") {
@@ -6886,41 +10125,50 @@
     }
   });
 
-  document.getElementById("deadline-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const button = document.getElementById("deadline-submit");
-    const error = document.getElementById("deadline-error");
-    const t = deadlineText[appLanguage];
-    button.disabled = true;
-    button.textContent = t.saving;
-    error.textContent = "";
-    try {
-      const result = await saveDeadline(new FormData(event.currentTarget));
-      if (result !== "scoped") event.currentTarget.reset();
-    } catch (reason) {
-      error.textContent = `${t.saveError} ${reason?.message || ""}`.trim();
-      translateInterface();
-      console.error("Deadline save failed.", reason);
-    } finally {
-      button.disabled = false;
-      button.innerHTML = `${deadlineText[appLanguage].save} <span>→</span>`;
-    }
-  });
+  document
+    .getElementById("deadline-form")
+    .addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = document.getElementById("deadline-submit");
+      const error = document.getElementById("deadline-error");
+      const t = deadlineText[appLanguage];
+      button.disabled = true;
+      button.textContent = t.saving;
+      error.textContent = "";
+      try {
+        const result = await saveDeadline(new FormData(event.currentTarget));
+        if (result !== "scoped") event.currentTarget.reset();
+      } catch (reason) {
+        error.textContent = `${t.saveError} ${reason?.message || ""}`.trim();
+        translateInterface();
+        console.error("Deadline save failed.", reason);
+      } finally {
+        button.disabled = false;
+        button.innerHTML = `${deadlineText[appLanguage].save} <span>→</span>`;
+      }
+    });
 
-  document.getElementById("auth-form").addEventListener("submit", handleAuthSubmit);
+  document
+    .getElementById("auth-form")
+    .addEventListener("submit", handleAuthSubmit);
   window.addEventListener("hashchange", () => {
     const page = window.location.hash.slice(1) || "dashboard";
     const nextPage = pageRenderers[page] ? page : "dashboard";
     if (nextPage === currentPage) return;
     currentPage = nextPage;
-    if (currentPage === "admin") adminAuthorization = { status: "checking", userId: session?.user?.id || null };
+    if (currentPage === "admin")
+      adminAuthorization = {
+        status: "checking",
+        userId: session?.user?.id || null,
+      };
     render();
     if (currentPage === "admin") void verifyAdminAccess();
     if (currentPage === "focus") void loadFocusData();
   });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
-    if (focusSession.status === "running" && getFocusRemainingMs() <= 0) void finishFocusTimer();
+    if (focusSession.status === "running" && getFocusRemainingMs() <= 0)
+      void finishFocusTimer();
     else updateTimerUi();
     syncFocusTicker();
   });
@@ -6945,48 +10193,52 @@
     });
   });
 
-  
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", async () => {
-    try {
-      const registration = await navigator.serviceWorker.register(
-        "./service-worker.js",
-        { scope: "./" }
-      );
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", async () => {
+      try {
+        const registration = await navigator.serviceWorker.register(
+          "./service-worker.js",
+          { scope: "./" },
+        );
 
-      console.log("Study Zone PWA registered:", registration.scope);
+        console.log("Study Zone PWA registered:", registration.scope);
 
-      registration.addEventListener("updatefound", () => {
-        const worker = registration.installing;
+        registration.addEventListener("updatefound", () => {
+          const worker = registration.installing;
 
-        worker?.addEventListener("statechange", () => {
-          if (
-            worker.state === "installed" &&
-            navigator.serviceWorker.controller
-          ) {
-            console.log("A new Study Zone version is available.");
-          }
+          worker?.addEventListener("statechange", () => {
+            if (
+              worker.state === "installed" &&
+              navigator.serviceWorker.controller
+            ) {
+              console.log("A new Study Zone version is available.");
+            }
+          });
         });
-      });
-    } catch (error) {
-      console.error("Study Zone PWA registration failed:", error);
-    }
-  });
-}
-
+      } catch (error) {
+        console.error("Study Zone PWA registration failed:", error);
+      }
+    });
+  }
 
   const storedTheme = localStorage.getItem("studyflow.theme");
   if (storedTheme === "light") document.documentElement.dataset.theme = "light";
   document.getElementById("footer-year").textContent = new Date().getFullYear();
   updateOfflineStatus();
   document.documentElement.dataset.motion = motionLevel;
-  currentPage = pageRenderers[window.location.hash.slice(1)] ? window.location.hash.slice(1) : "dashboard";
+  currentPage = pageRenderers[window.location.hash.slice(1)]
+    ? window.location.hash.slice(1)
+    : "dashboard";
   render();
   updateUserUi();
   void loadFocusData();
   restoreSession();
-  document.getElementById("pwa-install").addEventListener("click", () => void handlePwaInstall());
-  document.getElementById("pwa-install-confirm")?.addEventListener("click", () => void handlePwaInstall());
+  document
+    .getElementById("pwa-install")
+    .addEventListener("click", () => void handlePwaInstall());
+  document
+    .getElementById("pwa-install-confirm")
+    ?.addEventListener("click", () => void handlePwaInstall());
   window.addEventListener("beforeinstallprompt", (event) => {
     event.preventDefault();
     deferredInstallPrompt = event;
@@ -6999,10 +10251,12 @@ if ("serviceWorker" in navigator) {
     refreshPwaInstructions();
     showToast("App installed.");
   });
-  window.matchMedia?.("(display-mode: standalone)").addEventListener?.("change", () => {
-    updatePwaInstallButton();
-    refreshPwaInstructions();
-  });
+  window
+    .matchMedia?.("(display-mode: standalone)")
+    .addEventListener?.("change", () => {
+      updatePwaInstallButton();
+      refreshPwaInstructions();
+    });
   updatePwaInstallButton();
   refreshPwaInstructions();
   const taskSoundVolumeInput = document.getElementById("task-sound-volume");
@@ -7012,22 +10266,40 @@ if ("serviceWorker" in navigator) {
     if (volumeLabel) volumeLabel.textContent = `${value}%`;
   });
   const celebrationDoneButton = document.getElementById("celebration-done");
-  celebrationDoneButton?.addEventListener("click", () => stopAlert());
-  if ("serviceWorker" in navigator && window.location.protocol.startsWith("http")) {
-    navigator.serviceWorker.register("./service-worker.js").then((registration) => {
-      void registration.update();
-      if (registration.waiting) showPwaUpdateNotice(registration.waiting);
-      registration.addEventListener("updatefound", () => {
-        const installingWorker = registration.installing;
-        installingWorker?.addEventListener("statechange", () => {
-          if (installingWorker.state === "installed" && navigator.serviceWorker.controller) {
-            showPwaUpdateNotice(registration.waiting || installingWorker);
-          }
+  celebrationDoneButton?.addEventListener("click", () => {
+    if (alertSnoozeTimer) {
+      window.clearTimeout(alertSnoozeTimer);
+      alertSnoozeTimer = null;
+    }
+    stopAlertAudio();
+  });
+  if (
+    "serviceWorker" in navigator &&
+    window.location.protocol.startsWith("http")
+  ) {
+    navigator.serviceWorker
+      .register("./service-worker.js")
+      .then((registration) => {
+        void registration.update();
+        if (registration.waiting) showPwaUpdateNotice(registration.waiting);
+        registration.addEventListener("updatefound", () => {
+          const installingWorker = registration.installing;
+          installingWorker?.addEventListener("statechange", () => {
+            if (
+              installingWorker.state === "installed" &&
+              navigator.serviceWorker.controller
+            ) {
+              showPwaUpdateNotice(registration.waiting || installingWorker);
+            }
+          });
         });
+      })
+      .catch((error) => {
+        console.error(
+          "Could not register the Study Zone service worker.",
+          error,
+        );
       });
-    }).catch((error) => {
-      console.error("Could not register the Study Zone service worker.", error);
-    });
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (pwaUpdateReload) window.location.reload();
     });
