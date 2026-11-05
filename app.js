@@ -240,6 +240,7 @@
   const authPromptStorageKey = "studyzone.auth-prompt-seen";
   let tasks = readLocalTasks();
   let currentPage = "dashboard";
+  let lastRenderedPage = "";
   let authMode = "signin";
   let deferredInstallPrompt = null;
   let pwaInstalled = false;
@@ -255,6 +256,7 @@
     soundEnabled: true,
     browserNotifications: false,
     showSeconds: true,
+    clockSize: "default",
     startSound: "focus-start",
     endSound: "focus-end",
     breakEndSound: "break-end",
@@ -387,6 +389,10 @@
       sound: "Completion sound",
       browserNotifications: "Browser notifications",
       showSeconds: "Show seconds on the flip clock",
+      clockSize: "Clock size",
+      clockSizeCompact: "Compact",
+      clockSizeDefault: "Cozy",
+      clockSizeLarge: "Large",
       saveSettings: "Save settings",
       restoreDefaults: "Restore defaults",
       focusStartSound: "Focus start sound",
@@ -477,6 +483,10 @@
       sound: "صوت عند اكتمال الجلسة",
       browserNotifications: "إشعارات المتصفح",
       showSeconds: "عرض الثواني في الساعة القلّابة",
+      clockSize: "حجم الساعة",
+      clockSizeCompact: "مضغوط",
+      clockSizeDefault: "مريح",
+      clockSizeLarge: "كبير",
       saveSettings: "حفظ الإعدادات",
       restoreDefaults: "استعادة الافتراضية",
       focusStartSound: "صوت بداية التركيز",
@@ -1896,7 +1906,7 @@
   async function handlePwaInstall() {
     if (!deferredInstallPrompt) {
       refreshPwaInstructions();
-      document.getElementById("pwa-install-modal").hidden = false;
+      openModal(document.getElementById("pwa-install-modal"));
       return;
     }
     const prompt = deferredInstallPrompt;
@@ -2061,6 +2071,61 @@
     translateInterface();
   }
 
+  const modalCloseTimers = new WeakMap();
+
+  function openModal(modal) {
+    if (!modal) return;
+    const pending = modalCloseTimers.get(modal);
+    if (pending) {
+      window.clearTimeout(pending);
+      modalCloseTimers.delete(modal);
+    }
+    modal.classList.remove("modal-closing");
+    modal.hidden = false;
+  }
+
+  function closeModal(modal) {
+    if (!modal || modal.hidden || modal.classList.contains("modal-closing"))
+      return;
+    if (!shouldAnimate()) {
+      modal.hidden = true;
+      modal.classList.remove("modal-closing");
+      return;
+    }
+    modal.classList.add("modal-closing");
+    const timer = window.setTimeout(() => {
+      modalCloseTimers.delete(modal);
+      if (!modal.classList.contains("modal-closing")) return;
+      modal.hidden = true;
+      modal.classList.remove("modal-closing");
+    }, 200);
+    modalCloseTimers.set(modal, timer);
+  }
+
+  function dismissToast(toast) {
+    if (!toast?.isConnected || toast.classList.contains("toast-leaving"))
+      return;
+    toast.classList.add("toast-leaving");
+    const remove = () => toast.remove();
+    if (!shouldAnimate()) {
+      remove();
+      return;
+    }
+    const animation = toast.animate(
+      [
+        { opacity: 1, transform: "translateY(0) scale(1)" },
+        { opacity: 0, transform: "translateY(6px) scale(.98)" },
+      ],
+      {
+        duration: motionLevel === "reduced" ? 120 : 200,
+        easing: "cubic-bezier(.4,0,.6,1)",
+        fill: "forwards",
+      },
+    );
+    animation.finished.then(remove).catch(remove);
+    window.setTimeout(remove, 260);
+  }
+
   function showToast(message) {
     const region = document.getElementById("toast-region");
     const toast = document.createElement("div");
@@ -2068,7 +2133,7 @@
     toast.textContent = message;
     region.append(toast);
     translateInterface();
-    window.setTimeout(() => toast.remove(), 3500);
+    window.setTimeout(() => dismissToast(toast), 3300);
   }
 
   function showRewardToast(amount) {
@@ -2084,7 +2149,7 @@
     points.textContent = `+${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(amount)} XP`;
     toast.append(label, points);
     region.append(toast);
-    window.setTimeout(() => toast.remove(), 4200);
+    window.setTimeout(() => dismissToast(toast), 4000);
     if (shouldAnimate())
       toast.animate(
         [
@@ -2116,7 +2181,7 @@
       amount > 0
         ? `+${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(amount)} XP`
         : "";
-    modal.hidden = false;
+    openModal(modal);
     if (shouldAnimate()) {
       const offset = motionLevel === "reduced" ? 4 : 14;
       const scale = motionLevel === "reduced" ? 0.99 : 0.96;
@@ -3805,7 +3870,7 @@
     if (hasContent && noteSaveStatus !== "saved" && noteSaveStatus !== "idle") {
       void saveNoteNow({ silent: true }).catch(() => {});
     }
-    modal.hidden = true;
+    closeModal(modal);
     noteEditorState = null;
     noteSaveStatus = "idle";
     if (currentPage === "notes") render();
@@ -3835,7 +3900,7 @@
       savedTitle: note?.title || "",
     };
     attachNoteEditorListeners();
-    document.getElementById("note-modal").hidden = false;
+    openModal(document.getElementById("note-modal"));
     updateNoteWordCount();
     translateInterface();
     if (!note) document.getElementById("note-editor-title").focus();
@@ -4053,7 +4118,7 @@
       if (!supabase || !session) saveLocalNotes();
       if (closeEditor) {
         const modal = document.getElementById("note-modal");
-        if (modal) modal.hidden = true;
+        if (modal) closeModal(modal);
         noteEditorState = null;
         noteSaveStatus = "idle";
       }
@@ -4222,7 +4287,7 @@
   function openFeatureForm(type, id = null) {
     if (!supabase || !session) {
       showToast(featureText("signIn"));
-      document.getElementById("auth-modal").hidden = false;
+      openModal(document.getElementById("auth-modal"));
       return;
     }
 
@@ -4327,7 +4392,7 @@
     document.getElementById("feature-form").dataset.recordId = id || "";
     document.getElementById("feature-form").innerHTML =
       `${fields}<p class="form-error" data-form-error role="alert"></p><div class="modal-actions"><button class="button button-secondary" type="button" data-close-modal>${featureText("cancel")}</button><button class="button button-primary" type="submit">${featureText("save")}</button></div>`;
-    modal.hidden = false;
+    openModal(modal);
     document
       .querySelector(
         "#feature-form input, #feature-form textarea, #feature-form select",
@@ -4374,7 +4439,7 @@
       };
     } else if (type === "file") {
       await uploadStudyFile(values);
-      document.getElementById("feature-modal").hidden = true;
+      closeModal(document.getElementById("feature-modal"));
       await loadAccountWorkspace();
       render();
       showToast("File uploaded to your private study storage.");
@@ -4408,7 +4473,7 @@
         p_increment: increment,
       });
       if (error) throw error;
-      document.getElementById("feature-modal").hidden = true;
+      closeModal(document.getElementById("feature-modal"));
       await loadAccountWorkspace();
       render();
       showToast("Goal progress updated.");
@@ -4442,7 +4507,7 @@
         { onConflict: "exam_id" },
       );
       if (error) throw error;
-      document.getElementById("feature-modal").hidden = true;
+      closeModal(document.getElementById("feature-modal"));
       await loadAccountWorkspace();
       render();
       showToast("Exam result saved.");
@@ -4520,7 +4585,7 @@
         }
       }
       await loadAccountWorkspace();
-      document.getElementById("feature-modal").hidden = true;
+      closeModal(document.getElementById("feature-modal"));
       render();
       updateUserUi();
       if (row.language !== appLanguage) await setLanguage(row.language);
@@ -4537,7 +4602,7 @@
       ? await query.update(row).eq("id", id).select().single()
       : await query.insert(row).select().single();
     if (result.error) throw result.error;
-    document.getElementById("feature-modal").hidden = true;
+    closeModal(document.getElementById("feature-modal"));
     await loadAccountWorkspace();
     render();
     showToast(id ? "Changes saved." : "Added to your study workspace.");
@@ -4735,8 +4800,74 @@
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   }
 
+  const FLIP_ANIMATION_MS = 620;
+  const flipDigitTimers = new WeakMap();
+
   function renderFlipDigit(digit, index) {
-    return `<span class="flip-digit" data-flip-index="${index}" data-digit="${digit}" aria-hidden="true"><span class="flip-upper">${digit}</span><span class="flip-lower">${digit}</span></span>`;
+    return `<span class="flip-digit" data-flip-index="${index}" data-digit="${digit}" aria-hidden="true"><span class="flip-half flip-half-upper">${digit}</span><span class="flip-half flip-half-lower">${digit}</span><span class="flip-flap flip-flap-upper">${digit}</span><span class="flip-flap flip-flap-lower">${digit}</span></span>`;
+  }
+
+  function settleFlipDigit(element) {
+    if (!element) return;
+    const timer = flipDigitTimers.get(element);
+    if (timer) {
+      window.clearTimeout(timer);
+      flipDigitTimers.delete(element);
+    }
+    const value = element.dataset.digit ?? "0";
+    const upper = element.querySelector(".flip-half-upper");
+    const lower = element.querySelector(".flip-half-lower");
+    if (upper) upper.textContent = value;
+    if (lower) lower.textContent = value;
+    element.classList.remove("flipping");
+  }
+
+  /**
+   * Drives one mechanical split-flap digit. The static upper face already holds
+   * the incoming value (hidden by the falling flap) while the static lower face
+   * holds the outgoing value until the incoming lower flap lands.
+   */
+  function flipDigitTo(element, next) {
+    if (!element) return;
+    const nextValue = String(next);
+    const previousValue = element.dataset.digit ?? nextValue;
+    if (previousValue === nextValue) return;
+    const upper = element.querySelector(".flip-half-upper");
+    const lower = element.querySelector(".flip-half-lower");
+    const flapUpper = element.querySelector(".flip-flap-upper");
+    const flapLower = element.querySelector(".flip-flap-lower");
+    if (!upper || !lower || !flapUpper || !flapLower) return;
+
+    // If a previous flip is still in flight, land it before starting the next
+    // one. This prevents overlapping keyframes and duplicated intermediate digits.
+    if (element.classList.contains("flipping")) settleFlipDigit(element);
+    const pending = flipDigitTimers.get(element);
+    if (pending) {
+      window.clearTimeout(pending);
+      flipDigitTimers.delete(element);
+    }
+
+    element.dataset.digit = nextValue;
+    if (!shouldAnimate()) {
+      upper.textContent = nextValue;
+      lower.textContent = nextValue;
+      element.classList.remove("flipping");
+      return;
+    }
+
+    upper.textContent = nextValue;
+    lower.textContent = previousValue;
+    flapUpper.textContent = previousValue;
+    flapLower.textContent = nextValue;
+    element.classList.remove("flipping");
+    void element.offsetWidth;
+    element.classList.add("flipping");
+    const timer = window.setTimeout(() => {
+      flipDigitTimers.delete(element);
+      if (element.dataset.digit !== nextValue) return;
+      settleFlipDigit(element);
+    }, FLIP_ANIMATION_MS);
+    flipDigitTimers.set(element, timer);
   }
 
   function renderFlipClock(milliseconds, showSeconds) {
@@ -4965,6 +5096,16 @@
       `<label>${label}<input type="number" name="${name}" value="${value}" min="${min}" max="${max}" required></label>`;
     const toggleField = (name, label, checked) =>
       `<label class="focus-setting-toggle"><span>${label}</span><input type="checkbox" name="${name}" ${checked ? "checked" : ""}><i aria-hidden="true"></i></label>`;
+    const clockSizeOptions = [
+      ["compact", text.clockSizeCompact],
+      ["default", text.clockSizeDefault],
+      ["large", text.clockSizeLarge],
+    ]
+      .map(
+        ([value, label]) =>
+          `<option value="${value}" ${focusSettings.clockSize === value ? "selected" : ""}>${label}</option>`,
+      )
+      .join("");
     return `<section class="panel focus-settings-panel" id="focus-settings-panel" aria-labelledby="focus-settings-title">
       <div class="panel-heading"><div><h2 id="focus-settings-title">${text.settingsTitle}</h2><p>${text.durations}</p></div><button class="icon-button" data-action="focus-settings-close" aria-label="${deadlineText[appLanguage].close}">×</button></div>
       <form id="focus-settings-form" class="focus-settings-form" novalidate>
@@ -4975,6 +5116,7 @@
           ${toggleField("soundEnabled", text.sound, focusSettings.soundEnabled)}
           ${toggleField("browserNotifications", text.browserNotifications, focusSettings.browserNotifications)}
           ${toggleField("showSeconds", text.showSeconds, focusSettings.showSeconds)}
+          <label class="focus-clock-size"><span>${text.clockSize}</span><select name="clockSize" aria-label="${text.clockSize}">${clockSizeOptions}</select></label>
         </div>
         <h3>${text.soundVolume}</h3>
         <div class="focus-setting-options">
@@ -5048,17 +5190,17 @@
     const historyRows = history
       .map((record) => renderFocusHistoryRow(record, t))
       .join("");
-    return `<section class="focus-page ${distractionFree ? "distraction-free" : ""}" data-session-type="${focusSession.type}">
+    return `<section class="focus-page ${distractionFree ? "distraction-free" : ""}" data-session-type="${focusSession.type}" data-session-status="${focusSession.status}" data-clock-size="${escapeHtml(focusSettings.clockSize)}">
       <header class="page-heading focus-heading"><div><p class="eyebrow">${t.eyebrow}</p><h1>${t.title}</h1><p class="page-subtitle">${t.subtitle}</p></div><div class="focus-heading-actions"><button class="button button-secondary button-small" data-action="focus-distraction">${distractionFree ? t.exitDistraction : t.distraction}</button><button class="icon-button" data-action="focus-settings" aria-label="${t.settings}" aria-expanded="${focusSettingsOpen}">⚙</button></div></header>
       ${settingsPanel}
       <div class="focus-main-grid">
         <section class="panel focus-clock-panel">
           <div class="focus-mode-pill">${phase}</div>
           <div class="focus-cycle">${t.cycle} ${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(focusSession.cycle)} · ${t.longBreak} ${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(focusSettings.longBreakInterval)}</div>
-          <div class="flip-clock" id="flip-clock" aria-label="${escapeHtml(formatTimer(Math.ceil(remaining / 1000)))}" dir="ltr">
+          <div class="flip-clock" id="flip-clock" role="timer" aria-live="off" aria-label="${escapeHtml(formatTimer(Math.ceil(remaining / 1000)))}" dir="ltr">
             ${clock.minutes}<span class="flip-clock-colon" ${focusSettings.showSeconds ? "" : "hidden"}>:</span>${focusSettings.showSeconds ? clock.seconds : ""}
           </div>
-          <div class="focus-progress" role="progressbar" aria-label="${phase}" aria-valuenow="${Math.round(progress)}" aria-valuemin="0" aria-valuemax="100"><span id="focus-progress-fill" style="width:${progress}%"></span></div>
+          <div class="focus-progress" role="progressbar" aria-label="${phase}" aria-valuenow="${Math.round(progress)}" aria-valuemin="0" aria-valuemax="100"><span id="focus-progress-fill" style="--focus-progress:${(progress / 100).toFixed(4)}"></span></div>
           <p class="focus-session-message" id="focus-session-message">${focusSession.type === "focus" ? (focusSession.status === "running" ? t.stayFocused : t.focusHint) : t.breakHint}</p>
           <p class="focus-session-context" dir="auto">${escapeHtml(focusedTask?.title || focusedSubject?.name || (focusSession.type === "focus" ? t.emptySubject : nextPhase))}</p>
           <div class="focus-selectors">
@@ -5386,7 +5528,7 @@
     const form = document.getElementById("team-form");
     form.reset();
     document.getElementById("team-error").textContent = "";
-    document.getElementById("team-modal").hidden = false;
+    openModal(document.getElementById("team-modal"));
     form.elements.name.focus();
   }
 
@@ -5406,7 +5548,7 @@
     if (error) throw error;
     selectedTeamId = data.id;
     teamsLoaded = false;
-    document.getElementById("team-modal").hidden = true;
+    closeModal(document.getElementById("team-modal"));
     showToast(appLanguage === "ar" ? "تم إنشاء الفريق." : "Team created.");
     await loadTeams();
   }
@@ -5419,7 +5561,7 @@
     const form = document.getElementById("team-join-form");
     form.reset();
     document.getElementById("team-join-error").textContent = "";
-    document.getElementById("team-join-modal").hidden = false;
+    openModal(document.getElementById("team-join-modal"));
     form.elements.code.focus();
   }
 
@@ -5431,7 +5573,7 @@
     if (error) throw error;
     selectedTeamId = Array.isArray(data) ? data[0] : data;
     teamsLoaded = false;
-    document.getElementById("team-join-modal").hidden = true;
+    closeModal(document.getElementById("team-join-modal"));
     showToast(
       appLanguage === "ar" ? "انضممت إلى الفريق." : "You joined the team.",
     );
@@ -5762,7 +5904,7 @@
         ? "معاينة الضيف تُحفظ لهذه الجلسة فقط. سجّل الدخول للحفظ الدائم."
         : "Guest recordings stay in this browser session only. Sign in to save permanently.";
     const modal = document.getElementById("voice-modal");
-    modal.hidden = false;
+    openModal(modal);
     updateVoiceUi();
     translateInterface();
   }
@@ -5926,7 +6068,7 @@
       });
       voicePreviewUrl = "";
       resetVoiceRecorder({ keepPreview: true });
-      document.getElementById("voice-modal").hidden = true;
+      closeModal(document.getElementById("voice-modal"));
       if (currentPage === "voice") render();
       showToast(
         appLanguage === "ar"
@@ -5977,7 +6119,7 @@
         ...insert.data,
         signed_url: signed.error ? "" : signed.data?.signedUrl || "",
       });
-      document.getElementById("voice-modal").hidden = true;
+      closeModal(document.getElementById("voice-modal"));
       resetVoiceRecorder();
       if (currentPage === "voice") render();
       showToast(
@@ -6692,9 +6834,11 @@
     document.documentElement.dir = appLanguage === "ar" ? "rtl" : "ltr";
     document.documentElement.dataset.motion = motionLevel;
     const content = document.getElementById("page-content");
+    const pageChanged = currentPage !== lastRenderedPage;
+    lastRenderedPage = currentPage;
     content.classList.remove("page-enter");
     content.innerHTML = pageRenderers[currentPage]();
-    if (shouldAnimate()) {
+    if (shouldAnimate() && pageChanged) {
       void content.offsetWidth;
       content.classList.add("page-enter");
       animateDashboardProgress(content);
@@ -7703,7 +7847,7 @@
       );
       saveLocalTasks();
     }
-    document.getElementById("task-modal").hidden = true;
+    closeModal(document.getElementById("task-modal"));
     render();
     showToast(
       supabase && session
@@ -7796,7 +7940,7 @@
     }
     Object.assign(task, payload);
     if (!supabase || !session) saveLocalTasks();
-    document.getElementById("task-modal").hidden = true;
+    closeModal(document.getElementById("task-modal"));
     taskEditingId = null;
     render();
     showToast(appLanguage === "ar" ? "تم تحديث المهمة." : "Task updated.");
@@ -7893,7 +8037,7 @@
       }
     }
     updateRepeatControls(form);
-    document.getElementById("task-modal").hidden = false;
+    openModal(document.getElementById("task-modal"));
     translateInterface();
     form.elements.title.focus();
   }
@@ -8011,7 +8155,7 @@
         "danger",
       ),
     ].join("");
-    document.getElementById("scope-modal").hidden = false;
+    openModal(document.getElementById("scope-modal"));
     translateInterface();
   }
 
@@ -8093,12 +8237,12 @@
         });
         showToast(appLanguage === "ar" ? "تم تحديث المهام." : "Tasks updated.");
       }
-      modal.hidden = true;
+      closeModal(modal);
       pendingSeriesAction = null;
       taskEditingId = null;
       editingDeadlineId = null;
-      document.getElementById("task-modal").hidden = true;
-      document.getElementById("deadline-modal").hidden = true;
+      closeModal(document.getElementById("task-modal"));
+      closeModal(document.getElementById("deadline-modal"));
       document.getElementById("deadline-form").reset();
       render();
     } catch (error) {
@@ -8128,7 +8272,7 @@
         recurrence_days: [],
         recurrence_until: null,
       }));
-      document.getElementById("task-modal").hidden = true;
+      closeModal(document.getElementById("task-modal"));
       taskEditingId = null;
       showToast(
         appLanguage === "ar" ? "تم إيقاف التكرار." : "Repeating stopped.",
@@ -8239,7 +8383,7 @@
       : `${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`;
     document.getElementById("move-task-help").textContent = task.title;
     document.getElementById("move-task-error").textContent = "";
-    document.getElementById("move-task-modal").hidden = false;
+    openModal(document.getElementById("move-task-modal"));
     form.elements.move_date.focus();
   }
 
@@ -8272,7 +8416,7 @@
     }
     Object.assign(task, patch);
     if (!supabase || !session) saveLocalTasks();
-    document.getElementById("move-task-modal").hidden = true;
+    closeModal(document.getElementById("move-task-modal"));
     render();
     showToast(appLanguage === "ar" ? "تم نقل المهمة." : "Task moved.");
   }
@@ -8325,7 +8469,7 @@
       form.querySelector("[data-repeat-config]").hidden = false;
     }
     updateRepeatControls(form);
-    document.getElementById("deadline-modal").hidden = false;
+    openModal(document.getElementById("deadline-modal"));
     form.elements.title.focus();
   }
 
@@ -8528,7 +8672,7 @@
       saveLocalTasks();
     }
 
-    document.getElementById("deadline-modal").hidden = true;
+    closeModal(document.getElementById("deadline-modal"));
     document.getElementById("deadline-form").reset();
     render();
     showToast(editingDeadlineId ? t.updateSuccess : t.saveSuccess);
@@ -8652,7 +8796,7 @@
     }
     session = result.data.session;
     localStorage.setItem(authPromptStorageKey, "seen");
-    document.getElementById("auth-modal").hidden = true;
+    closeModal(document.getElementById("auth-modal"));
     updateUserUi();
     beginRenderBatch();
     try {
@@ -8676,7 +8820,7 @@
       session = null;
       updateUserUi();
       if (!localStorage.getItem(authPromptStorageKey)) {
-        document.getElementById("auth-modal").hidden = false;
+        openModal(document.getElementById("auth-modal"));
         localStorage.setItem(authPromptStorageKey, "seen");
       }
       if (currentPage === "admin") await verifyAdminAccess();
@@ -8687,7 +8831,7 @@
       console.error("Could not restore the Supabase session.", error);
       showToast(`Could not restore session: ${error.message}`);
       if (!localStorage.getItem(authPromptStorageKey)) {
-        document.getElementById("auth-modal").hidden = false;
+        openModal(document.getElementById("auth-modal"));
         localStorage.setItem(authPromptStorageKey, "seen");
       }
       if (currentPage === "admin") await verifyAdminAccess();
@@ -8696,7 +8840,7 @@
     session = data.session;
     if (session) localStorage.setItem(authPromptStorageKey, "seen");
     else if (!localStorage.getItem(authPromptStorageKey)) {
-      document.getElementById("auth-modal").hidden = false;
+      openModal(document.getElementById("auth-modal"));
       localStorage.setItem(authPromptStorageKey, "seen");
     }
     updateUserUi();
@@ -8845,6 +8989,8 @@
     ]) {
       if (typeof source[key] === "boolean") normalized[key] = source[key];
     }
+    if (["compact", "default", "large"].includes(source.clockSize))
+      normalized.clockSize = source.clockSize;
     if (typeof source.startSound === "string")
       normalized.startSound = ALERT_SOUNDS.some(
         (sound) => sound.id === source.startSound,
@@ -9024,31 +9170,56 @@
     }
   }
 
-  function syncFocusTicker() {
-    const shouldTick =
-      currentPage === "focus" && focusSession.status === "running";
-    if (!shouldTick) {
-      if (focusTicker) window.clearInterval(focusTicker);
-      focusTicker = null;
+  function clearFocusTicker() {
+    if (focusTicker) window.clearTimeout(focusTicker);
+    focusTicker = null;
+  }
+
+  /**
+   * Aligns the next tick with the next whole second derived from `endAt`.
+   * Every tick recomputes the remaining time from the timestamp, so throttled
+   * or suspended timers can never accumulate drift.
+   */
+  function scheduleFocusTick() {
+    clearFocusTicker();
+    if (currentPage !== "focus" || focusSession.status !== "running") return;
+    const remaining = getFocusRemainingMs();
+    if (remaining <= 0) {
+      void finishFocusTimer();
       return;
     }
-    if (focusTicker) return;
-    focusTicker = window.setInterval(() => {
-      if (focusSession.status !== "running") {
-        syncFocusTicker();
-        return;
-      }
+    const remainder = remaining % 1000;
+    const delay = Math.min(
+      1100,
+      Math.max(32, (remainder === 0 ? 1000 : remainder) + 18),
+    );
+    focusTicker = window.setTimeout(() => {
+      focusTicker = null;
+      if (currentPage !== "focus" || focusSession.status !== "running") return;
       if (getFocusRemainingMs() <= 0) {
         void finishFocusTimer();
         return;
       }
       updateTimerUi();
-    }, 200);
+      scheduleFocusTick();
+    }, delay);
+  }
+
+  function syncFocusTicker() {
+    const shouldTick =
+      currentPage === "focus" && focusSession.status === "running";
+    if (!shouldTick) {
+      clearFocusTicker();
+      return;
+    }
+    if (!focusTicker) scheduleFocusTick();
   }
 
   function updateTimerUi() {
     const clock = document.getElementById("flip-clock");
     if (!clock) return;
+    const focusPage = document.querySelector(".focus-page");
+    if (focusPage) focusPage.dataset.sessionStatus = focusSession.status;
     const remaining = getFocusRemainingMs();
     const seconds = Math.max(0, Math.ceil(remaining / 1000));
     const minutes = String(Math.floor(seconds / 60)).padStart(2, "0");
@@ -9060,14 +9231,7 @@
     clock.setAttribute("aria-label", formatTimer(seconds));
     clock.querySelectorAll(".flip-digit").forEach((element, index) => {
       const next = digits[index];
-      if (next === undefined || element.dataset.digit === next) return;
-      element.dataset.digit = next;
-      element.querySelector(".flip-upper").textContent = next;
-      element.querySelector(".flip-lower").textContent = next;
-      element.classList.remove("flipping");
-      void element.offsetWidth;
-      element.classList.add("flipping");
-      window.setTimeout(() => element.classList.remove("flipping"), 320);
+      if (next !== undefined) flipDigitTo(element, next);
     });
     const duration = getFocusDurationMs();
     const progress = Math.min(
@@ -9075,7 +9239,8 @@
       Math.max(0, ((duration - remaining) / duration) * 100),
     );
     const fill = document.getElementById("focus-progress-fill");
-    if (fill) fill.style.width = `${progress}%`;
+    if (fill)
+      fill.style.setProperty("--focus-progress", (progress / 100).toFixed(4));
     const bar = document.querySelector(".focus-progress");
     if (bar) bar.setAttribute("aria-valuenow", String(Math.round(progress)));
     const button = document.getElementById("timer-toggle");
@@ -9453,6 +9618,7 @@
       soundEnabled: data.has("soundEnabled"),
       browserNotifications: data.has("browserNotifications"),
       showSeconds: data.has("showSeconds"),
+      clockSize: String(data.get("clockSize") || "default"),
       startSound: String(data.get("startSound") || "focus-start"),
       endSound: String(data.get("endSound") || "focus-end"),
       breakEndSound: String(data.get("breakEndSound") || "break-end"),
@@ -9911,12 +10077,12 @@
         showInfo(messages[target.dataset.action]);
     } else if (target.matches("[data-close-modal]")) {
       const backdrop = target.closest(".modal-backdrop");
-      backdrop.hidden = true;
+      closeModal(backdrop);
       if (backdrop.id === "voice-modal") resetVoiceRecorder();
       if (backdrop.id === "auth-modal")
         localStorage.setItem(authPromptStorageKey, "seen");
     } else if (target.id === "open-auth" || target.id === "top-profile") {
-      document.getElementById("auth-modal").hidden = false;
+      openModal(document.getElementById("auth-modal"));
     } else if (target.id === "mobile-menu") {
       document.getElementById("sidebar").classList.toggle("open");
     } else if (target.matches("[data-auth-mode]")) {
@@ -9979,7 +10145,7 @@
         local_time: "09:00",
         timezone: "UTC",
       };
-      document.getElementById("auth-modal").hidden = true;
+      closeModal(document.getElementById("auth-modal"));
       updateUserUi();
       if (currentPage === "admin") {
         currentPage = "dashboard";
@@ -10167,6 +10333,7 @@
   });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
+    clearFocusTicker();
     if (focusSession.status === "running" && getFocusRemainingMs() <= 0)
       void finishFocusTimer();
     else updateTimerUi();
@@ -10174,12 +10341,12 @@
   });
   window.addEventListener("pageshow", () => {
     reconcileFocusTimer();
+    clearFocusTicker();
     syncFocusTicker();
   });
   window.addEventListener("pagehide", () => {
     persistFocusState();
-    if (focusTicker) window.clearInterval(focusTicker);
-    focusTicker = null;
+    clearFocusTicker();
   });
   window.addEventListener("scroll", updateScrollProgress, { passive: true });
   window.addEventListener("resize", updateScrollProgress, { passive: true });

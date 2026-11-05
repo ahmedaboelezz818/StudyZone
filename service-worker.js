@@ -1,4 +1,4 @@
-const CACHE_NAME = "studyzone-shell-v16";
+const CACHE_NAME = "studyzone-shell-v17";
 
 const APP_SHELL = [
   "./",
