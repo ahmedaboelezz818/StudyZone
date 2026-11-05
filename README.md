@@ -74,12 +74,15 @@ Guests can use the timer and see local completion feedback, but do not earn acco
 
 ## Install Study Zone
 
-The app includes `favicon.ico`, `favicon.svg`, `apple-touch-icon.png`, a Web App Manifest in `public/manifest.webmanifest`, and four branded PNG icons in `public/icons/`. The service worker caches only the static app shell and icons; it does not cache the Supabase client configuration, signed-in data, or API responses. Offline mode provides the cached shell, but network-backed data cannot be loaded or saved while disconnected. The included `server.js` serves the manifest and icon assets at the root URLs referenced by the app. No build step or additional PWA plugin is required. Serve the app over HTTPS for installation (localhost is allowed for development).
+The app includes `favicon.ico`, `favicon.svg`, `apple-touch-icon.png`, a Web App Manifest in `public/manifest.json`, and four branded PNG icons in `public/icons/`. The service worker caches only the static app shell and icons; it does not cache the Supabase client configuration, signed-in data, or API responses. Offline mode provides the cached shell, but network-backed data cannot be loaded or saved while disconnected. The included `server.js` serves the manifest and icon assets at the root URLs referenced by the app, and the included `vercel.json` rewrites send `/manifest.json` and `/icons/*` to the public assets for static hosting. No build step or additional PWA plugin is required. Serve the app over HTTPS for installation (localhost is allowed for development).
 
-- **Android:** In a supported browser, use the in-app Install app button and accept the browser prompt, or use the browser menu's Install app / Add to Home screen option when available.
-- **iPhone/iPad:** Open the site in Safari, tap Share, then Add to Home Screen.
-- **Windows/macOS:** Use the Install app prompt when supported. In Safari on macOS, use File > Add to Dock when available. Other browser menus and installation support vary.
-- Task notifications in the installed app come from the Web Push setup: enable task notifications from the Notifications page; the app requests permission and subscribes via the service worker. Delivery while closed still requires OS/browser push support, the scheduled Edge Function, VAPID configuration, and a reachable HTTPS origin.
+- **Android:** In a supported browser (Google Chrome, Microsoft Edge, Samsung Internet, Opera), use the in-app Install app button and accept the browser prompt, or use the browser menu's Install app / Add to Home screen option when available. Firefox and other browsers offer their own supported installation paths or instructions.
+- **iPhone/iPad:** Open the site in Safari, tap Share, then choose Add to Home Screen, then confirm. The in-app Install button detects the iOS standalone-capable environment and shows these manual instructions instead of a fake automatic prompt.
+- **Desktop:** Use the native browser install prompt when supported (Google Chrome, Microsoft Edge, Opera). In Safari on macOS, use File > Add to Dock when available.
+
+The install experience tracks one state: `Install Available` (a `beforeinstallprompt` event is held and used only after an explicit user action), `Already Installed` (standalone display mode is detected), or `Instructions` (the manual Add to Home Screen / browser menu steps for the current browser and device). The install prompt is never fired without a user gesture, and it is not shown for iOS or unsupported browsers.
+
+Task notifications in the installed app come from the Web Push setup: enable task notifications from the Notifications page; the app requests permission and subscribes via the service worker. Delivery while closed still requires OS/browser push support, the scheduled Edge Function, VAPID configuration, and a reachable HTTPS origin.
 
 The service worker caches only the versioned static app-shell files and branded icons. It does not cache requests to application data endpoints or other dynamic same-origin URLs. When an update is ready, use the in-app update notice to activate it and reload. Offline access is limited to the cached shell; Supabase and other network-backed features still require a connection.
 
@@ -89,7 +92,7 @@ The service worker caches only the versioned static app-shell files and branded 
 - The browser loads Supabase JS v2 from jsDelivr. A network connection is needed for Supabase auth/database/storage features.
 - The Admin page shows no fabricated user-wide metrics. Admin authorization is backed by the `site_admins` allowlist; no cross-user admin data endpoint is implemented.
 - Voice transcription is optional and not implemented in this round; `voice_notes.transcription_status` is ready for a future Edge Function.
-- Notification sounds and do-not-disturb hours are available in Settings, persist locally, and sync to `user_notification_preferences` when the migration has been applied. The notification list is refreshed while the app is open; it is not a realtime subscription.
+- Notification sounds and do-not-disturb hours are available in Settings, persist locally, and sync to `user_notification_preferences` when the migration has been applied. Task reminder sounds, Pomodoro sounds, preview, volume, duration, and repeat controls are available in Settings. The notification list is refreshed while the app is open; it is not a realtime subscription.
 - The `team_task_comments` table is created by the migration, but the team comment UI is not wired yet.
 - Recurring-series changes use separate owner-scoped updates. A network failure partway through a series update can leave some occurrences updated; there is no transactional series RPC yet.
 - No automated browser test suite exists in the repository. Verification for this round was limited to static checks (`node --check`), ID/wiring audits, and a local server smoke test; authenticated RLS behavior still needs testing in a real Supabase project.

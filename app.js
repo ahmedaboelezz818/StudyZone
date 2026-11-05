@@ -4019,6 +4019,7 @@
   let alertAudioRepeatHandle = null;
   let alertSnoozeTimer = null;
   let lastAlertSound = { soundId: "task-reminder", volume: 80, duration: 5 };
+  let activeAlertKey = null;
 
   function ensureAlertAudioContext() {
     if (!alertAudioContext) {
@@ -4053,10 +4054,6 @@
   }
 
   function startAlert({ key, soundId, volume, duration, repeat } = {}) {
-   // عرف المتغير هنا خارج الدالة (في نطاق الملف) لو مش متعرّف فوق خالص
-  let activeAlertKey = null; 
-
-  function startAlert({ key, soundId, volume, duration, repeat } = {}) {
     stopAlertAudio();
     activeAlertKey = key || null;
     lastAlertSound = { soundId: soundId || "task-reminder", volume: volume || 80, duration: duration || 5 };
@@ -4064,7 +4061,6 @@
       if (activeAlertKey !== key) stopAlertAudio();
     });
     return key || null;
-  }
   }
 
   function snoozeActiveAlert(minutes = 5) {

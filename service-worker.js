@@ -1,4 +1,4 @@
-const CACHE_NAME = "studyzone-shell-v12";
+const CACHE_NAME = "studyzone-shell-v13";
 
 const APP_SHELL = [
   "./",
@@ -108,6 +108,7 @@ self.addEventListener("push", (event) => {
       typeof payload.tag === "string"
         ? payload.tag.slice(0, 120)
         : "study-zone-reminder",
+    renotify: true,
     data: {
       url: typeof payload.url === "string" ? payload.url : "./#tasks",
     },
