@@ -328,6 +328,9 @@
     remoteStarted: false,
     subjectId: "",
     taskId: "",
+    goal: "",
+    tools: "",
+    durationMinutes: null,
   };
   let focusRecords = [];
   let pendingFocusRecords = [];
@@ -603,6 +606,8 @@
   let teamsLoaded = false;
   let teamsSupported = true;
   let teamsError = "";
+  let teamInvites = [];
+  let teamJoinRequests = [];
 
   let voiceNotes = [];
   let voiceNotesLoading = false;
@@ -631,6 +636,87 @@
     console.warn("Could not restore the saved task view.", error);
   }
   let notes = readLocalNotes();
+
+  // ---- Focus intelligence state -------------------------------------------
+  const routinesStorageKey = "studyzone.routines.v1";
+  const routineDaysStorageKey = "studyzone.routine-days.v1";
+  const journalStorageKey = "studyzone.journal.v1";
+  const distractionStorageKey = "studyzone.distractions.v1";
+  const focusSoundPrefsKey = "studyzone.focus-sounds.v1";
+  const pendingOpsStorageKey = "studyzone.pending-ops.v1";
+  let routines = readLocalJson(routinesStorageKey, []);
+  let routineDays = readLocalJson(routineDaysStorageKey, []);
+  let routinesLoading = false;
+  let routinesLoaded = false;
+  let routinesSupported = true;
+  let routinesError = "";
+  let taskAllDaySupported = true;
+  let taskUsageSupported = true;
+  let journalEntries = readLocalJson(journalStorageKey, []);
+  let journalLoaded = false;
+  let journalSupported = true;
+  let journalDate = dateKey(new Date());
+  let focusDistractions = readLocalJson(distractionStorageKey, []);
+  let distractionsSupported = true;
+  let smartSortEnabled = false;
+  let quickCaptureType = "task";
+  let globalSearchQuery = "";
+  let searchSelectedTaskId = null;
+  let focusPrepContext = { subjectId: "", taskId: "", goal: "", tools: "", minutes: 25 };
+  let focusGoal = "";
+  let focusTools = "";
+  let focusSoundId = "off";
+  let focusSoundVolume = 30;
+  let focusSoundEngine = null;
+  let shortcutsOpen = false;
+  let weeklyReviewOpen = false;
+  try {
+    const soundPrefs = JSON.parse(
+      localStorage.getItem(focusSoundPrefsKey) || "null",
+    );
+    if (soundPrefs && typeof soundPrefs === "object") {
+      if (["off", "rain", "white", "brown", "forest", "fireplace"].includes(soundPrefs.id))
+        focusSoundId = soundPrefs.id;
+      if (Number(soundPrefs.volume) >= 0 && Number(soundPrefs.volume) <= 100)
+        focusSoundVolume = Number(soundPrefs.volume);
+    }
+  } catch (error) {
+    console.warn("Could not restore focus sound preferences.", error);
+  }
+
+  function readLocalJson(key, fallback) {
+    try {
+      const value = JSON.parse(localStorage.getItem(key) || "null");
+      return value == null ? fallback : value;
+    } catch (error) {
+      console.warn(`Could not restore ${key}.`, error);
+      return fallback;
+    }
+  }
+
+  function writeLocalJson(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      console.error(`Could not persist ${key}.`, error);
+    }
+  }
+
+  function saveLocalRoutines() {
+    writeLocalJson(routinesStorageKey, routines);
+  }
+
+  function saveLocalRoutineDays() {
+    writeLocalJson(routineDaysStorageKey, routineDays);
+  }
+
+  function saveLocalJournal() {
+    writeLocalJson(journalStorageKey, journalEntries);
+  }
+
+  function saveLocalDistractions() {
+    writeLocalJson(distractionStorageKey, focusDistractions);
+  }
 
   const deadlineText = {
     en: {
@@ -2480,21 +2566,22 @@
 
   function dashboardPage() {
     const todayKey = dateKey(new Date());
+    const todayAll = tasksForDay(todayKey);
     const openTasks = tasks.filter((task) => task.status !== "completed");
     const overdueTasks = openTasks
       .filter((task) => {
         const endKey = taskEndKey(task);
         return endKey && endKey < todayKey;
       })
-      .sort(sortTasksByPlan);
+      .sort(taskSort);
     const overdueIds = new Set(overdueTasks.map((task) => task.id));
-    const todayTasks = openTasks
+    const todayTasks = todayAll
       .filter(
-        (task) => !overdueIds.has(task.id) && taskOccursOnKey(task, todayKey),
+        (task) => task.status !== "completed" && !overdueIds.has(task.id),
       )
-      .sort(sortTasksByPlan);
-    const completedToday = tasks.filter(
-      (task) => task.status === "completed" && taskOccursOnKey(task, todayKey),
+      .sort(taskSort);
+    const completedToday = todayAll.filter(
+      (task) => task.status === "completed",
     );
     const totalToday = todayTasks.length + completedToday.length;
     const progress = totalToday
@@ -2548,8 +2635,8 @@
       task,
     ) => `<div class="dashboard-task ${task.status === "completed" ? "completed" : ""}">
       <button class="task-check ${task.status === "completed" ? "checked" : ""}" data-action="toggle-task" data-id="${escapeHtml(task.id)}" aria-label="${task.status === "completed" ? "Reopen" : "Complete"} ${escapeHtml(task.title)}">${task.status === "completed" ? "✓" : ""}</button>
-      <button class="dashboard-task-main" data-action="task-edit" data-id="${escapeHtml(task.id)}">
-        <strong dir="auto">${escapeHtml(task.title)}</strong>
+      <button class="dashboard-task-main" data-action="${task.routine_id ? "routine-edit" : "task-edit"}" data-id="${escapeHtml(task.routine_id || task.id)}">
+        <strong dir="auto">${escapeHtml(task.title)}${task.routine_id ? " ↻" : ""}</strong>
         <small dir="auto">${escapeHtml(task.subject || subjectName(task.subject_id))}${task.due_at ? ` · ${escapeHtml(taskDueLabel(task))}` : ""}</small>
       </button>
       <span class="priority ${escapeHtml(task.priority || "medium")}">${escapeHtml(deadlineText[appLanguage][task.priority] || "medium")}</span>
@@ -2657,6 +2744,237 @@
     return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
   }
 
+  // ---- Recurring routines & all-day helpers --------------------------------
+
+  function isAllDayTask(task) {
+    if (!task) return false;
+    if (task.__routine || task.routine_id) return true;
+    if (task.is_all_day === true) return true;
+    if (!task.due_at) return false;
+    const due = new Date(task.due_at);
+    return (
+      !task.starts_at &&
+      due.getHours() === 23 &&
+      due.getMinutes() === 59
+    );
+  }
+
+  function normalizeRoutine(row) {
+    return {
+      id: row.id,
+      user_id: row.user_id,
+      title: row.title || "",
+      description: row.description || "",
+      subject_id: row.subject_id || null,
+      priority: row.priority || "medium",
+      routine_type: row.routine_type || "daily",
+      weekdays: Array.isArray(row.weekdays)
+        ? row.weekdays.map(Number)
+        : Array.isArray(row.recurrence_days)
+          ? row.recurrence_days.map(Number)
+          : [],
+      interval_days: Math.max(1, Number(row.interval_days) || 1),
+      start_date: row.start_date || dateKey(new Date()),
+      end_date: row.end_date || null,
+      paused: row.paused === true,
+      paused_at: row.paused_at || null,
+      estimated_minutes: Number(row.estimated_minutes) || 30,
+      reminder_before_minutes: Number(row.reminder_before_minutes) || 0,
+      created_at: row.created_at || new Date().toISOString(),
+      updated_at: row.updated_at || new Date().toISOString(),
+    };
+  }
+
+  function routineOccursOnKey(routine, key) {
+    if (!routine || !key) return false;
+    if (routine.start_date && key < routine.start_date) return false;
+    if (routine.end_date && key > routine.end_date) return false;
+    if (routine.paused) {
+      const pausedKey =
+        routine.paused_at || dateKey(startOfLocalDay(new Date()));
+      if (!pausedKey || key >= pausedKey) return false;
+    }
+    const date = parseLocalDateKey(key);
+    if (!date) return false;
+    const type = routine.routine_type || "daily";
+    if (type === "weekdays" || type === "custom") {
+      return (routine.weekdays || []).map(Number).includes(date.getDay());
+    }
+    if (type === "interval") {
+      const start = parseLocalDateKey(routine.start_date);
+      if (!start) return true;
+      const diff = Math.round((date - start) / 86400000);
+      const interval = Math.max(1, Number(routine.interval_days) || 1);
+      return diff >= 0 && diff % interval === 0;
+    }
+    return true;
+  }
+
+  function routineDayFor(routineId, key) {
+    return (
+      routineDays.find(
+        (day) =>
+          String(day.routine_id) === String(routineId) &&
+          day.occurrence_date === key,
+      ) || null
+    );
+  }
+
+  function routineVirtualTask(routine, key) {
+    const record = routineDayFor(routine.id, key);
+    const completed = record?.status === "completed";
+    return {
+      id: `routine:${routine.id}:${key}`,
+      routine_id: routine.id,
+      occurrence_date: key,
+      title: routine.title,
+      description: routine.description || "",
+      subject_id: routine.subject_id || null,
+      subject: subjectName(routine.subject_id),
+      priority: routine.priority || "medium",
+      status: completed ? "completed" : "not_started",
+      is_all_day: true,
+      due_at: `${key}T23:59:00`,
+      starts_at: null,
+      recurrence_group_id: null,
+      recurrence_type: routine.routine_type,
+      recurrence_days: routine.weekdays || [],
+      recurrence_until: routine.end_date || null,
+      estimated_minutes: routine.estimated_minutes || 30,
+      reminder_before_minutes: routine.reminder_before_minutes || 0,
+      completed_at: record?.completed_at || null,
+      skipped: record?.status === "skipped",
+      __routine: routine,
+      __routineRecord: record || null,
+    };
+  }
+
+  function routineTasksForDay(key) {
+    return routines
+      .filter((routine) => routineOccursOnKey(routine, key))
+      .map((routine) => routineVirtualTask(routine, key))
+      .filter((task) => !task.skipped);
+  }
+
+  function tasksForDay(key) {
+    return tasks
+      .filter((task) => taskOccursOnKey(task, key))
+      .concat(routineTasksForDay(key));
+  }
+
+  function taskSort(a, b) {
+    return smartSortEnabled ? sortTasksSmart(a, b) : sortTasksByPlan(a, b);
+  }
+
+  function smartTaskScore(task) {
+    if (!task || task.status === "completed") return -1;
+    const todayKey = dateKey(new Date());
+    const endKey = taskEndKey(task);
+    let score = 0;
+    if (endKey) {
+      const days = Math.round(
+        (parseLocalDateKey(endKey) - parseLocalDateKey(todayKey)) / 86400000,
+      );
+      if (days < 0) score += 1000 + Math.min(240, Math.abs(days) * 8);
+      else if (days === 0) score += 320;
+      else if (days === 1) score += 220;
+      else if (days <= 3) score += 120;
+      else if (days <= 7) score += 50;
+    }
+    score += 90 - (priorityRank[task.priority] ?? 2) * 25;
+    score += Math.min(120, Number(task.postpone_count || 0) * 18);
+    score += Math.min(60, Number(task.open_count || 0) * 3);
+    if (isAllDayTask(task)) score += 12;
+    return score;
+  }
+
+  function sortTasksSmart(a, b) {
+    const difference = smartTaskScore(b) - smartTaskScore(a);
+    if (difference !== 0) return difference;
+    return sortTasksByPlan(a, b);
+  }
+
+  function mostUsedTasks(limit = 4) {
+    const ranked = tasks
+      .filter((task) => !task.routine_id)
+      .map((task) => ({
+        task,
+        score:
+          Number(task.open_count || 0) +
+          Number(task.completed_count || 0) * 2 +
+          (task.last_opened_at ? 1 : 0),
+      }))
+      .filter((entry) => entry.score > 0)
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          new Date(b.task.last_opened_at || 0) -
+            new Date(a.task.last_opened_at || 0),
+      )
+      .slice(0, limit)
+      .map((entry) => entry.task);
+    if (ranked.length) return ranked;
+    return tasks
+      .filter((task) => task.status !== "completed")
+      .sort(
+        (a, b) =>
+          new Date(b.created_at || 0) - new Date(a.created_at || 0),
+      )
+      .slice(0, limit);
+  }
+
+  async function trackTaskUsage(task, field) {
+    if (!task || !field || String(task.id).startsWith("routine:")) return;
+    const next = Number(task[field] || 0) + 1;
+    task[field] = next;
+    if (field === "open_count") task.last_opened_at = new Date().toISOString();
+    if (!supabase || !session) {
+      saveLocalTasks();
+      return;
+    }
+    if (!taskUsageSupported) return;
+    const patch = { [field]: next };
+    if (field === "open_count") patch.last_opened_at = task.last_opened_at;
+    const { error } = await supabase
+      .from("tasks")
+      .update(patch)
+      .eq("id", task.id);
+    if (error) {
+      if (isMissingColumnError(error)) taskUsageSupported = false;
+      else console.warn("Could not update task usage counters.", error);
+    }
+  }
+
+  function isMissingColumnError(error) {
+    return /(column .* does not exist|42703|PGRST204)/i.test(
+      `${error?.code || ""} ${error?.message || ""}`,
+    );
+  }
+
+  function routineTypeFormValue(routine) {
+    if (!routine) return "none";
+    if (routine.routine_type === "weekdays" || routine.routine_type === "custom")
+      return "weekdays_permanent";
+    if (routine.routine_type === "interval") return "interval_permanent";
+    return "daily_permanent";
+  }
+
+  function routineTypeFromFormValue(value) {
+    if (value === "weekdays_permanent") return "weekdays";
+    if (value === "interval_permanent") return "interval";
+    return "daily";
+  }
+
+  function isRoutineRepeatType(value) {
+    return String(value || "").endsWith("_permanent");
+  }
+
+  function resetRoutineFormState(form) {
+    if (!form) return;
+    const hidden = form.elements.namedItem("routine_id");
+    if (hidden) hidden.value = "";
+  }
+
   function parseLocalDateKey(key) {
     const [year, month, day] = String(key || "")
       .split("-")
@@ -2728,17 +3046,11 @@
   }
 
   function openTaskCountForDay(key) {
-    const todayKey = dateKey(new Date());
-    return tasks.filter((task) => {
-      if (task.status === "completed" || !taskOccursOnKey(task, key))
-        return false;
-      const endKey = taskEndKey(task);
-      return !(endKey && endKey < todayKey);
-    }).length;
+    return tasksForDay(key).filter((task) => task.status !== "completed").length;
   }
 
   function formatTaskTime(task) {
-    if (!task?.due_at) return "";
+    if (!task?.due_at || isAllDayTask(task)) return "";
     const date = new Date(task.due_at);
     if (Number.isNaN(date.getTime())) return "";
     if (date.getHours() === 23 && date.getMinutes() === 59) return "";
@@ -2761,37 +3073,53 @@
     if (!range) return translateUiText("No due date");
     const timeValue = formatTaskTime(task);
     const multiDay = dateKey(range.start) !== dateKey(range.end);
+    const allDayLabel = appLanguage === "ar" ? "طوال اليوم" : "All day";
     if (multiDay)
       return `${formatTaskDayLabel(range.start)} → ${formatTaskDayLabel(range.end)}`;
+    if (isAllDayTask(task)) {
+      return includeDate
+        ? `${formatTaskDayLabel(range.end)} · ${allDayLabel}`
+        : allDayLabel;
+    }
     if (includeDate)
       return `${formatTaskDayLabel(range.end)}${timeValue ? ` · ${timeValue}` : ""}`;
-    return timeValue || (appLanguage === "ar" ? "طوال اليوم" : "All day");
+    return timeValue || allDayLabel;
   }
 
   function taskRow(task, { showDate = false } = {}) {
     const completed = task.status === "completed";
+    const routine = Boolean(task.routine_id);
     const range = taskDateRange(task);
     const dueLabel = taskDueLabel(task, { includeDate: showDate });
     const subject = task.subject || subjectName(task.subject_id);
     const description = task.description?.trim()
       ? `<small class="task-description" dir="auto">${escapeHtml(task.description)}</small>`
       : "";
-    const repeating = task.recurrence_group_id
-      ? `<span class="task-repeat" title="${appLanguage === "ar" ? "مهمة متكررة" : "Repeating task"}">↻</span>`
-      : "";
+    const repeating = routine
+      ? `<span class="task-repeat task-repeat-routine" title="${appLanguage === "ar" ? "مهمة يومية متكررة" : "Recurring routine"}">↻</span>`
+      : task.recurrence_group_id
+        ? `<span class="task-repeat" title="${appLanguage === "ar" ? "مهمة متكررة" : "Repeating task"}">↻</span>`
+        : "";
     const overdue =
-      !completed && range && dateKey(range.end) < dateKey(new Date());
-    return `<div class="task-row ${completed ? "completed" : ""} ${overdue ? "is-overdue" : ""}" data-task-id="${escapeHtml(task.id)}">
+      !completed &&
+      !routine &&
+      range &&
+      dateKey(range.end) < dateKey(new Date());
+    const routineActions = routine
+      ? `<button class="task-icon" data-action="routine-edit" data-id="${escapeHtml(task.routine_id)}" aria-label="${appLanguage === "ar" ? "تعديل المهمة اليومية" : "Edit routine"}">✎</button>
+         ${completed ? "" : `<button class="task-icon" data-action="routine-skip" data-id="${escapeHtml(task.routine_id)}" data-date="${escapeHtml(task.occurrence_date)}" aria-label="${appLanguage === "ar" ? "تخطي اليوم" : "Skip today"}">↷</button>`}
+         <button class="task-icon" data-action="routine-toggle-pause" data-id="${escapeHtml(task.routine_id)}" aria-label="${task.__routine?.paused ? (appLanguage === "ar" ? "استئناف التكرار" : "Resume routine") : (appLanguage === "ar" ? "إيقاف التكرار مؤقتًا" : "Pause routine")}">${task.__routine?.paused ? "▶" : "Ⅱ"}</button>
+         <button class="task-icon danger" data-action="routine-delete" data-id="${escapeHtml(task.routine_id)}" aria-label="${appLanguage === "ar" ? "حذف المهمة اليومية" : "Delete routine"}">×</button>`
+      : `<button class="task-icon" data-action="task-edit" data-id="${escapeHtml(task.id)}" aria-label="${appLanguage === "ar" ? "تعديل المهمة" : "Edit task"}">✎</button>
+         <button class="task-icon" data-action="move-task" data-id="${escapeHtml(task.id)}" aria-label="${appLanguage === "ar" ? "نقل المهمة" : "Move task"}">→</button>
+         <button class="task-icon danger" data-action="delete-task" data-id="${escapeHtml(task.id)}" aria-label="${appLanguage === "ar" ? "حذف المهمة" : "Delete task"}">×</button>`;
+    return `<div class="task-row ${completed ? "completed" : ""} ${overdue ? "is-overdue" : ""} ${routine ? "is-routine" : ""}" data-task-id="${escapeHtml(task.id)}" ${routine ? `data-routine-id="${escapeHtml(task.routine_id)}"` : ""}>
       <button class="task-check ${completed ? "checked" : ""}" data-action="toggle-task" data-id="${escapeHtml(task.id)}" aria-label="${completed ? "Reopen" : "Complete"} ${escapeHtml(task.title)}">${completed ? "✓" : ""}</button>
       <div class="task-main"><strong class="task-title" dir="auto">${escapeHtml(task.title)}${repeating}</strong>${description}<span class="task-meta-inline" dir="auto">${escapeHtml(subject)}</span></div>
       <span class="task-meta" dir="auto">${escapeHtml(subject)}</span>
       <span class="task-due ${overdue ? "overdue" : ""}">${escapeHtml(dueLabel)}</span>
       <span class="priority ${escapeHtml(task.priority || "medium")}">${escapeHtml(deadlineText[appLanguage][task.priority] || task.priority || "medium")}</span>
-      <div class="task-actions">
-        <button class="task-icon" data-action="task-edit" data-id="${escapeHtml(task.id)}" aria-label="${appLanguage === "ar" ? "تعديل المهمة" : "Edit task"}">✎</button>
-        <button class="task-icon" data-action="move-task" data-id="${escapeHtml(task.id)}" aria-label="${appLanguage === "ar" ? "نقل المهمة" : "Move task"}">→</button>
-        <button class="task-icon danger" data-action="delete-task" data-id="${escapeHtml(task.id)}" aria-label="${appLanguage === "ar" ? "حذف المهمة" : "Delete task"}">×</button>
-      </div>
+      <div class="task-actions">${routineActions}</div>
     </div>`;
   }
 
@@ -2833,37 +3161,39 @@
     const todayKey = dateKey(new Date());
     const dayMode = taskViewMode === "day";
     const buckets = { overdue: [], day: [], nodate: [], completed: [] };
+    const dayTasksAll = tasksForDay(selectedKey);
+    const openTasks = tasks.filter((task) => task.status !== "completed");
     if (dayMode) {
-      const openTasks = tasks.filter((task) => task.status !== "completed");
       buckets.overdue = openTasks
         .filter((task) => {
           const endKey = taskEndKey(task);
           return endKey && endKey < todayKey;
         })
-        .sort(sortTasksByPlan);
+        .sort(taskSort);
       const overdueIds = new Set(buckets.overdue.map((task) => task.id));
-      buckets.day = openTasks
+      buckets.day = dayTasksAll
         .filter(
           (task) =>
-            !overdueIds.has(task.id) && taskOccursOnKey(task, selectedKey),
+            task.status !== "completed" &&
+            !overdueIds.has(task.id),
         )
-        .sort(sortTasksByPlan);
+        .sort(taskSort);
       buckets.nodate = openTasks
         .filter((task) => !taskDateRange(task) && !overdueIds.has(task.id))
-        .sort(sortTasksByPlan);
-      buckets.completed = tasks
-        .filter(
-          (task) =>
-            task.status === "completed" && taskOccursOnKey(task, selectedKey),
-        )
-        .sort(sortTasksByPlan);
+        .sort(taskSort);
+      buckets.completed = dayTasksAll
+        .filter((task) => task.status === "completed")
+        .sort(taskSort);
     } else {
+      const todayRoutines = routineTasksForDay(todayKey);
       buckets.day = tasks
         .filter((task) => task.status !== "completed")
-        .sort(sortTasksByPlan);
+        .concat(todayRoutines.filter((task) => task.status !== "completed"))
+        .sort(taskSort);
       buckets.completed = tasks
         .filter((task) => task.status === "completed")
-        .sort(sortTasksByPlan);
+        .concat(todayRoutines.filter((task) => task.status === "completed"))
+        .sort(taskSort);
     }
     const dayTasks = buckets.day.concat(
       buckets.overdue.filter((task) => taskOccursOnKey(task, selectedKey)),
@@ -2917,13 +3247,96 @@
          ${taskShowCompleted ? taskSection("completed", appLanguage === "ar" ? "المكتملة" : "Completed", buckets.completed) : ""}`
       : `${taskSection("today", appLanguage === "ar" ? "كل المهام المفتوحة" : "All open tasks", buckets.day)}
          ${taskSection("completed", appLanguage === "ar" ? "المكتملة" : "Completed", buckets.completed)}`;
+
+    const suggestionReason = (task) => {
+      const endKey = taskEndKey(task);
+      const today = dateKey(new Date());
+      if (endKey && endKey < today)
+        return appLanguage === "ar" ? "متأخرة — ابدأ بها" : "Overdue · start here";
+      if (endKey === today)
+        return appLanguage === "ar" ? "مستحقة اليوم" : "Due today";
+      if (Number(task.postpone_count || 0) >= 2)
+        return appLanguage === "ar"
+          ? `تم تأجيلها ${Number(task.postpone_count)} مرات`
+          : `Postponed ${Number(task.postpone_count)} times`;
+      return appLanguage === "ar"
+        ? "أعلى أولوية متاحة"
+        : "Highest available priority";
+    };
+    const suggested = tasks
+      .filter((task) => task.status !== "completed")
+      .slice()
+      .sort(sortTasksSmart)
+      .slice(0, 3);
+    const smartPanel = suggested.length
+      ? `<section class="panel task-smart-panel">
+          ${panelHeading(
+            appLanguage === "ar" ? "أولويات ذكية" : "SMART PRIORITIES",
+            appLanguage === "ar" ? "ترتيب مقترح لليوم" : "A suggested focus order",
+            `<button class="button button-secondary button-small" data-action="toggle-smart-sort">${smartSortEnabled ? (appLanguage === "ar" ? "الترتيب اليدوي" : "Manual order") : appLanguage === "ar" ? "استخدم الاقتراح" : "Use suggested order"}</button>`,
+          )}
+          <div class="smart-task-list">${suggested
+            .map(
+              (task, index) =>
+                `<button class="smart-task-row" data-action="task-edit" data-id="${escapeHtml(task.id)}">
+                  <span class="smart-task-rank">${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en", { minimumIntegerDigits: 2 }).format(index + 1)}</span>
+                  <span class="smart-task-main"><strong dir="auto">${escapeHtml(task.title)}</strong><small>${escapeHtml(suggestionReason(task))}</small></span>
+                  <span class="priority ${escapeHtml(task.priority || "medium")}">${escapeHtml(deadlineText[appLanguage][task.priority] || task.priority || "medium")}</span>
+                </button>`,
+            )
+            .join("")}</div>
+        </section>`
+      : "";
+    const usedTasks = mostUsedTasks(4);
+    const mostUsedPanel = usedTasks.length
+      ? `<section class="panel task-smart-panel">
+          ${panelHeading(
+            appLanguage === "ar" ? "الأكثر استخدامًا" : "MOST USED",
+            appLanguage === "ar" ? "المهام التي تعود إليها" : "The tasks you return to",
+            `<button class="panel-link" data-action="task-view-mode" data-mode="all">${appLanguage === "ar" ? "عرض الكل ←" : "View all →"}</button>`,
+          )}
+          <div class="smart-task-list">${usedTasks
+            .map(
+              (task) =>
+                `<button class="smart-task-row" data-action="task-edit" data-id="${escapeHtml(task.id)}">
+                  <span class="smart-task-rank">${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(Number(task.open_count || 0) + Number(task.completed_count || 0) * 2)}</span>
+                  <span class="smart-task-main"><strong dir="auto">${escapeHtml(task.title)}</strong><small>${escapeHtml(task.subject || subjectName(task.subject_id))} · ${Number(task.completed_count || 0)} ${appLanguage === "ar" ? "إكمال" : "completions"}</small></span>
+                  <span class="task-due">${escapeHtml(taskDueLabel(task))}</span>
+                </button>`,
+            )
+            .join("")}</div>
+        </section>`
+      : "";
+    const pausedRoutines = routines.filter((routine) => routine.paused);
+    const pausedPanel = pausedRoutines.length
+      ? `<section class="panel task-smart-panel">
+          ${panelHeading(
+            appLanguage === "ar" ? "مهام يومية موقوفة" : "PAUSED ROUTINES",
+            appLanguage === "ar" ? "التكرار متوقف، والسجل القديم محفوظ" : "Recurrence is paused and past history is kept",
+          )}
+          <div class="smart-task-list">${pausedRoutines
+            .map(
+              (routine) =>
+                `<div class="smart-task-row">
+                  <span class="smart-task-rank">Ⅱ</span>
+                  <span class="smart-task-main"><strong dir="auto">${escapeHtml(routine.title)}</strong><small>${appLanguage === "ar" ? "موقوفة" : "Paused"} · ${escapeHtml(subjectName(routine.subject_id))}</small></span>
+                  <span class="task-actions">
+                    <button class="task-icon" data-action="routine-toggle-pause" data-id="${escapeHtml(routine.id)}" aria-label="${appLanguage === "ar" ? "استئناف" : "Resume"}">▶</button>
+                    <button class="task-icon" data-action="routine-edit" data-id="${escapeHtml(routine.id)}" aria-label="${appLanguage === "ar" ? "تعديل" : "Edit"}">✎</button>
+                    <button class="task-icon danger" data-action="routine-delete" data-id="${escapeHtml(routine.id)}" aria-label="${appLanguage === "ar" ? "حذف" : "Delete"}">×</button>
+                  </span>
+                </div>`,
+            )
+            .join("")}</div>
+        </section>`
+      : "";
     return `${pageHeading(
       "TASKBOARD",
       "Tasks",
       appLanguage === "ar"
         ? "ركّز على يومك، واترك الباقي في مكانه."
         : "Focus on today. Everything else stays quietly in place.",
-      `<button class="button button-primary" data-action="new-task" data-date="${selectedKey}"><span class="button-icon">＋</span> ${appLanguage === "ar" ? "مهمة جديدة" : "New task"}</button>`,
+      `<div class="dashboard-heading-actions"><button class="button button-secondary" data-action="quick-capture-open">＋ ${appLanguage === "ar" ? "إضافة سريعة" : "Quick capture"}</button><button class="button button-primary" data-action="new-task" data-date="${selectedKey}"><span class="button-icon">＋</span> ${appLanguage === "ar" ? "مهمة جديدة" : "New task"}</button></div>`,
     )}
       <section class="task-day-panel panel">
         <div class="task-day-top">
@@ -2955,15 +3368,16 @@
             <button class="icon-button" data-action="task-next-day" aria-label="Next day">›</button>
             <button class="button button-secondary button-small" data-action="task-today">${appLanguage === "ar" ? "اليوم" : "Today"}</button>
           </div>
-          <div class="task-toolbar">${search}${filters}<button class="button button-secondary button-small" data-action="toggle-task-completed">${taskShowCompleted ? (appLanguage === "ar" ? "إخفاء المكتملة" : "Hide completed") : appLanguage === "ar" ? "إظهار المكتملة" : "Show completed"}</button></div>
+          <div class="task-toolbar">${search}${filters}<button class="button button-secondary button-small ${smartSortEnabled ? "is-active" : ""}" data-action="toggle-smart-sort" aria-pressed="${smartSortEnabled}">${appLanguage === "ar" ? "ترتيب ذكي" : "Smart order"}</button><button class="button button-secondary button-small" data-action="toggle-task-completed">${taskShowCompleted ? (appLanguage === "ar" ? "إخفاء المكتملة" : "Hide completed") : appLanguage === "ar" ? "إظهار المكتملة" : "Show completed"}</button></div>
         </div>
         <div class="day-strip" ${dayMode ? "" : "hidden"}>${strip}</div>
       </section>
       <div class="task-groups">${sections}</div>
+      ${smartPanel}${mostUsedPanel}${pausedPanel}
       <p class="data-caption">${
         session
-          ? "Tasks are saved to your private account. Overdue tasks stay visible until you complete or reschedule them."
-          : "Tasks are saved in this browser in preview mode. Sign in to sync them across devices."
+          ? "Tasks, routines, and daily completion history are saved to your private account. Overdue tasks stay visible until you complete or reschedule them."
+          : "Tasks and routines are saved in this browser in preview mode. Sign in to sync them across devices."
       }</p>`;
   }
 
@@ -4767,6 +5181,14 @@
   }
 
   function getFocusDurationMs(type = focusSession.type) {
+    if (
+      type === "focus" &&
+      Number.isInteger(focusSession.durationMinutes) &&
+      focusSession.durationMinutes >= 1 &&
+      focusSession.durationMinutes <= 180
+    ) {
+      return focusSession.durationMinutes * 60000;
+    }
     return focusDurationFor(type) * 60000;
   }
 
@@ -5142,9 +5564,11 @@
       100,
       Math.max(0, ((durationMs - remaining) / durationMs) * 100),
     );
-    const focusedTask = tasks.find(
-      (task) => String(task.id) === String(focusSession.taskId),
-    );
+    const focusedTask =
+      tasks.find((task) => String(task.id) === String(focusSession.taskId)) ||
+      tasksForDay(dateKey(new Date())).find(
+        (task) => String(task.id) === String(focusSession.taskId),
+      );
     const focusedSubject = subjects.find(
       (subject) => String(subject.id) === String(focusSession.subjectId),
     );
@@ -5164,11 +5588,11 @@
     ].join("");
     const taskOptions = [
       `<option value="">${t.noTask}</option>`,
-      ...tasks
+      ...tasksForDay(dateKey(new Date()))
         .filter((task) => task.status !== "completed")
         .map(
           (task) =>
-            `<option value="${escapeHtml(task.id)}" ${String(task.id) === String(focusSession.taskId) ? "selected" : ""}>${escapeHtml(task.title)}</option>`,
+            `<option value="${escapeHtml(task.routine_id || task.id)}" ${String(task.routine_id || task.id) === String(focusSession.taskId) ? "selected" : ""}>${escapeHtml(task.title)}</option>`,
         ),
     ].join("");
     const nextPhase =
@@ -5179,6 +5603,7 @@
         : t.focus;
     const settingsPanel = focusSettingsOpen ? renderFocusSettings(t) : "";
     const stats = getFocusStats();
+    const distractionStats = distractionSummary();
     const history = focusRecords
       .slice()
       .sort(
@@ -5191,7 +5616,13 @@
       .map((record) => renderFocusHistoryRow(record, t))
       .join("");
     return `<section class="focus-page ${distractionFree ? "distraction-free" : ""}" data-session-type="${focusSession.type}" data-session-status="${focusSession.status}" data-clock-size="${escapeHtml(focusSettings.clockSize)}">
-      <header class="page-heading focus-heading"><div><p class="eyebrow">${t.eyebrow}</p><h1>${t.title}</h1><p class="page-subtitle">${t.subtitle}</p></div><div class="focus-heading-actions"><button class="button button-secondary button-small" data-action="focus-distraction">${distractionFree ? t.exitDistraction : t.distraction}</button><button class="icon-button" data-action="focus-settings" aria-label="${t.settings}" aria-expanded="${focusSettingsOpen}">⚙</button></div></header>
+      <header class="page-heading focus-heading"><div><p class="eyebrow">${t.eyebrow}</p><h1>${t.title}</h1><p class="page-subtitle">${t.subtitle}</p></div><div class="focus-heading-actions">
+        <button class="button button-secondary button-small" data-action="focus-prep-open">${appLanguage === "ar" ? "تجهيز الجلسة" : "Prepare session"}</button>
+        <button class="button button-secondary button-small" data-action="focus-distraction-log">${appLanguage === "ar" ? "تشتّت" : "Distracted"}</button>
+        <button class="button button-secondary button-small" data-action="focus-fullscreen">${appLanguage === "ar" ? "ملء الشاشة" : "Full screen"}</button>
+        <button class="button button-secondary button-small" data-action="focus-deep-toggle" aria-pressed="${distractionFree}">${distractionFree ? t.exitDistraction : t.distraction}</button>
+        <button class="icon-button" data-action="focus-settings" aria-label="${t.settings}" aria-expanded="${focusSettingsOpen}">⚙</button>
+      </div></header>
       ${settingsPanel}
       <div class="focus-main-grid">
         <section class="panel focus-clock-panel">
@@ -5202,6 +5633,7 @@
           </div>
           <div class="focus-progress" role="progressbar" aria-label="${phase}" aria-valuenow="${Math.round(progress)}" aria-valuemin="0" aria-valuemax="100"><span id="focus-progress-fill" style="--focus-progress:${(progress / 100).toFixed(4)}"></span></div>
           <p class="focus-session-message" id="focus-session-message">${focusSession.type === "focus" ? (focusSession.status === "running" ? t.stayFocused : t.focusHint) : t.breakHint}</p>
+          ${focusSession.goal ? `<p class="focus-session-goal" dir="auto"><span>${appLanguage === "ar" ? "هدف الجلسة" : "Session goal"}</span><strong>${escapeHtml(focusSession.goal)}</strong></p>` : ""}
           <p class="focus-session-context" dir="auto">${escapeHtml(focusedTask?.title || focusedSubject?.name || (focusSession.type === "focus" ? t.emptySubject : nextPhase))}</p>
           <div class="focus-selectors">
             <label>${t.subject}<select id="focus-subject" aria-label="${t.subject}">${subjectOptions}</select></label>
@@ -5212,7 +5644,12 @@
             <button class="button button-secondary" id="timer-reset">${t.reset}</button>
             <button class="button button-secondary" id="timer-skip">${t.skip}</button>
           </div>
-          <div class="focus-next-session">${t.next}: <strong>${nextPhase}</strong></div>
+          <div class="focus-next-session">${t.next}: <strong>${nextPhase}</strong>${focusSession.tools ? ` · ${appLanguage === "ar" ? "أدواتك" : "Tools"}: ${escapeHtml(focusSession.tools)}` : ""}</div>
+          <div class="focus-distraction-summary">
+            <span><strong>${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(distractionStats.today)}</strong> ${appLanguage === "ar" ? "تشتت اليوم" : "distractions today"}</span>
+            <span><strong>${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(distractionStats.week)}</strong> ${appLanguage === "ar" ? "هذا الأسبوع" : "this week"}</span>
+            <span>${appLanguage === "ar" ? "الأكثر" : "Most common"}: <strong dir="auto">${escapeHtml(distractionStats.topReason)}</strong></span>
+          </div>
         </section>
         <aside class="focus-side">
           <section class="panel focus-stats-panel">${panelHeading(t.focusTimeToday, t.completedToday)}
@@ -5220,6 +5657,7 @@
             <p class="metric-caption">${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(stats.todaySessions)} ${t.completedToday.toLocaleLowerCase(appLanguage)}</p>
             <div class="focus-mini-stats"><div><strong>${escapeHtml(formatFocusHours(stats.weekSeconds, t))}</strong><span>${t.weeklyHours}</span></div><div><strong>${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(stats.streak)}</strong><span>${t.streak}</span></div><div><strong>${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(stats.totalCycles)}</strong><span>${t.totalCycles}</span></div></div>
           </section>
+          ${focusSoundPanel()}
           <section class="panel focus-chart-panel">${panelHeading(t.weeklyChart, t.hourChart)}${renderFocusChart(stats.days, t)}</section>
         </aside>
       </div>
@@ -5406,6 +5844,26 @@
         teamMembers = [];
         teamTasks = [];
       }
+      if (selectedTeamId) {
+        const [inviteResult, requestResult] = await Promise.all([
+          supabase
+            .from("team_invites")
+            .select("*")
+            .eq("team_id", selectedTeamId)
+            .eq("status", "pending"),
+          supabase
+            .from("team_join_requests")
+            .select("*")
+            .eq("team_id", selectedTeamId)
+            .eq("status", "pending"),
+        ]);
+        if (inviteResult.error && !isMissingRelation(inviteResult.error))
+          console.error("Could not load team invites.", inviteResult.error);
+        if (requestResult.error && !isMissingRelation(requestResult.error))
+          console.error("Could not load team join requests.", requestResult.error);
+        teamInvites = inviteResult.error ? [] : inviteResult.data || [];
+        teamJoinRequests = requestResult.error ? [] : requestResult.data || [];
+      }
       teamsSupported = true;
     } catch (error) {
       console.error("Could not load teams.", error);
@@ -5475,21 +5933,61 @@
       (member) => String(member.team_id) === String(selected.id),
     );
     const owner = selected.owner_id === session.user.id;
+    const myMembership = members.find(
+      (member) => String(member.user_id) === String(session.user.id),
+    );
+    const canManage = owner || myMembership?.role === "admin";
     const memberRows =
       members
         .map(
-          (member) =>
-            `<div class="team-member"><span class="team-member-avatar">${escapeHtml(initials(teamMemberLabel(member)))}</span><div><strong>${escapeHtml(teamMemberLabel(member))}</strong><small>${escapeHtml(member.role === "owner" ? (appLanguage === "ar" ? "مالك الفريق" : "Team owner") : appLanguage === "ar" ? "عضو" : "Member")}</small></div></div>`,
+          (member) => {
+            const memberLabelText = teamMemberLabel(member);
+            const memberRole = member.role || "member";
+            const memberActions = canManage
+              ? `<span class="task-actions">
+                  <button class="task-icon" data-action="team-member-role" data-team-id="${escapeHtml(selected.id)}" data-user-id="${escapeHtml(member.user_id)}" data-role="${escapeHtml(memberRole === "owner" ? "member" : "admin")}" aria-label="${appLanguage === "ar" ? "تعديل الصلاحية" : "Change role"}">✎</button>
+                  ${memberRole === "owner" ? "" : `<button class="task-icon danger" data-action="team-member-remove" data-team-id="${escapeHtml(selected.id)}" data-user-id="${escapeHtml(member.user_id)}" aria-label="${appLanguage === "ar" ? "إزالة العضو" : "Remove member"}">×</button>`}
+                </span>`
+              : "";
+            return `<div class="team-member">
+              <span class="team-member-avatar">${escapeHtml(initials(teamMemberLabel(member)))}</span>
+              <div><strong>${escapeHtml(memberLabelText)}</strong><small>${escapeHtml(member.role === "owner" ? (appLanguage === "ar" ? "مالك الفريق" : "Team owner") : member.role === "admin" ? (appLanguage === "ar" ? "مسؤول مساعد" : "Assistant admin") : (appLanguage === "ar" ? "عضو" : "Member"))}</small>${memberActions ? `<div class="task-actions">${memberActions}</div>` : ""}</div>
+            </div>`;
+          },
         )
         .join("") ||
       `<p class="data-caption">${appLanguage === "ar" ? "لا أعضاء بعد." : "No members yet."}</p>`;
+    const pendingRequests = teamJoinRequests.filter(
+      (request) => String(request.team_id) === String(selected.id),
+    );
     const tasks = teamTasks.filter(
       (task) => String(task.team_id) === String(selected.id),
     );
     const openTasks = tasks.filter((task) => task.status !== "completed");
     const doneTasks = tasks.filter((task) => task.status === "completed");
-    const taskList = `${openTasks.length ? openTasks.map((task) => teamTaskRow(task, selected)).join("") : `<div class="empty-state"><strong>${appLanguage === "ar" ? "لا مهام للفريق" : "No team tasks yet"}</strong>${appLanguage === "ar" ? "أضف أول مهمة مشتركة." : "Add the first shared task below."}</div>`}
+    const taskList = `${openTasks.length ? openTasks.map((task) => teamTaskRow(task, selected)).join("") : `<div class="empty-state"><strong>${appLanguage === "ar" ? "لا مهام للفريق" : "No team tasks yet"}</strong><p>${appLanguage === "ar" ? "أضف أول مهمة مشتركة." : "Add the first shared task below."}</p></div>`}
       ${doneTasks.length ? `<details class="team-done"><summary>${appLanguage === "ar" ? "المكتملة" : "Completed"} (${doneTasks.length})</summary>${doneTasks.map((task) => teamTaskRow(task, selected)).join("")}</details>` : ""}`;
+    const pendingRequestsPanel = canManage && selected.join_mode === "approval"
+      ? `<section class="panel">
+          ${panelHeading(appLanguage === "ar" ? "طلبات الانضمام" : "Join requests", appLanguage === "ar" ? `${pendingRequests.length} في انتظار المراجعة` : `${pendingRequests.length} awaiting review`)}
+          <div class="team-task-list">${pendingRequests.length ? pendingRequests.map((request) => {
+            const requester = teamMembers.find(
+              (member) => String(member.user_id) === String(request.user_id),
+            );
+            const requesterLabel = requester
+              ? teamMemberLabel(requester)
+              : `${appLanguage === "ar" ? "عضو" : "Member"} ${String(request.user_id || "").slice(0, 6)}`;
+            return `<div class="team-task-row">
+              <div class="team-task-main"><strong dir="auto">${escapeHtml(requesterLabel)}</strong><small dir="auto">${escapeHtml(String(request.note || "").slice(0, 80))}</small></div>
+              <span class="priority">${escapeHtml(request.status || "pending")}</span>
+              <span class="task-actions">
+                <button class="task-icon" data-action="team-join-review" data-id="${escapeHtml(request.id)}" data-approve="true" aria-label="${appLanguage === "ar" ? "قبول" : "Approve"}">✓</button>
+                <button class="task-icon danger" data-action="team-join-review" data-id="${escapeHtml(request.id)}" data-approve="false" aria-label="${appLanguage === "ar" ? "رفض" : "Reject"}">×</button>
+              </span>
+            </div>`;
+          }).join("") : `<div class="empty-state"><strong>${appLanguage === "ar" ? "لا طلبات انضمام." : "No pending join requests."}</strong></div>`}</div>
+        </section>`
+      : "";
     return `${pageHeading("STUDY TOGETHER", appLanguage === "ar" ? "الفرق" : "Teams", appLanguage === "ar" ? "شارك المهام مع مجموعتك الدراسية." : "Share tasks and momentum with your study group.", actions)}
       <div class="team-switcher" role="tablist" aria-label="${appLanguage === "ar" ? "فرقك" : "Your teams"}">${teams.map((team) => `<button class="team-chip ${String(team.id) === String(selected.id) ? "selected" : ""}" data-action="team-select" data-id="${escapeHtml(team.id)}" role="tab" aria-selected="${String(team.id) === String(selected.id)}">${escapeHtml(team.name)}<small>${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(teamMemberCount(team.id))}</small></button>`).join("")}</div>
       <div class="grid team-layout">
@@ -5498,6 +5996,8 @@
           <div class="team-members">${memberRows}</div>
           <div class="team-actions-row">
             <button class="button button-secondary button-small" data-action="team-refresh">${appLanguage === "ar" ? "تحديث" : "Refresh"}</button>
+            <button class="button button-secondary button-small" data-action="team-invite" data-team-id="${escapeHtml(selected.id)}">${appLanguage === "ar" ? "دعوة عضو" : "Invite member"}</button>
+            <button class="button button-secondary button-small" data-action="team-request-join" data-team-id="${escapeHtml(selected.id)}">${appLanguage === "ar" ? "طلب انضمام" : "Request to join"}</button>
             ${
               owner
                 ? `<button class="button button-quiet button-small danger-text" data-action="team-delete">${appLanguage === "ar" ? "حذف الفريق" : "Delete team"}</button>`
@@ -5517,6 +6017,7 @@
           <div class="team-task-list">${taskList}</div>
         </section>
       </div>
+      ${pendingRequestsPanel}
       <p class="data-caption">${appLanguage === "ar" ? "مهام الفريق مرئية لأعضاء الفريق فقط بفضل سياسات RLS." : "Team tasks are visible only to members of this team through row-level security."}</p>`;
   }
 
@@ -5527,6 +6028,7 @@
     }
     const form = document.getElementById("team-form");
     form.reset();
+    form.elements.join_mode.value = "open";
     document.getElementById("team-error").textContent = "";
     openModal(document.getElementById("team-modal"));
     form.elements.name.focus();
@@ -5536,14 +6038,21 @@
     if (!supabase || !session) throw new Error("Sign in to create a team.");
     const name = String(formData.get("name") || "").trim();
     if (!name) throw new Error("Enter a team name.");
+    const joinMode = ["open", "approval"].includes(
+      String(formData.get("join_mode") || "open"),
+    )
+      ? String(formData.get("join_mode"))
+      : "open";
     const { data, error } = await supabase
       .from("teams")
       .insert({
         name,
         description: String(formData.get("description") || "").trim() || null,
         owner_id: session.user.id,
+        join_mode: joinMode,
+        logo_url: String(formData.get("logo_url") || "").trim() || null,
       })
-      .select("id,name,description,join_code,owner_id,created_at")
+      .select("id,name,description,join_code,owner_id,created_at,join_mode,logo_url")
       .single();
     if (error) throw error;
     selectedTeamId = data.id;
@@ -5552,6 +6061,141 @@
     showToast(appLanguage === "ar" ? "تم إنشاء الفريق." : "Team created.");
     await loadTeams();
   }
+
+  async function sendTeamInvite(teamId) {
+    const team = teams.find((item) => String(item.id) === String(teamId));
+    if (!team) return;
+    const code = String(team.join_code || "").toUpperCase();
+    if (!code) {
+      showToast(
+        appLanguage === "ar"
+          ? "تعذّر إنشاء كود دعوة لهذا الفريق."
+          : "Could not create a join code for this team.",
+      );
+      return;
+    }
+    const { error } = await supabase.from("team_invites").upsert(
+      {
+        team_id: team.id,
+        code,
+        status: "pending",
+        invited_by: session?.user?.id || null,
+      },
+      { onConflict: "team_id,code" },
+    );
+    if (error) {
+      showToast(`Could not send the invite: ${error.message}`);
+      return;
+    }
+    teamInvites = [
+      { team_id: team.id, code, status: "pending" },
+      ...teamInvites.filter((item) => String(item.team_id) !== String(team.id)),
+    ];
+    render();
+    showToast(
+      appLanguage === "ar"
+        ? "تم إنشاء رابط دعوة للفريق."
+        : "Team invite created.",
+    );
+  }
+
+  async function createTeamJoinRequest(teamId) {
+    const team = teams.find((item) => String(item.id) === String(teamId));
+    if (!team) return;
+    const teamIdValue = team.id;
+    const { error } = await supabase.from("team_join_requests").insert({
+      team_id: teamIdValue,
+      user_id: session?.user?.id,
+      status: "pending",
+      note: String(
+        document.getElementById("team-join-request-note")?.value || "",
+      ).trim(),
+    });
+    if (error) {
+      showToast(`Could not send the join request: ${error.message}`);
+      return;
+    }
+    render();
+    showToast(
+      appLanguage === "ar"
+        ? "أُرسل طلب الانضمام."
+        : "Join request sent.",
+    );
+  }
+
+  async function reviewTeamJoinRequest(requestId, approve) {
+    const request = teamJoinRequests.find(
+      (item) => String(item.id) === String(requestId),
+    );
+    if (!request) return;
+    const status = approve ? "approved" : "rejected";
+    const { error } = await supabase
+      .from("team_join_requests")
+      .update({
+        status,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: session?.user?.id,
+      })
+      .eq("id", request.id);
+    if (error) {
+      showToast(`Could not review the request: ${error.message}`);
+      return;
+    }
+    if (approve) {
+      const join = await supabase.rpc("join_team", {
+        p_code: String(
+          teams.find((item) => String(item.id) === String(request.team_id))
+            ?.join_code || "",
+        ),
+      });
+      if (join.error) {
+        showToast(`Could not accept the request: ${join.error.message}`);
+        return;
+      }
+    }
+    teamJoinRequests = teamJoinRequests.filter(
+      (item) => String(item.id) !== String(request.id),
+    );
+    render();
+  }
+
+  async function updateTeamMemberRole(teamId, userId, role) {
+    const { error } = await supabase
+      .from("team_members")
+      .update({ role })
+      .eq("team_id", teamId)
+      .eq("user_id", userId);
+    if (error) {
+      showToast(`Could not update the member: ${error.message}`);
+      return;
+    }
+    teamMembers = teamMembers.map((member) =>
+      String(member.team_id) === String(teamId) &&
+      String(member.user_id) === String(userId)
+        ? { ...member, role }
+        : member,
+    );
+    render();
+  }
+
+  async function removeTeamMember(teamId, userId) {
+    const { error } = await supabase
+      .from("team_members")
+      .delete()
+      .eq("team_id", teamId)
+      .eq("user_id", userId);
+    if (error) {
+      showToast(`Could not remove the member: ${error.message}`);
+      return;
+    }
+    teamMembers = teamMembers.filter(
+      (member) =>
+        !(String(member.team_id) === String(teamId) &&
+          String(member.user_id) === String(userId)),
+    );
+    render();
+  }
+
 
   function openTeamJoinModal() {
     if (!session) {
@@ -5569,6 +6213,15 @@
     if (!supabase || !session) throw new Error("Sign in to join a team.");
     const code = String(formData.get("code") || "").trim();
     if (!code) throw new Error("Enter a join code.");
+    const team = teams.find(
+      (item) =>
+        String(item.join_code || "").toUpperCase() === code.toUpperCase(),
+    );
+    if (team?.join_mode === "approval") {
+      await createTeamJoinRequest(team.id);
+      closeModal(document.getElementById("team-join-modal"));
+      return;
+    }
     const { data, error } = await supabase.rpc("join_team", { p_code: code });
     if (error) throw error;
     selectedTeamId = Array.isArray(data) ? data[0] : data;
@@ -5681,6 +6334,119 @@
     }
     teamTasks = teamTasks.filter((task) => String(task.id) !== String(id));
     render();
+  }
+
+  function computeTeamXpRows(teamId) {
+    const tasks = teamTasks.filter(
+      (task) => String(task.team_id) === String(teamId),
+    );
+    const memberRows = teamMembers
+      .filter((member) => String(member.team_id) === String(teamId))
+      .map((member) => {
+        const linkedTasks = tasks.filter(
+          (task) =>
+            String(task.created_by) === String(member.user_id) ||
+            String(task.assigned_to) === String(member.user_id),
+        );
+        const completedTasks = linkedTasks.filter(
+          (task) => task.status === "completed",
+        );
+        const focusRows = focusRecords.filter(
+          (record) =>
+            record.completed &&
+            record.session_type === "focus" &&
+            tasks.some(
+              (task) =>
+                String(task.id) === String(record.task_id) &&
+                (String(task.created_by) === String(member.user_id) ||
+                  String(task.assigned_to) === String(member.user_id)),
+            ),
+        );
+        const focusMinutes = focusRows.reduce(
+          (sum, record) => sum + Number(record.duration_seconds || 0) / 60,
+          0,
+        );
+        const taskXp = completedTasks.length * 10;
+        const focusXp = focusRows.length * 15;
+        const totalXp = taskXp + focusXp + Math.min(20, Math.round(focusMinutes));
+        const focusSeconds = focusRows.reduce(
+          (sum, record) => sum + Number(record.duration_seconds || 0),
+          0,
+        );
+        return {
+          userId: member.user_id,
+          label: teamMemberLabel(member),
+          isYou: String(member.user_id) === String(session?.user?.id),
+          xp: totalXp,
+          taskCompletions: completedTasks.length,
+          focusSessions: focusRows.length,
+          focusMinutes: Math.round(focusMinutes * 10) / 10,
+          focusSeconds,
+          taskXp,
+          focusXp,
+        };
+      })
+      .filter((row) => row.taskCompletions > 0 || row.focusSessions > 0)
+      .sort((a, b) => b.xp - a.xp || b.focusMinutes - a.focusMinutes);
+    const team = teams.find((item) => String(item.id) === String(teamId));
+    const members = teamMembers.filter(
+      (member) => String(member.team_id) === String(teamId),
+    );
+    const myRow = members.find(
+      (member) => String(member.user_id) === String(session?.user?.id),
+    );
+    const myXp = myRow ? memberRows.find((row) => row.userId === myRow.userId)?.xp || 0 : 0;
+    const rows = memberRows;
+    return { rows, myXp, memberCount: members.length };
+  }
+
+  function teamLeaderboardPage() {
+    const t = deadlineText[appLanguage];
+    if (!session) {
+      return `${pageHeading("TEAM LEADERBOARD", appLanguage === "ar" ? "متصدر الفريق" : "Team leaderboard", appLanguage === "ar" ? "قيّم ترتيب فريقك من خلال الأداء الحقيقي." : "Rank your team from real effort and progress.", "")}<section class="panel teams-empty"><div class="empty-state"><strong>${appLanguage === "ar" ? "سجّل الدخول لعرض لوحة الفريق" : "Sign in to view the team leaderboard"}</strong></div></section>`;
+    }
+    const teamId = selectedTeamId;
+    const team = teams.find((item) => String(item.id) === String(teamId));
+    if (!team) {
+      return `${pageHeading("TEAM LEADERBOARD", appLanguage === "ar" ? "متصدر الفريق" : "Team leaderboard", appLanguage === "ar" ? "قيّم ترتيب فريقك من خلال الأداء الحقيقي." : "Rank your team from real effort and progress.", "")}<section class="panel teams-empty"><div class="empty-state"><strong>${appLanguage === "ar" ? "لا فريق محدد" : "No team selected"}</strong></div></section>`;
+    }
+    const { rows, myXp } = computeTeamXpRows(teamId);
+    const podium = rows.slice(0, 3);
+    const podiumMarkup = podium.length
+      ? `<div class="team-podium">
+          ${podium
+            .map(
+              (row, index) => `<div class="team-podium-card ${index === 0 ? "first" : ""}">
+                <span class="team-podium-rank">${["1", "2", "3"][index]}</span>
+                <span class="team-member-avatar">${escapeHtml(initials(row.label))}</span>
+                <strong dir="auto">${escapeHtml(row.label)}</strong>
+                <small>${appLanguage === "ar" ? "نقاط الفريق" : "Team XP"}</small>
+                <strong class="team-podium-xp">${row.xp}</strong>
+                <small>${row.taskCompletions} ${appLanguage === "ar" ? "مهمة مكتملة" : "tasks"} · ${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(row.focusMinutes)} ${appLanguage === "ar" ? "دقيقة تركيز" : "focus min"}</small>
+              </div>`,
+            )
+            .join("")}
+        </div>`
+      : "";
+    const rowsMarkup = rows
+      .map(
+        (row, index) => `<div class="team-leaderboard-row ${row.isYou ? "is-you" : ""}">
+          <span class="team-leaderboard-rank">${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en", { minimumIntegerDigits: 2 }).format(index + 1)}</span>
+          <span class="team-member-avatar">${escapeHtml(initials(row.label))}</span>
+          <span class="team-leaderboard-main"><strong dir="auto">${escapeHtml(row.label)}</strong><small>${appLanguage === "ar" ? "مهام مكتملة" : "Tasks"} ${row.taskCompletions} · ${appLanguage === "ar" ? "جلسات تركيز" : "Focus sessions"} ${row.focusSessions}</small></span>
+          <span class="team-leaderboard-xp"><strong>${row.xp}</strong><small>XP</small></span>
+        </div>`,
+      )
+      .join("");
+    const leaderboard =
+      rows.length
+        ? `<section class="panel">
+            ${panelHeading(appLanguage === "ar" ? "متصدر الفريق" : "Team leaderboard", appLanguage === "ar" ? `ترتيب نقاط فريق ${escapeHtml(team.name)}` : `Standings for ${escapeHtml(team.name)}`)}
+            ${podiumMarkup}
+            <div class="team-task-list">${rowsMarkup}</div>
+          </section>`
+        : `<section class="panel"><div class="empty-state"><strong>${appLanguage === "ar" ? "لا بيانات نقاط بعد" : "No XP data yet"}</strong><p>${appLanguage === "ar" ? "أكمل مهامًا أو جلسات تركيز مع الفريق لرؤية المتصدرين." : "Complete team tasks or focus sessions to build the standings."}</p></div></section>`;
+    return `${pageHeading("TEAM LEADERBOARD", appLanguage === "ar" ? "متصدر الفريق" : "Team leaderboard", appLanguage === "ar" ? "الترتيب مبني على مهام الفريق وجلسات التركيز الحقيقية." : "The ranking uses real team task completions and focus sessions.", "")}${leaderboard}<p class="data-caption">${appLanguage === "ar" ? `مكافأة هدف أسبوعي إضافية لكل عضو عند إكمال ${appLanguage === "ar" ? "180 دقيقة" : "180 minutes"} تركيز — 50 XP لكل فريق.` : "Each member earns bonus XP for weekly goals; the team total feeds the battle standings."}</p>`;
   }
 
   function formatVoiceDuration(seconds) {
@@ -6655,7 +7421,7 @@
     const reminderForm = session
       ? `<form id="daily-reminder-form" class="form-stack daily-reminder-form"><label class="focus-setting-toggle"><span>${translateUiText("Enable push reminders")}</span><input type="checkbox" name="enabled" ${dailyReminderPreference.enabled ? "checked" : ""}><i aria-hidden="true"></i></label><p class="data-caption">${translateUiText("Get a daily task check-in plus deadline and achievement notifications, even when Study Zone is closed.")}</p><label>${translateUiText("Reminder time")}<input type="time" name="local_time" value="${escapeHtml(String(dailyReminderPreference.local_time || "09:00").slice(0, 5))}" required></label><small>${translateUiText("Uses this device’s timezone.")}</small><button class="button button-primary button-small" type="submit">${translateUiText("Save reminder")}</button><p class="data-caption">${translateUiText("Push reminders need notification permission and the server setup described in README.md.")}</p><p class="form-error" data-reminder-error role="alert"></p></form>`
       : `<p class="data-caption">${translateUiText("Sign in to configure daily reminders.")}</p>`;
-    return `${pageHeading("MAKE IT YOURS", "Settings", "Tune Study Zone to the way you like to work.", "")}<div class="grid settings-grid"><section class="panel">${panelHeading("Appearance")}<div class="setting-row"><div><strong>Dark theme</strong><small>Designed for focus, day or night</small></div><button class="toggle on" data-action="theme-toggle" aria-label="Toggle light theme" aria-pressed="false"></button></div><div class="setting-row"><div><strong>Emerald accents</strong><small>Official Study Zone color palette</small></div><span class="subject-color"></span></div><div class="setting-row"><div><strong>Motion & celebrations</strong><small>Choose how much motion Study Zone uses.</small></div></div><div class="motion-options" role="group" aria-label="Animation level">${motionOptions}</div></section><section class="panel">${panelHeading("Language")}<div class="setting-row"><div><strong>Display language</strong><small>Deadlines appear in the selected language.</small></div></div><div class="language-switcher" role="group" aria-label="Choose language"><span class="language-indicator ${appLanguage === "ar" ? "arabic" : ""}"></span><button class="language-option ${appLanguage === "ar" ? "selected" : ""}" data-language="ar" aria-pressed="${appLanguage === "ar"}">عربي <span>العربية</span></button><button class="language-option ${appLanguage === "en" ? "selected" : ""}" data-language="en" aria-pressed="${appLanguage === "en"}">EN <span>English</span></button></div></section><section class="panel">${panelHeading("Reminders")}<div class="setting-row"><div><strong>Daily study check-in</strong><small>Review your open tasks once a day, even when Study Zone is closed.</small></div></div>${reminderForm}</section>${notificationPreferencesPanel()}<section class="panel">${panelHeading("Data & privacy")}<div class="setting-row"><div><strong>Account data</strong><small>Stored in your private Supabase account when configured</small></div></div><div class="setting-row"><div><strong>Service keys</strong><small>Only the public anon key belongs in this browser config.</small></div></div></section></div>`;
+    return `${pageHeading("MAKE IT YOURS", "Settings", "Tune Study Zone to the way you like to work.", "")}<div class="grid settings-grid"><section class="panel">${panelHeading("Appearance")}<div class="setting-row"><div><strong>Dark theme</strong><small>Designed for focus, day or night</small></div><button class="toggle on" data-action="theme-toggle" aria-label="Toggle light theme" aria-pressed="false"></button></div><div class="setting-row"><div><strong>Emerald accents</strong><small>Official Study Zone color palette</small></div><span class="subject-color"></span></div><div class="setting-row"><div><strong>Motion & celebrations</strong><small>Choose how much motion Study Zone uses.</small></div></div><div class="motion-options" role="group" aria-label="Animation level">${motionOptions}</div></section><section class="panel">${panelHeading("Language")}<div class="setting-row"><div><strong>Display language</strong><small>Deadlines appear in the selected language.</small></div></div><div class="language-switcher" role="group" aria-label="Choose language"><span class="language-indicator ${appLanguage === "ar" ? "arabic" : ""}"></span><button class="language-option ${appLanguage === "ar" ? "selected" : ""}" data-language="ar" aria-pressed="${appLanguage === "ar"}">عربي <span>العربية</span></button><button class="language-option ${appLanguage === "en" ? "selected" : ""}" data-language="en" aria-pressed="${appLanguage === "en"}">EN <span>English</span></button></div></section><section class="panel">${panelHeading("Reminders")}<div class="setting-row"><div><strong>Daily study check-in</strong><small>Review your open tasks once a day, even when Study Zone is closed.</small></div></div>${reminderForm}</section>${notificationPreferencesPanel()}<section class="panel">${panelHeading("Data & privacy")}<div class="setting-row"><div><strong>Account data</strong><small>Stored in your private Supabase account when configured</small></div></div><div class="setting-row"><div><strong>Service keys</strong><small>Only the public anon key belongs in this browser config.</small></div></div></section><section class="panel">${panelHeading("Backup & restore", "Your data, portable")}<p class="panel-copy">Download a private JSON copy of your tasks, routines, notes, journal, focus history, and preferences. Restoring merges new items and skips duplicates.</p><div class="setting-row"><div><strong>Export a backup</strong><small>Nothing leaves this device except the file you download.</small></div><button class="button button-secondary button-small" data-action="backup-export">Download</button></div><div class="setting-row"><div><strong>Restore from a backup</strong><small>Validated first, then merged without overwriting existing records.</small></div><button class="button button-secondary button-small" data-action="backup-import">Choose file</button></div><input id="backup-import-input" type="file" accept="application/json,.json" hidden /><p class="data-caption">Only restore files you exported from Study Zone. Never share a backup publicly.</p></section></div>`;
   }
 
   function formatAdminDate(value) {
@@ -6739,6 +7505,888 @@
     return `${pageHeading("ADMINISTRATION", "Admin dashboard", "Protected operational metrics and account administration.", "")}<section class="panel" role="status" aria-live="polite"><p class="panel-copy">${translateUiText(message)}</p></section>`;
   }
 
+  // ---- Quick capture -------------------------------------------------------
+
+  function openQuickCapture(type = "task") {
+    const form = document.getElementById("quick-capture-form");
+    form.reset();
+    quickCaptureType = type;
+    form.elements.capture_type.value = type;
+    form.elements.capture_date.value = dateKey(new Date());
+    document.getElementById("quick-capture-error").textContent = "";
+    openModal(document.getElementById("quick-capture-modal"));
+    form.elements.title.focus();
+  }
+
+  async function saveQuickCapture(formData) {
+    const type = String(formData.get("capture_type") || "task");
+    const title = String(formData.get("title") || "").trim();
+    if (!title) throw new Error("Add a short title first.");
+    const details = String(formData.get("details") || "").trim();
+    const dateValue = String(formData.get("capture_date") || "");
+    if (type === "note" || type === "idea") {
+      const noteTitle = type === "idea" ? `Idea · ${title}` : title;
+      const content = sanitizeRichText(
+        `<p>${escapeHtml(details || title)}</p>`,
+      );
+      if (supabase && session) {
+        const { data, error } = await supabase
+          .from("notes")
+          .insert({ title: noteTitle, content, subject_id: null, is_favorite: false })
+          .select("id,title,content,subject_id,is_favorite,created_at,updated_at")
+          .single();
+        if (error) throw error;
+        notes.unshift({ ...data, subject: "", updated: new Date().toISOString() });
+      } else {
+        const now = new Date().toISOString();
+        notes.unshift({
+          id: `local-note-${Date.now()}`,
+          title: noteTitle,
+          content,
+          subject_id: null,
+          subject: "",
+          is_favorite: false,
+          created_at: now,
+          updated_at: now,
+        });
+        saveLocalNotes();
+      }
+    } else {
+      const due = dateValue ? `${dateValue}T23:59` : null;
+      const payload = {
+        title,
+        description: details,
+        subject_id: null,
+        priority: type === "reminder" ? "high" : "medium",
+        status: "not_started",
+        estimated_minutes: 30,
+        reminder_before_minutes: type === "reminder" ? 15 : 0,
+        is_all_day: true,
+        starts_at: null,
+        due_at: due ? new Date(due).toISOString() : null,
+        completed_at: null,
+      };
+      if (supabase && session) {
+        let result = await supabase
+          .from("tasks")
+          .insert(payload)
+          .select("*")
+          .single();
+        if (result.error && isMissingColumnError(result.error)) {
+          const { is_all_day: _ignored, ...rest } = payload;
+          result = await supabase.from("tasks").insert(rest).select("*").single();
+        }
+        if (result.error) throw result.error;
+        tasks.unshift({
+          ...result.data,
+          subject: subjectName(result.data.subject_id),
+          recurrence_group_id: null,
+          recurrence_type: "none",
+          recurrence_days: [],
+          recurrence_until: null,
+        });
+      } else {
+        tasks.unshift({
+          ...payload,
+          id: `local-${Date.now()}`,
+          subject: "",
+          created_at: new Date().toISOString(),
+          recurrence_group_id: null,
+          recurrence_type: "none",
+          recurrence_days: [],
+          recurrence_until: null,
+        });
+        saveLocalTasks();
+      }
+    }
+    closeModal(document.getElementById("quick-capture-modal"));
+    render();
+    showToast(
+      type === "note" || type === "idea"
+        ? appLanguage === "ar"
+          ? "تم حفظ الملاحظة."
+          : "Note saved."
+        : appLanguage === "ar"
+          ? "تم حفظ المهمة."
+          : "Task saved.",
+    );
+  }
+
+  // ---- Global search -------------------------------------------------------
+
+  function openGlobalSearch() {
+    globalSearchQuery = "";
+    const input = document.getElementById("global-search-input");
+    input.value = "";
+    document.getElementById("global-search-results").innerHTML =
+      `<p class="data-caption">Type to search tasks, routines, notes, subjects, files, and deadlines.</p>`;
+    openModal(document.getElementById("global-search-modal"));
+    input.focus();
+  }
+
+  function globalSearchMarkup(rawQuery) {
+    const query = String(rawQuery || "").trim().toLowerCase();
+    if (!query)
+      return `<p class="data-caption">Type to search tasks, routines, notes, subjects, files, and deadlines.</p>`;
+    const match = (...values) =>
+      values.some((value) => String(value || "").toLowerCase().includes(query));
+    const taskHits = tasks
+      .filter((task) =>
+        match(task.title, task.description, task.subject, subjectName(task.subject_id)),
+      )
+      .slice(0, 5);
+    const routineHits = routines
+      .filter((routine) =>
+        match(routine.title, routine.description, subjectName(routine.subject_id)),
+      )
+      .slice(0, 5);
+    const noteHits = notes
+      .filter((note) => match(note.title, notePlainText(note)))
+      .slice(0, 5);
+    const subjectHits = subjects
+      .filter((subject) => match(subject.name))
+      .slice(0, 4);
+    const fileHits = sampleFiles
+      .filter((file) => match(file.name, file.original_name, file.subject))
+      .slice(0, 4);
+    const deadlineHits = tasks
+      .filter((task) => task.due_at && match(task.title, task.subject))
+      .slice(0, 4);
+    const row = (action, id, title, meta, icon) =>
+      `<button class="search-result" data-action="${action}" data-id="${escapeHtml(id)}"><span class="search-result-icon">${icon}</span><span><strong dir="auto">${escapeHtml(title)}</strong><small dir="auto">${escapeHtml(meta)}</small></span></button>`;
+    const group = (label, rows) =>
+      rows
+        ? `<div class="search-group"><p class="eyebrow">${escapeHtml(label)}</p>${rows}</div>`
+        : "";
+    const html = [
+      group(
+        "Tasks",
+        taskHits
+          .map((task) =>
+            row(
+              "search-open-task",
+              task.id,
+              task.title,
+              `${task.subject || subjectName(task.subject_id)} · ${taskDueLabel(task, { includeDate: true })}`,
+              "✓",
+            ),
+          )
+          .join(""),
+      ),
+      group(
+        "Routines",
+        routineHits
+          .map((routine) =>
+            row(
+              "search-open-routine",
+              routine.id,
+              routine.title,
+              `${routine.routine_type === "daily" ? "Every day" : routine.routine_type === "weekdays" ? "Selected weekdays" : `Every ${routine.interval_days} days`} · ${routine.paused ? "Paused" : "Active"}`,
+              "↻",
+            ),
+          )
+          .join(""),
+      ),
+      group(
+        "Notes",
+        noteHits
+          .map((note) =>
+            row("search-open-note", note.id, note.title || "Untitled note", notePlainText(note).slice(0, 80), "✎"),
+          )
+          .join(""),
+      ),
+      group(
+        "Subjects",
+        subjectHits
+          .map((subject) => row("navigate-search", "subjects", subject.name, "Open subjects", "◈"))
+          .join(""),
+      ),
+      group(
+        "Files",
+        fileHits
+          .map((file) => row("navigate-search", "files", file.name || file.original_name || "Study file", "Open study files", "▤"))
+          .join(""),
+      ),
+      group(
+        "Deadlines",
+        deadlineHits
+          .map((task) => row("search-open-task", task.id, task.title, taskDueLabel(task, { includeDate: true }), "◷"))
+          .join(""),
+      ),
+    ].join("");
+    return html || `<div class="empty-state"><strong>No matches</strong>Try a shorter word or another subject.</div>`;
+  }
+
+  // ---- Focus preparation, distractions, and soundscape ---------------------
+
+  function openFocusPrep() {
+    const subjectSelect = document.getElementById("focus-prep-subject");
+    const taskSelect = document.getElementById("focus-prep-task");
+    subjectSelect.innerHTML = `<option value="">${focusText[appLanguage].chooseSubject}</option>${subjects
+      .map((subject) => `<option value="${escapeHtml(subject.id)}" ${String(subject.id) === String(focusSession.subjectId) ? "selected" : ""}>${escapeHtml(subject.name)}</option>`)
+      .join("")}`;
+    taskSelect.innerHTML = `<option value="">${focusText[appLanguage].noTask}</option>${tasksForDay(dateKey(new Date()))
+      .filter((task) => task.status !== "completed")
+      .map((task) => `<option value="${escapeHtml(task.routine_id || task.id)}" ${String(task.routine_id || task.id) === String(focusSession.taskId) ? "selected" : ""}>${escapeHtml(task.title)}</option>`)
+      .join("")}`;
+    const form = document.getElementById("focus-prep-form");
+    form.elements.goal.value = focusSession.goal || "";
+    form.elements.tools.value = focusSession.tools || "";
+    form.elements.minutes.value = String(
+      focusSession.durationMinutes || focusSettings.focusMinutes || 25,
+    );
+    openModal(document.getElementById("focus-prep-modal"));
+    form.elements.goal.focus();
+  }
+
+  function prepareFocusSession(formData) {
+    if (focusSession.status !== "idle" || focusSession.startedAt) {
+      focusSession.id = focusId();
+      focusSession.startedAt = null;
+      focusSession.remoteStarted = false;
+    }
+    focusSession.id = focusSession.id || focusId();
+    focusSession.subjectId = String(formData.get("subject_id") || "");
+    focusSession.taskId = String(formData.get("task_id") || "");
+    focusSession.goal = String(formData.get("goal") || "").trim();
+    focusSession.tools = String(formData.get("tools") || "").trim();
+    const minutes = Number(formData.get("minutes"));
+    if (Number.isInteger(minutes) && minutes >= 1 && minutes <= 180) {
+      focusSession.durationMinutes = minutes;
+      focusSession.remainingMs = minutes * 60000;
+      focusSession.elapsedBeforeRunMs = 0;
+      focusSession.endAt = null;
+      focusSession.runStartedAt = null;
+      focusSession.status = "idle";
+    }
+    closeModal(document.getElementById("focus-prep-modal"));
+    persistFocusState();
+    void startFocusTimer();
+  }
+
+  function openDistractionModal() {
+    if (focusSession.type !== "focus" || focusSession.status !== "running") {
+      showToast(
+        appLanguage === "ar"
+          ? "سجّل التشتت أثناء جلسة تركيز نشطة."
+          : "Log distractions while a focus session is running.",
+      );
+      return;
+    }
+    const form = document.getElementById("distraction-form");
+    form.reset();
+    document.getElementById("distraction-error").textContent = "";
+    openModal(document.getElementById("distraction-modal"));
+    form.elements.reason.focus();
+  }
+
+  async function logDistraction(formData) {
+    const custom = String(formData.get("custom_reason") || "").trim();
+    const reason = (custom || String(formData.get("reason") || "other")).slice(0, 120);
+    const routineId = String(focusSession.taskId || "").startsWith("routine:")
+      ? String(focusSession.taskId).split(":")[1] || null
+      : null;
+    const record = {
+      session_id: focusSession.id,
+      task_id: routineId ? null : focusSession.taskId || null,
+      routine_id: routineId,
+      reason,
+      created_at: new Date().toISOString(),
+    };
+    if (supabase && session && distractionsSupported) {
+      const { data, error } = await supabase
+        .from("focus_distractions")
+        .insert({ ...record, user_id: session.user.id })
+        .select("id,session_id,task_id,routine_id,reason,created_at")
+        .single();
+      if (error) {
+        if (isMissingRelation(error)) {
+          distractionsSupported = false;
+          focusDistractions.unshift({ ...record, id: focusId() });
+          saveLocalDistractions();
+        } else {
+          throw error;
+        }
+      } else {
+        focusDistractions.unshift(data);
+      }
+    } else {
+      focusDistractions.unshift({ ...record, id: focusId() });
+      saveLocalDistractions();
+    }
+    closeModal(document.getElementById("distraction-modal"));
+    render();
+    showToast(
+      appLanguage === "ar"
+        ? "تم تسجيل التشتت. خذ نفسًا وارجع للتركيز."
+        : "Distraction logged. Take a breath and return to focus.",
+    );
+  }
+
+  function distractionSummary() {
+    const todayKey = dateKey(new Date());
+    const weekStart = startOfWeekKey(new Date());
+    const today = focusDistractions.filter(
+      (item) => dateKey(new Date(item.created_at)) === todayKey,
+    );
+    const week = focusDistractions.filter(
+      (item) => dateKey(new Date(item.created_at)) >= weekStart,
+    );
+    const counts = new Map();
+    week.forEach((item) => {
+      const reason = String(item.reason || "Other");
+      counts.set(reason, (counts.get(reason) || 0) + 1);
+    });
+    const topReason =
+      [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "—";
+    return { today: today.length, week: week.length, topReason };
+  }
+
+  function updateFocusSoundVolume(value) {
+    focusSoundVolume = Math.max(0, Math.min(100, Number(value) || 0));
+    writeLocalJson(focusSoundPrefsKey, {
+      id: focusSoundId,
+      volume: focusSoundVolume,
+    });
+    if (focusSoundEngine?.gain) {
+      focusSoundEngine.gain.gain.setTargetAtTime(
+        (focusSoundVolume / 100) * 0.35,
+        focusSoundEngine.ctx.currentTime,
+        0.08,
+      );
+    }
+    const label = document.getElementById("focus-sound-volume-value");
+    if (label) label.textContent = `${focusSoundVolume}%`;
+  }
+
+  function stopFocusSound() {
+    if (!focusSoundEngine) return;
+    try {
+      focusSoundEngine.source?.stop();
+      void focusSoundEngine.ctx?.close();
+    } catch (error) {
+      console.warn("Could not stop the focus soundscape.", error);
+    }
+    focusSoundEngine = null;
+    document.querySelectorAll("[data-sound]").forEach((button) => {
+      button.classList.toggle("selected", button.dataset.sound === "off");
+    });
+  }
+
+  function buildNoiseBuffer(ctx, kind) {
+    const length = Math.max(ctx.sampleRate * 2, 4096);
+    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    if (kind === "brown" || kind === "fireplace" || kind === "forest") {
+      let last = 0;
+      for (let index = 0; index < length; index += 1) {
+        const white = Math.random() * 2 - 1;
+        last = (last + 0.02 * white) / 1.02;
+        data[index] = last * 3.4;
+      }
+    } else {
+      for (let index = 0; index < length; index += 1) {
+        data[index] = Math.random() * 2 - 1;
+      }
+    }
+    return buffer;
+  }
+
+  function startFocusSound(id) {
+    stopFocusSound();
+    focusSoundId = id === "off" ? "off" : id;
+    writeLocalJson(focusSoundPrefsKey, {
+      id: focusSoundId,
+      volume: focusSoundVolume,
+    });
+    if (id === "off") {
+      render();
+      return;
+    }
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) {
+      showToast("This browser cannot play focus sounds.");
+      return;
+    }
+    const ctx = new AudioContextClass();
+    const source = ctx.createBufferSource();
+    source.buffer = buildNoiseBuffer(ctx, id);
+    source.loop = true;
+    const filter = ctx.createBiquadFilter();
+    if (id === "rain") {
+      filter.type = "highpass";
+      filter.frequency.value = 900;
+    } else if (id === "brown") {
+      filter.type = "lowpass";
+      filter.frequency.value = 420;
+    } else if (id === "forest") {
+      filter.type = "bandpass";
+      filter.frequency.value = 620;
+      filter.Q.value = 0.7;
+    } else if (id === "fireplace") {
+      filter.type = "lowpass";
+      filter.frequency.value = 760;
+    } else {
+      filter.type = "allpass";
+    }
+    const gain = ctx.createGain();
+    gain.gain.value = (focusSoundVolume / 100) * 0.35;
+    source.connect(filter).connect(gain).connect(ctx.destination);
+    source.start();
+    focusSoundEngine = { ctx, source, gain, filter };
+    void ctx.resume();
+    render();
+  }
+
+  function focusSoundPanel() {
+    const sounds = [
+      ["off", "Off"],
+      ["rain", "Rain"],
+      ["white", "White noise"],
+      ["brown", "Brown noise"],
+      ["forest", "Forest"],
+      ["fireplace", "Fireplace"],
+    ];
+    return `<section class="panel focus-sound-panel">
+      ${panelHeading(
+        appLanguage === "ar" ? "أصوات التركيز" : "Focus sounds",
+        appLanguage === "ar" ? "ضوضاء هادئة تساعدك على البقاء" : "Calm noise to stay with the task",
+      )}
+      <div class="focus-sound-options">${sounds
+        .map(
+          ([id, label]) =>
+            `<button class="focus-sound-chip ${focusSoundId === id ? "selected" : ""}" data-action="focus-sound" data-sound="${id}" aria-pressed="${focusSoundId === id}">${escapeHtml(label)}</button>`,
+        )
+        .join("")}</div>
+      <label class="focus-sound-volume">${appLanguage === "ar" ? "مستوى الصوت" : "Volume"} <strong id="focus-sound-volume-value">${focusSoundVolume}%</strong>
+        <input id="focus-sound-volume" type="range" min="0" max="100" step="5" value="${focusSoundVolume}" />
+      </label>
+      <p class="data-caption">${appLanguage === "ar" ? "أصوات مُولّدة داخل المتصفح — بدون ملفات خارجية." : "Synthesized in your browser — no external audio files."}</p>
+    </section>`;
+  }
+
+  // ---- Study journal & weekly review --------------------------------------
+
+  function startOfWeekKey(date) {
+    const day = startOfLocalDay(date);
+    const offset = (day.getDay() + 6) % 7;
+    return dateKey(addLocalDays(day, -offset));
+  }
+
+  function journalEntryFor(key) {
+    return journalEntries.find(
+      (entry) => String(entry.entry_date).slice(0, 10) === key,
+    );
+  }
+
+  function summarizeWeek(startKey) {
+    const start = parseLocalDateKey(startKey);
+    let completed = 0;
+    let total = 0;
+    let focusSeconds = 0;
+    let sessions = 0;
+    const subjectSeconds = new Map();
+    const distractionCounts = new Map();
+    for (let offset = 0; offset < 7; offset += 1) {
+      const day = addLocalDays(start, offset);
+      const key = dateKey(day);
+      const dayTasks = tasksForDay(key);
+      total += dayTasks.length;
+      completed += dayTasks.filter((task) => task.status === "completed").length;
+      focusRecords
+        .filter(
+          (record) =>
+            record.completed &&
+            record.session_type === "focus" &&
+            dateKey(new Date(record.started_at)) === key,
+        )
+        .forEach((record) => {
+          focusSeconds += Number(record.duration_seconds || 0);
+          sessions += 1;
+          if (record.subject_id) {
+            subjectSeconds.set(
+              record.subject_id,
+              (subjectSeconds.get(record.subject_id) || 0) +
+                Number(record.duration_seconds || 0),
+            );
+          }
+        });
+      focusDistractions
+        .filter((item) => dateKey(new Date(item.created_at)) === key)
+        .forEach((item) => {
+          const reason = String(item.reason || "Other");
+          distractionCounts.set(reason, (distractionCounts.get(reason) || 0) + 1);
+        });
+    }
+    const topSubjectId = [...subjectSeconds.entries()].sort(
+      (a, b) => b[1] - a[1],
+    )[0]?.[0];
+    const topDistraction =
+      [...distractionCounts.entries()].sort((a, b) => b[1] - a[1])[0] || null;
+    return {
+      completed,
+      total,
+      rate: total ? Math.round((completed / total) * 100) : 0,
+      focusSeconds,
+      sessions,
+      topSubject: topSubjectId ? subjectName(topSubjectId) : "—",
+      distractions: [...distractionCounts.values()].reduce((sum, value) => sum + value, 0),
+      topDistraction: topDistraction ? topDistraction[0] : "—",
+    };
+  }
+
+  function weeklyReviewData() {
+    const currentStart = startOfWeekKey(new Date());
+    const previousStart = dateKey(
+      addLocalDays(parseLocalDateKey(currentStart), -7),
+    );
+    const current = summarizeWeek(currentStart);
+    const previous = summarizeWeek(previousStart);
+    const difference = (value, oldValue) => {
+      if (!oldValue) return value ? "+100%" : "0%";
+      const change = Math.round(((value - oldValue) / oldValue) * 100);
+      return `${change > 0 ? "+" : ""}${change}%`;
+    };
+    const suggestions = [];
+    if (current.rate < 70)
+      suggestions.push(
+        appLanguage === "ar"
+          ? "اختر مهمتين فقط لليوم التالي وابدأ بهما قبل أي شيء آخر."
+          : "Choose just two tasks for tomorrow and start with them first.",
+      );
+    if (current.distractions >= 5)
+      suggestions.push(
+        appLanguage === "ar"
+          ? "جرّب وضع الهاتف بعيدًا في أول 25 دقيقة من كل جلسة."
+          : "Try leaving your phone out of reach for the first 25 minutes of each session.",
+      );
+    if (current.focusSeconds < previous.focusSeconds)
+      suggestions.push(
+        appLanguage === "ar"
+          ? "جدول جلسة تركيز واحدة إضافية في أفضل وقت لديك."
+          : "Schedule one extra focus session at your best time of day.",
+      );
+    if (!suggestions.length)
+      suggestions.push(
+        appLanguage === "ar"
+          ? "حافظ على الإيقاع الحالي، وامنح نفسك يوم راحة بدون شعور بالذنب."
+          : "Keep this rhythm and give yourself a rest day without guilt.",
+      );
+    return { current, previous, difference, suggestions };
+  }
+
+  function weeklyReviewPanel() {
+    const { current, previous, difference, suggestions } = weeklyReviewData();
+    return `<section class="panel weekly-review-panel">
+      ${panelHeading(
+        appLanguage === "ar" ? "المراجعة الأسبوعية" : "WEEKLY REVIEW",
+        appLanguage === "ar" ? "هذا الأسبوع مقابل الأسبوع السابق" : "This week compared with last week",
+      )}
+      <div class="weekly-review-grid">
+        <div><span>${appLanguage === "ar" ? "ساعات التركيز" : "Focus hours"}</span><strong>${(current.focusSeconds / 3600).toFixed(1)}h</strong><small>${difference(current.focusSeconds, previous.focusSeconds)}</small></div>
+        <div><span>${appLanguage === "ar" ? "إنجاز المهام" : "Task completion"}</span><strong>${current.rate}%</strong><small>${current.completed}/${current.total}</small></div>
+        <div><span>${appLanguage === "ar" ? "جلسات التركيز" : "Focus sessions"}</span><strong>${current.sessions}</strong><small>${difference(current.sessions, previous.sessions)}</small></div>
+        <div><span>${appLanguage === "ar" ? "أكثر مادة" : "Top subject"}</span><strong dir="auto">${escapeHtml(current.topSubject)}</strong><small>${current.distractions} ${appLanguage === "ar" ? "تشتت" : "distractions"}</small></div>
+      </div>
+      <p class="weekly-review-distraction">${appLanguage === "ar" ? "أكثر سبب للتشتت" : "Most common distraction"}: <strong dir="auto">${escapeHtml(current.topDistraction)}</strong></p>
+      <ul class="weekly-suggestions">${suggestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+    </section>`;
+  }
+
+  function journalPage() {
+    const selectedKey = journalDate;
+    const entry = journalEntryFor(selectedKey) || {};
+    const dayTasks = tasksForDay(selectedKey);
+    const completed = dayTasks.filter((task) => task.status === "completed").length;
+    const focusSeconds = focusRecords
+      .filter(
+        (record) =>
+          record.completed &&
+          record.session_type === "focus" &&
+          dateKey(new Date(record.started_at)) === selectedKey,
+      )
+      .reduce((sum, record) => sum + Number(record.duration_seconds || 0), 0);
+    const distractions = focusDistractions.filter(
+      (item) => dateKey(new Date(item.created_at)) === selectedKey,
+    ).length;
+    const recent = journalEntries.slice(0, 8);
+    return `${pageHeading(
+      "REFLECT & ADJUST",
+      appLanguage === "ar" ? "يوميات الدراسة" : "Study journal",
+      appLanguage === "ar"
+        ? "سجل قصير في نهاية اليوم. لا يجب أن يكون مثاليًا."
+        : "A short note at the end of the day. It does not have to be perfect.",
+      `<label class="journal-date-picker">${appLanguage === "ar" ? "اليوم" : "Day"}<input id="journal-date" type="date" value="${selectedKey}" /></label>`,
+    )}
+    <div class="grid dashboard-grid journal-grid">
+      <section class="panel">
+        ${panelHeading(
+          appLanguage === "ar" ? "مراجعة اليوم" : "Daily reflection",
+          `${completed}/${dayTasks.length} ${appLanguage === "ar" ? "مهام مكتملة" : "tasks completed"} · ${(focusSeconds / 60).toFixed(0)} min ${appLanguage === "ar" ? "تركيز" : "focus"} · ${distractions} ${appLanguage === "ar" ? "تشتت" : "distractions"}`,
+        )}
+        ${journalSupported ? "" : `<p class="data-caption">${appLanguage === "ar" ? "طبّق ترحيل 002 لحفظ المراجعة في حسابك. يمكنك الحفظ محليًا الآن." : "Apply migration 002 to sync journal entries to your account. Local saving still works now."}</p>`}
+        <form id="journal-form" class="form-stack">
+          <input type="hidden" name="entry_date" value="${selectedKey}" />
+          <label>${appLanguage === "ar" ? "أهم الإنجازات" : "What went well"}<textarea name="achievements" dir="auto" rows="2" maxlength="2000">${escapeHtml(entry.achievements || "")}</textarea></label>
+          <label>${appLanguage === "ar" ? "ما لم يكتمل" : "What stayed unfinished"}<textarea name="unfinished" dir="auto" rows="2" maxlength="2000">${escapeHtml(entry.unfinished || "")}</textarea></label>
+          <label>${appLanguage === "ar" ? "لماذا؟" : "What got in the way"}<textarea name="reasons" dir="auto" rows="2" maxlength="2000">${escapeHtml(entry.reasons || "")}</textarea></label>
+          <div class="form-row">
+            <label>${appLanguage === "ar" ? "مستوى التركيز" : "Focus rating"}<select name="focus_rating"><option value="">—</option>${[1, 2, 3, 4, 5].map((value) => `<option value="${value}" ${Number(entry.focus_rating) === value ? "selected" : ""}>${value} / 5</option>`).join("")}</select></label>
+            <label>${appLanguage === "ar" ? "أهم شيء لغد" : "Most important tomorrow"}<input name="tomorrow" dir="auto" maxlength="300" value="${escapeHtml(entry.tomorrow || "")}" /></label>
+          </div>
+          <div class="modal-actions"><button class="button button-primary" type="submit">${appLanguage === "ar" ? "حفظ المراجعة" : "Save reflection"}</button></div>
+          <div class="form-error" id="journal-error" role="alert"></div>
+        </form>
+      </section>
+      <aside class="grid">
+        ${weeklyReviewPanel()}
+        <section class="panel">
+          ${panelHeading(appLanguage === "ar" ? "مراجعات سابقة" : "Past reflections", appLanguage === "ar" ? "ارجع إلى أي يوم" : "Return to any day")}
+          <div class="journal-history">${recent.length ? recent.map((item) => `<button class="journal-history-row" data-action="journal-select" data-date="${escapeHtml(String(item.entry_date).slice(0, 10))}"><strong>${escapeHtml(new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "medium" }).format(new Date(`${String(item.entry_date).slice(0, 10)}T12:00:00`)))}</strong><small dir="auto">${escapeHtml((item.achievements || item.tomorrow || "Saved reflection").slice(0, 90))}</small></button>`).join("") : `<div class="empty-state">${appLanguage === "ar" ? "لا مراجعات بعد" : "No reflections yet"}</div>`}</div>
+        </section>
+      </aside>
+    </div>
+    <p class="data-caption">${session ? "Reflections are private to your account." : "Guest reflections are stored in this browser only."}</p>`;
+  }
+
+  async function saveJournalEntry(formData) {
+    const entryDate = String(formData.get("entry_date") || journalDate);
+    const payload = {
+      entry_date: entryDate,
+      achievements: String(formData.get("achievements") || "").trim(),
+      unfinished: String(formData.get("unfinished") || "").trim(),
+      reasons: String(formData.get("reasons") || "").trim(),
+      focus_rating: Number(formData.get("focus_rating")) || null,
+      tomorrow: String(formData.get("tomorrow") || "").trim(),
+    };
+    if (!payload.achievements && !payload.unfinished && !payload.reasons && !payload.focus_rating && !payload.tomorrow) {
+      throw new Error("Add at least one reflection before saving.");
+    }
+    if (supabase && session && journalSupported) {
+      const { data, error } = await supabase
+        .from("study_journal_entries")
+        .upsert({ ...payload, user_id: session.user.id }, { onConflict: "user_id,entry_date" })
+        .select("*")
+        .single();
+      if (error) {
+        if (isMissingRelation(error)) {
+          journalSupported = false;
+          const existingLocal = journalEntryFor(entryDate);
+          const savedLocal = {
+            ...(existingLocal || {}),
+            ...payload,
+            id: existingLocal?.id || `local-journal-${Date.now()}`,
+            created_at: existingLocal?.created_at || new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          journalEntries = journalEntries.filter(
+            (entry) => String(entry.entry_date).slice(0, 10) !== entryDate,
+          );
+          journalEntries.unshift(savedLocal);
+          saveLocalJournal();
+        } else {
+          throw error;
+        }
+      } else {
+        journalEntries = journalEntries.filter(
+          (entry) => String(entry.entry_date).slice(0, 10) !== entryDate,
+        );
+        journalEntries.unshift(data);
+      }
+    } else {
+      const existing = journalEntryFor(entryDate);
+      const saved = {
+        ...(existing || {}),
+        ...payload,
+        id: existing?.id || `local-journal-${Date.now()}`,
+        created_at: existing?.created_at || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      journalEntries = journalEntries.filter(
+        (entry) => String(entry.entry_date).slice(0, 10) !== entryDate,
+      );
+      journalEntries.unshift(saved);
+      saveLocalJournal();
+    }
+    render();
+    showToast(appLanguage === "ar" ? "تم حفظ المراجعة." : "Reflection saved.");
+  }
+
+  // ---- Backup & restore ----------------------------------------------------
+
+  async function buildBackupPayload() {
+    return {
+      app: "study-zone",
+      version: 2,
+      exported_at: new Date().toISOString(),
+      account: session?.user?.email || null,
+      tasks,
+      routines,
+      routine_days: routineDays,
+      notes,
+      journal: journalEntries,
+      focus_records: focusRecords,
+      distractions: focusDistractions,
+      settings: {
+        focus: focusSettings,
+        notifications: notificationPrefs,
+        focus_sound: { id: focusSoundId, volume: focusSoundVolume },
+      },
+    };
+  }
+
+  async function exportBackup() {
+    const payload = await buildBackupPayload();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `study-zone-backup-${dateKey(new Date())}.json`;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    showToast(appLanguage === "ar" ? "تم تنزيل النسخة الاحتياطية." : "Backup downloaded.");
+  }
+
+  function validateBackup(payload) {
+    if (!payload || payload.app !== "study-zone" || !Array.isArray(payload.tasks))
+      throw new Error("This file is not a Study Zone backup.");
+    if (Number(payload.version) < 1)
+      throw new Error("This backup version is not supported.");
+    for (const key of ["tasks", "routines", "routine_days", "notes", "journal", "focus_records", "distractions"]) {
+      if (payload[key] != null && !Array.isArray(payload[key]))
+        throw new Error(`The backup has an invalid ${key} section.`);
+      if (Array.isArray(payload[key]) && payload[key].length > 10000)
+        throw new Error("The backup is too large to restore safely.");
+    }
+    return true;
+  }
+
+  async function importBackupFile(file) {
+    if (!file) throw new Error("Choose a backup file first.");
+    if (file.size > 15 * 1024 * 1024) throw new Error("Backup files must be 15 MB or smaller.");
+    const payload = JSON.parse(await file.text());
+    validateBackup(payload);
+    let imported = 0;
+    const existingTaskKeys = new Set(
+      tasks.map((task) => `${String(task.title).toLowerCase()}|${task.due_at || ""}`),
+    );
+    const importTasks = (payload.tasks || []).filter((task) => {
+      if (!task || !task.title) return false;
+      const key = `${String(task.title).toLowerCase()}|${task.due_at || ""}`;
+      if (existingTaskKeys.has(key)) return false;
+      existingTaskKeys.add(key);
+      return true;
+    });
+    if (supabase && session) {
+      const rows = importTasks.slice(0, 500).map((task) => ({
+        user_id: session.user.id,
+        title: String(task.title).slice(0, 160),
+        description: String(task.description || "").slice(0, 4000),
+        subject_id: null,
+        priority: ["low", "medium", "high", "urgent"].includes(task.priority) ? task.priority : "medium",
+        status: ["not_started", "in_progress", "completed"].includes(task.status) ? task.status : "not_started",
+        estimated_minutes: Math.max(5, Math.min(1440, Number(task.estimated_minutes) || 45)),
+        reminder_before_minutes: 0,
+        starts_at: task.starts_at || null,
+        due_at: task.due_at || null,
+        is_all_day: task.is_all_day === true,
+      }));
+      if (rows.length) {
+        const { error } = await supabase.from("tasks").insert(rows);
+        if (error) throw error;
+        imported += rows.length;
+      }
+      const existingNotes = new Set(notes.map((note) => `${String(note.title).toLowerCase()}|${String(note.created_at || "").slice(0, 16)}`));
+      const noteRows = (payload.notes || [])
+        .filter((note) => note && note.title)
+        .filter((note) => {
+          const key = `${String(note.title).toLowerCase()}|${String(note.created_at || "").slice(0, 16)}`;
+          if (existingNotes.has(key)) return false;
+          existingNotes.add(key);
+          return true;
+        })
+        .slice(0, 500)
+        .map((note) => ({
+          user_id: session.user.id,
+          title: String(note.title).slice(0, 200),
+          content: sanitizeRichText(String(note.content || "")),
+          subject_id: null,
+          is_favorite: note.is_favorite === true,
+        }));
+      if (noteRows.length) {
+        const { error } = await supabase.from("notes").insert(noteRows);
+        if (error) throw error;
+        imported += noteRows.length;
+      }
+    } else {
+      const ids = new Set(tasks.map((task) => String(task.id)));
+      importTasks.forEach((task) => {
+        const id = `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        if (ids.has(String(task.id))) return;
+        tasks.unshift({
+          ...task,
+          id,
+          subject: subjectName(task.subject_id),
+          created_at: task.created_at || new Date().toISOString(),
+          recurrence_group_id: null,
+          recurrence_type: "none",
+          recurrence_days: [],
+          recurrence_until: null,
+        });
+        imported += 1;
+      });
+      saveLocalTasks();
+      const existingNotes = new Set(notes.map((note) => String(note.id)));
+      (payload.notes || []).forEach((note) => {
+        if (!note?.title || existingNotes.has(String(note.id))) return;
+        const existing = notes.find(
+          (item) => String(item.title).toLowerCase() === String(note.title).toLowerCase() && String(item.created_at || "") === String(note.created_at || ""),
+        );
+        if (existing) return;
+        notes.unshift({
+          ...note,
+          id: `local-note-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          content: sanitizeRichText(String(note.content || "")),
+          subject: subjectName(note.subject_id),
+        });
+        imported += 1;
+      });
+      saveLocalNotes();
+    }
+    render();
+    showToast(
+      appLanguage === "ar"
+        ? `تمت الاستعادة: ${imported} عنصرًا جديدًا. تم تجاهل المكرر.`
+        : `Restore complete: ${imported} new items. Duplicates were skipped.`,
+    );
+    return imported;
+  }
+
+  function openShortcuts() {
+    openModal(document.getElementById("shortcuts-modal"));
+  }
+
+  async function toggleFocusFullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch (error) {
+      console.warn("Full screen is unavailable in this browser.", error);
+      showToast(
+        appLanguage === "ar"
+          ? "ملء الشاشة غير متاح في هذا المتصفح."
+          : "Full screen is not available in this browser.",
+      );
+    }
+  }
+
   const pageRenderers = {
     dashboard: dashboardPage,
     planner: plannerPage,
@@ -6749,11 +8397,13 @@
     notes: notesPage,
     voice: voicePage,
     teams: teamsPage,
+    teamLeaderboard: teamLeaderboardPage,
     focus: focusPage,
     analytics: analyticsPage,
     goals: goalsPage,
     exams: examsPage,
     achievements: achievementsPage,
+    journal: journalPage,
     notifications: notificationsPage,
     profile: profilePage,
     settings: settingsPage,
@@ -6769,11 +8419,13 @@
     notes: "Notes",
     voice: "Voice notes",
     teams: "Teams",
+    teamLeaderboard: "Team leaderboard",
     focus: "Focus timer",
     analytics: "Analytics",
     goals: "Goals",
     exams: "Exams & results",
     achievements: "Achievements",
+    journal: "Study journal",
     notifications: "Notifications",
     profile: "Profile",
     settings: "Settings",
@@ -7152,14 +8804,30 @@
     }
     const baseTaskColumns =
       "id,title,description,subject_id,starts_at,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,completed_at,subjects(name)";
+    const usageColumns =
+      "is_all_day,open_count,completed_count,postpone_count,last_opened_at";
     const recurrenceColumns =
       "recurrence_group_id,recurrence_type,recurrence_days,recurrence_until";
     let taskResult = await supabase
       .from("tasks")
-      .select(`${baseTaskColumns},${recurrenceColumns}`)
+      .select(`${baseTaskColumns},${usageColumns},${recurrenceColumns}`)
       .order("due_at", { ascending: true, nullsFirst: false });
-    // The recurrence columns ship with migration 001. Until it is applied, keep the
-    // existing task feature (and existing task data) working without repeating.
+    // The first query asks for every optional column. A success proves both
+    // migration 001 (recurrence) and migration 002 (all-day/usage) are applied.
+    const fullTaskQuerySucceeded = !taskResult.error;
+    if (fullTaskQuerySucceeded) {
+      recurrenceSupported = true;
+      taskAllDaySupported = true;
+      taskUsageSupported = true;
+    } else if (!/recurrence_/i.test(`${taskResult.error.message || ""}`)) {
+      // Migration 002 columns are missing, but recurrence may still exist.
+      taskAllDaySupported = false;
+      taskUsageSupported = false;
+      taskResult = await supabase
+        .from("tasks")
+        .select(`${baseTaskColumns},${recurrenceColumns}`)
+        .order("due_at", { ascending: true, nullsFirst: false });
+    }
     if (
       taskResult.error &&
       /(recurrence_|column .* does not exist|42703|PGRST204)/i.test(
@@ -7171,7 +8839,7 @@
         .from("tasks")
         .select(baseTaskColumns)
         .order("due_at", { ascending: true, nullsFirst: false });
-    } else if (!taskResult.error) {
+    } else if (!fullTaskQuerySucceeded && !taskResult.error) {
       recurrenceSupported = true;
     }
     const { data, error } = taskResult;
@@ -7188,11 +8856,98 @@
       recurrence_type: "none",
       recurrence_days: [],
       recurrence_until: null,
+      open_count: 0,
+      completed_count: 0,
+      postpone_count: 0,
+      is_all_day: false,
       ...task,
       subject: task.subjects?.name || "Independent study",
     }));
+    await loadTaskRoutines();
     deadlinesLoading = false;
     scheduleRender();
+  }
+
+  async function loadTaskRoutines() {
+    if (!supabase || !session) {
+      routinesLoaded = true;
+      return;
+    }
+    routinesLoading = true;
+    routinesError = "";
+    const startKey = dateKey(addLocalDays(new Date(), -180));
+    const endKey = dateKey(addLocalDays(new Date(), 60));
+    const [routineResult, dayResult] = await Promise.all([
+      supabase.from("task_routines").select("*").order("created_at", { ascending: true }),
+      supabase
+        .from("task_routine_days")
+        .select("routine_id,occurrence_date,status,completed_at")
+        .gte("occurrence_date", startKey)
+        .lte("occurrence_date", endKey),
+    ]);
+    if (routineResult.error) {
+      if (isMissingRelation(routineResult.error)) {
+        routinesSupported = false;
+        routines = [];
+        routineDays = [];
+      } else {
+        routinesError = routineResult.error.message;
+        console.error("Could not load routines.", routineResult.error);
+      }
+    } else {
+      routinesSupported = true;
+      routines = (routineResult.data || []).map(normalizeRoutine);
+    }
+    if (!dayResult.error) routineDays = dayResult.data || [];
+    routinesLoading = false;
+    routinesLoaded = true;
+    scheduleRender();
+  }
+
+  async function loadJournalEntries() {
+    if (!supabase || !session) {
+      journalLoaded = true;
+      return;
+    }
+    const { data, error } = await supabase
+      .from("study_journal_entries")
+      .select("*")
+      .order("entry_date", { ascending: false })
+      .limit(180);
+    if (error) {
+      if (isMissingRelation(error)) {
+        journalSupported = false;
+        journalEntries = [];
+      } else {
+        console.error("Could not load study journal entries.", error);
+      }
+    } else {
+      journalSupported = true;
+      journalEntries = data || [];
+    }
+    journalLoaded = true;
+    scheduleRender();
+  }
+
+  async function loadFocusDistractions() {
+    if (!supabase || !session) return;
+    const since = new Date(Date.now() - 120 * 86400000).toISOString();
+    const { data, error } = await supabase
+      .from("focus_distractions")
+      .select("id,session_id,task_id,routine_id,reason,created_at")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false });
+    if (error) {
+      if (isMissingRelation(error)) {
+        distractionsSupported = false;
+        focusDistractions = readLocalJson(distractionStorageKey, []);
+      } else {
+        console.error("Could not load distraction history.", error);
+      }
+    } else {
+      distractionsSupported = true;
+      focusDistractions = data || [];
+    }
   }
 
   async function loadAccountWorkspace() {
@@ -7399,6 +9154,8 @@
       );
     }
     updateUserUi();
+    if (!journalLoaded) await loadJournalEntries();
+    await loadFocusDistractions();
     scheduleRender();
   }
 
@@ -7432,6 +9189,16 @@
     examResults = previewExamResults;
     sampleFiles = previewFiles;
     notes = readLocalNotes();
+    routines = readLocalJson(routinesStorageKey, []);
+    routineDays = readLocalJson(routineDaysStorageKey, []);
+    routinesLoaded = true;
+    routinesSupported = true;
+    routinesError = "";
+    journalEntries = readLocalJson(journalStorageKey, []);
+    journalLoaded = false;
+    journalSupported = true;
+    focusDistractions = readLocalJson(distractionStorageKey, []);
+    distractionsSupported = true;
     teams = [];
     teamMembers = [];
     teamTasks = [];
@@ -7457,6 +9224,16 @@
     examResults = [];
     sampleFiles = [];
     notes = [];
+    routines = [];
+    routineDays = [];
+    routinesLoaded = false;
+    routinesSupported = true;
+    routinesError = "";
+    journalEntries = [];
+    journalLoaded = false;
+    journalSupported = true;
+    focusDistractions = [];
+    distractionsSupported = true;
     teams = [];
     teamMembers = [];
     teamTasks = [];
@@ -7755,9 +9532,19 @@
   async function createTask(formData) {
     const title = String(formData.get("title") || "").trim();
     if (!title) throw new Error("Enter a task name.");
-    const dueValue = String(formData.get("due_at") || "");
-    const startsValue = String(formData.get("starts_at") || "");
     const repeatType = String(formData.get("repeat_type") || "none");
+    if (isRoutineRepeatType(repeatType)) {
+      return createRoutineFromForm(formData);
+    }
+    const allDay =
+      formData.get("all_day") === "on" || formData.get("all_day") === "true";
+    let dueValue = String(formData.get("due_at") || "");
+    let startsValue = String(formData.get("starts_at") || "");
+    if (allDay) {
+      const dayValue = dueValue.slice(0, 10) || dateKey(new Date());
+      dueValue = `${dayValue}T23:59`;
+      startsValue = "";
+    }
     if (dueValue && startsValue && new Date(startsValue) > new Date(dueValue)) {
       throw new Error("The start time must be on or before the due time.");
     }
@@ -7788,6 +9575,7 @@
           ? new Date().toISOString()
           : null,
     };
+    if (allDay && taskAllDaySupported) baseTask.is_all_day = true;
     if (startsValue) baseTask.starts_at = new Date(startsValue).toISOString();
     if (dueValue) baseTask.due_at = new Date(dueValue).toISOString();
     const recurrenceFields = recurrenceSupported
@@ -7820,11 +9608,27 @@
       return occurrence;
     });
     if (supabase && session) {
-      const selectColumns = `id,title,description,subject_id,starts_at,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,subjects(name)${recurrenceSupported ? ",recurrence_group_id,recurrence_type,recurrence_days,recurrence_until" : ""}`;
-      const { data, error } = await supabase
+      const selectColumns = `id,title,description,subject_id,starts_at,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,subjects(name)${taskAllDaySupported ? ",is_all_day" : ""}${recurrenceSupported ? ",recurrence_group_id,recurrence_type,recurrence_days,recurrence_until" : ""}`;
+      let insertResult = await supabase
         .from("tasks")
         .insert(instances)
         .select(selectColumns);
+      if (
+        insertResult.error &&
+        isMissingColumnError(insertResult.error) &&
+        instances.some((instance) => "is_all_day" in instance)
+      ) {
+        taskAllDaySupported = false;
+        const cleaned = instances.map((instance) => {
+          const { is_all_day: _ignored, ...rest } = instance;
+          return rest;
+        });
+        insertResult = await supabase
+          .from("tasks")
+          .insert(cleaned)
+          .select(selectColumns.replace(",is_all_day", ""));
+      }
+      const { data, error } = insertResult;
       if (error) throw error;
       tasks.unshift(
         ...(data || []).map((item) => ({
@@ -7832,7 +9636,11 @@
           recurrence_type: "none",
           recurrence_days: [],
           recurrence_until: null,
+          open_count: 0,
+          completed_count: 0,
+          postpone_count: 0,
           ...item,
+          is_all_day: item.is_all_day === true || isAllDayTask(item),
           subject: item.subjects?.name || "Independent study",
         })),
       );
@@ -7919,24 +9727,42 @@
   function updateRepeatControls(form) {
     const repeatType = form.elements.namedItem("repeat_type")?.value || "none";
     const recurring = repeatType !== "none";
+    const routine = isRoutineRepeatType(repeatType);
     const dayField = form.querySelector("[data-repeat-days]");
     const untilField = form.querySelector("[data-repeat-until]");
+    const intervalField = form.querySelector("[data-repeat-interval]");
     const help = form.querySelector("[data-repeat-help]");
-    if (dayField) dayField.hidden = repeatType !== "custom";
+    if (dayField)
+      dayField.hidden = !(
+        repeatType === "custom" || repeatType === "weekdays_permanent"
+      );
+    if (intervalField) intervalField.hidden = repeatType !== "interval_permanent";
     if (untilField) {
       untilField.hidden = !recurring;
-      untilField.querySelector("input").required = recurring;
+      const input = untilField.querySelector("input");
+      if (input) input.required = recurring && !routine;
     }
-    if (help) help.hidden = !recurring;
+    if (help) {
+      help.hidden = !recurring;
+      help.textContent = routine
+        ? "Permanent routines appear automatically every matching day, with an independent completion record for each date."
+        : "Choose an end date within the next year. Each occurrence is saved as its own task.";
+    }
   }
 
   async function applyTaskEdit(task, payload) {
     if (supabase && session) {
-      const { error } = await supabase
+      let result = await supabase
         .from("tasks")
         .update(payload)
         .eq("id", task.id);
-      if (error) throw error;
+      if (result.error && isMissingColumnError(result.error) && "is_all_day" in payload) {
+        taskAllDaySupported = false;
+        const { is_all_day: _ignored, ...rest } = payload;
+        result = await supabase.from("tasks").update(rest).eq("id", task.id);
+        delete payload.is_all_day;
+      }
+      if (result.error) throw result.error;
     }
     Object.assign(task, payload);
     if (!supabase || !session) saveLocalTasks();
@@ -7955,34 +9781,51 @@
       .slice(0, 16);
   }
 
-  function openTaskModal(id = null, presetDate = null) {
+  function openTaskModal(id = null, presetDate = null, options = {}) {
+    const routine = options?.routine || null;
     const select = document.getElementById("task-subject");
     select.innerHTML = `<option value="">${deadlineText[appLanguage].independent}</option>${subjects.map((subject) => `<option value="${escapeHtml(subject.id)}">${escapeHtml(subject.name)}</option>`).join("")}`;
     const form = document.getElementById("task-form");
-    const task = id
+    const task = !routine && id
       ? tasks.find((item) => String(item.id) === String(id))
       : null;
     taskEditingId = task ? task.id : null;
+    if (task) void trackTaskUsage(task, "open_count");
     form.reset();
+    form.elements.routine_id.value = routine?.id || "";
     const seriesNote = form.querySelector("[data-series-note]");
     const repeatConfig = form.querySelector("[data-repeat-config]");
     const stopButton = form.querySelector('[data-action="task-stop-series"]');
+    if (stopButton) {
+      stopButton.dataset.action = "task-stop-series";
+      delete stopButton.dataset.id;
+      stopButton.textContent =
+        appLanguage === "ar" ? "إيقاف التكرار" : "Stop repeating";
+    }
     document.getElementById("task-error").textContent = "";
-    document.getElementById("task-modal-title").textContent = task
+    document.getElementById("task-modal-title").textContent = routine
       ? appLanguage === "ar"
-        ? "تعديل المهمة"
-        : "Edit task"
-      : appLanguage === "ar"
-        ? "إضافة مهمة"
-        : "Add a task";
-    document.getElementById("task-modal-help").textContent = task
+        ? "تعديل المهمة اليومية"
+        : "Edit routine"
+      : task
+        ? appLanguage === "ar"
+          ? "تعديل المهمة"
+          : "Edit task"
+        : appLanguage === "ar"
+          ? "إضافة مهمة"
+          : "Add a task";
+    document.getElementById("task-modal-help").textContent = routine
       ? appLanguage === "ar"
-        ? "حدّث التفاصيل، أو انقل المهمة إلى يوم آخر."
-        : "Update the details, or move it to another day."
-      : appLanguage === "ar"
-        ? "أضف ما تحتاج تذكّره، وحدد موعده."
-        : "Add what you need to remember and set when it is due.";
-    document.getElementById("task-submit").innerHTML = task
+        ? "عدّل التعريف فقط. سجل إنجاز كل يوم يبقى محفوظًا."
+        : "Edit the definition only. Each day's completion history stays intact."
+      : task
+        ? appLanguage === "ar"
+          ? "حدّث التفاصيل، أو انقل المهمة إلى يوم آخر."
+          : "Update the details, or move it to another day."
+        : appLanguage === "ar"
+          ? "أضف ما تحتاج تذكّره، وحدد موعده."
+          : "Add what you need to remember and set when it is due.";
+    document.getElementById("task-submit").innerHTML = routine || task
       ? appLanguage === "ar"
         ? "حفظ التغييرات →"
         : "Save changes →"
@@ -8001,6 +9844,7 @@
       );
       form.elements.starts_at.value = localInputValue(task.starts_at);
       form.elements.due_at.value = localInputValue(task.due_at);
+      form.elements.all_day.checked = isAllDayTask(task);
       form.elements.reminder_before_minutes.value = String(
         task.reminder_before_minutes || 0,
       );
@@ -8015,6 +9859,39 @@
             ? `هذه المهمة جزء من سلسلة متكررة (${group.length} نسخة). سيُطلب منك اختيار نطاق التعديل عند الحفظ.`
             : `This task is part of a repeating series (${group.length} occurrence${group.length === 1 ? "" : "s"}). You will choose which occurrences to update when you save.`;
       }
+    } else if (routine) {
+      form.elements.title.value = routine.title || "";
+      form.elements.description.value = routine.description || "";
+      form.elements.subject_id.value = routine.subject_id || "";
+      form.elements.priority.value = routine.priority || "medium";
+      form.elements.status.value = "not_started";
+      form.elements.estimated_minutes.value = String(
+        routine.estimated_minutes || 30,
+      );
+      form.elements.due_at.value = `${routine.start_date}T23:59`;
+      form.elements.all_day.checked = true;
+      form.elements.reminder_before_minutes.value = String(
+        routine.reminder_before_minutes || 0,
+      );
+      form.elements.repeat_type.value = routineTypeFormValue(routine);
+      form.querySelectorAll('input[name="repeat_days"]').forEach((input) => {
+        input.checked = (routine.weekdays || [])
+          .map(Number)
+          .includes(Number(input.value));
+      });
+      if (form.elements.repeat_interval)
+        form.elements.repeat_interval.value = String(
+          routine.interval_days || 2,
+        );
+      if (form.elements.repeat_until)
+        form.elements.repeat_until.value = routine.end_date || "";
+      repeatConfig.hidden = false;
+      seriesNote.hidden = true;
+      stopButton.hidden = false;
+      stopButton.textContent =
+        appLanguage === "ar" ? "حذف المهمة اليومية" : "Delete routine";
+      stopButton.dataset.action = "routine-delete";
+      stopButton.dataset.id = routine.id;
     } else {
       form.elements.task_id.value = "";
       repeatConfig.hidden = false;
@@ -8045,8 +9922,14 @@
   function taskPayloadFromForm(formData) {
     const title = String(formData.get("title") || "").trim();
     if (!title) throw new Error("Enter a task name.");
-    const startsValue = String(formData.get("starts_at") || "");
-    const dueValue = String(formData.get("due_at") || "");
+    const allDay =
+      formData.get("all_day") === "on" || formData.get("all_day") === "true";
+    let startsValue = String(formData.get("starts_at") || "");
+    let dueValue = String(formData.get("due_at") || "");
+    if (allDay) {
+      dueValue = `${dueValue.slice(0, 10) || dateKey(new Date())}T23:59`;
+      startsValue = "";
+    }
     if (startsValue && dueValue && new Date(startsValue) > new Date(dueValue)) {
       throw new Error("The start time must be on or before the due time.");
     }
@@ -8059,6 +9942,7 @@
       estimated_minutes: Number(formData.get("estimated_minutes")) || 45,
       reminder_before_minutes:
         Number(formData.get("reminder_before_minutes")) || 0,
+      is_all_day: allDay,
       starts_at: startsValue ? new Date(startsValue).toISOString() : null,
       due_at: dueValue ? new Date(dueValue).toISOString() : null,
       completed_at:
@@ -8285,7 +10169,303 @@
     }
   }
 
+  function routinePayloadFromForm(formData) {
+    const title = String(formData.get("title") || "").trim();
+    if (!title) throw new Error("Enter a routine name.");
+    const repeatValue = String(formData.get("repeat_type") || "daily_permanent");
+    const routine_type = routineTypeFromFormValue(repeatValue);
+    const dueValue = String(formData.get("due_at") || "");
+    const start_date = dueValue.slice(0, 10) || dateKey(new Date());
+    const endValue = String(formData.get("repeat_until") || "");
+    const weekdays = [...new Set(formData.getAll("repeat_days").map(Number))]
+      .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+      .sort();
+    if (routine_type === "weekdays" && !weekdays.length)
+      throw new Error("Choose at least one weekday for this routine.");
+    if (endValue && endValue < start_date)
+      throw new Error("The routine end date must be on or after its start date.");
+    return {
+      title,
+      description: String(formData.get("description") || "").trim(),
+      subject_id: String(formData.get("subject_id") || "") || null,
+      priority: String(formData.get("priority") || "medium"),
+      routine_type,
+      weekdays: routine_type === "weekdays" ? weekdays : [],
+      interval_days:
+        routine_type === "interval"
+          ? Math.min(
+              365,
+              Math.max(1, Number(formData.get("repeat_interval")) || 2),
+            )
+          : 1,
+      start_date,
+      end_date: endValue || null,
+      paused: false,
+      paused_at: null,
+      estimated_minutes: Number(formData.get("estimated_minutes")) || 30,
+      reminder_before_minutes:
+        Number(formData.get("reminder_before_minutes")) || 0,
+    };
+  }
+
+  async function createRoutineFromForm(formData) {
+    const payload = routinePayloadFromForm(formData);
+    let routine;
+    if (supabase && session) {
+      const { data, error } = await supabase
+        .from("task_routines")
+        .insert({ ...payload, user_id: session.user.id })
+        .select("*")
+        .single();
+      if (error) {
+        if (isMissingRelation(error)) {
+          routinesSupported = false;
+          throw new Error(
+            "Daily routines need the latest Supabase migration. Apply supabase/migrations/002_focus_intelligence.sql first.",
+          );
+        }
+        throw error;
+      }
+      routine = normalizeRoutine(data);
+    } else {
+      routine = normalizeRoutine({
+        ...payload,
+        id: `local-routine-${Date.now()}`,
+        created_at: new Date().toISOString(),
+      });
+    }
+    routines.unshift(routine);
+    if (!supabase || !session) saveLocalRoutines();
+    closeModal(document.getElementById("task-modal"));
+    render();
+    showToast(
+      appLanguage === "ar"
+        ? "تم إنشاء المهمة اليومية. ستظهر تلقائيًا كل يوم."
+        : "Routine created. It will appear automatically each day.",
+    );
+    return routine;
+  }
+
+  async function updateRoutineFromForm(routine, formData) {
+    const payload = routinePayloadFromForm(formData);
+    // Editing the definition must not silently resume a paused routine.
+    payload.paused = routine.paused === true;
+    payload.paused_at = routine.paused_at || null;
+    if (supabase && session && !String(routine.id).startsWith("local-")) {
+      const { data, error } = await supabase
+        .from("task_routines")
+        .update(payload)
+        .eq("id", routine.id)
+        .select("*")
+        .single();
+      if (error) throw error;
+      Object.assign(routine, normalizeRoutine(data));
+    } else {
+      Object.assign(routine, payload, { updated_at: new Date().toISOString() });
+      saveLocalRoutines();
+    }
+    closeModal(document.getElementById("task-modal"));
+    render();
+    showToast(
+      appLanguage === "ar"
+        ? "تم تحديث المهمة اليومية. سجل الأيام السابقة محفوظ."
+        : "Routine updated. Your past daily history is preserved.",
+    );
+  }
+
+  async function toggleRoutineOccurrence(task) {
+    if (!task?.routine_id || !task.occurrence_date) return;
+    if (statusChangesInFlight.has(task.id)) return;
+    statusChangesInFlight.add(task.id);
+    const row = [...document.querySelectorAll(".task-row")].find(
+      (item) => item.dataset.taskId === task.id,
+    );
+    const button = row?.querySelector('[data-action="toggle-task"]');
+    if (button) button.disabled = true;
+    try {
+      const existing = routineDayFor(task.routine_id, task.occurrence_date);
+      const reopening = existing?.status === "completed";
+      if (reopening) {
+        if (supabase && session && !String(task.routine_id).startsWith("local-")) {
+          const { error } = await supabase
+            .from("task_routine_days")
+            .delete()
+            .eq("routine_id", task.routine_id)
+            .eq("occurrence_date", task.occurrence_date);
+          if (error) throw error;
+        }
+        routineDays = routineDays.filter(
+          (day) =>
+            !(
+              String(day.routine_id) === String(task.routine_id) &&
+              day.occurrence_date === task.occurrence_date
+            ),
+        );
+      } else {
+        const record = {
+          routine_id: task.routine_id,
+          occurrence_date: task.occurrence_date,
+          status: "completed",
+          completed_at: new Date().toISOString(),
+        };
+        if (supabase && session && !String(task.routine_id).startsWith("local-")) {
+          const { error } = await supabase
+            .from("task_routine_days")
+            .upsert(
+              { ...record, user_id: session.user.id },
+              { onConflict: "routine_id,occurrence_date" },
+            );
+          if (error) throw error;
+        }
+        routineDays = routineDays.filter(
+          (day) =>
+            !(
+              String(day.routine_id) === String(task.routine_id) &&
+              day.occurrence_date === task.occurrence_date
+            ),
+        );
+        routineDays.push(record);
+      }
+      if (!supabase || !session) saveLocalRoutineDays();
+      if (!reopening) await animateCompletionCard(row);
+      render();
+      showToast(
+        reopening
+          ? appLanguage === "ar"
+            ? "أُعيد فتح مهمة اليوم. الأيام الأخرى لم تتأثر."
+            : "Today reopened. Other days are unaffected."
+          : appLanguage === "ar"
+            ? "تم إنجاز مهمة اليوم. ستظهر مجددًا غدًا."
+            : "Completed for today. It will appear again tomorrow.",
+      );
+    } catch (error) {
+      showToast(`Could not update the routine: ${error.message}`);
+      console.error("Routine completion failed.", error);
+    } finally {
+      statusChangesInFlight.delete(task.id);
+    }
+  }
+
+  async function skipRoutineOccurrence(routineId, occurrenceDate) {
+    const routine = routines.find(
+      (item) => String(item.id) === String(routineId),
+    );
+    if (!routine || !occurrenceDate) return;
+    const record = {
+      routine_id: routine.id,
+      occurrence_date: occurrenceDate,
+      status: "skipped",
+      completed_at: null,
+    };
+    if (supabase && session && !String(routine.id).startsWith("local-")) {
+      const { error } = await supabase
+        .from("task_routine_days")
+        .upsert(
+          { ...record, user_id: session.user.id },
+          { onConflict: "routine_id,occurrence_date" },
+        );
+      if (error) {
+        showToast(`Could not skip this day: ${error.message}`);
+        return;
+      }
+    }
+    routineDays = routineDays.filter(
+      (day) =>
+        !(
+          String(day.routine_id) === String(routine.id) &&
+          day.occurrence_date === occurrenceDate
+        ),
+    );
+    routineDays.push(record);
+    if (!supabase || !session) saveLocalRoutineDays();
+    render();
+    showToast(
+      appLanguage === "ar"
+        ? "تم تخطي اليوم فقط. المهمة ستعود في الأيام القادمة."
+        : "Skipped today only. The routine returns on future days.",
+    );
+  }
+
+  async function toggleRoutinePause(routineId) {
+    const routine = routines.find(
+      (item) => String(item.id) === String(routineId),
+    );
+    if (!routine) return;
+    const paused = !routine.paused;
+    const patch = {
+      paused,
+      paused_at: paused ? dateKey(new Date()) : null,
+    };
+    if (supabase && session && !String(routine.id).startsWith("local-")) {
+      const { error } = await supabase
+        .from("task_routines")
+        .update(patch)
+        .eq("id", routine.id);
+      if (error) {
+        showToast(`Could not update the routine: ${error.message}`);
+        return;
+      }
+    }
+    Object.assign(routine, patch);
+    if (!supabase || !session) saveLocalRoutines();
+    render();
+    showToast(
+      paused
+        ? appLanguage === "ar"
+          ? "تم إيقاف التكرار مؤقتًا. السجل السابق محفوظ."
+          : "Routine paused. Past history is preserved."
+        : appLanguage === "ar"
+          ? "تم استئناف التكرار."
+          : "Routine resumed.",
+    );
+  }
+
+  async function deleteRoutineById(routineId) {
+    const routine = routines.find(
+      (item) => String(item.id) === String(routineId),
+    );
+    if (!routine) return;
+    if (
+      !window.confirm(
+        translateUiText(
+          `Delete the routine "${routine.title}" permanently? Past daily history will also be removed.`,
+        ),
+      )
+    )
+      return;
+    if (supabase && session && !String(routine.id).startsWith("local-")) {
+      const { error } = await supabase
+        .from("task_routines")
+        .delete()
+        .eq("id", routine.id);
+      if (error) {
+        showToast(`Could not delete the routine: ${error.message}`);
+        return;
+      }
+    }
+    routines = routines.filter(
+      (item) => String(item.id) !== String(routine.id),
+    );
+    routineDays = routineDays.filter(
+      (day) => String(day.routine_id) !== String(routine.id),
+    );
+    if (!supabase || !session) {
+      saveLocalRoutines();
+      saveLocalRoutineDays();
+    }
+    closeModal(document.getElementById("task-modal"));
+    render();
+    showToast(appLanguage === "ar" ? "تم حذف المهمة اليومية." : "Routine deleted.");
+  }
+
   async function updateTaskStatus(id) {
+    if (String(id).startsWith("routine:")) {
+      const task = tasksForDay(dateKey(taskViewDate)).find(
+        (item) => item.id === id,
+      ) || routineTasksForDay(dateKey(new Date())).find((item) => item.id === id);
+      if (task) await toggleRoutineOccurrence(task);
+      return;
+    }
     const task = tasks.find((item) => item.id === id);
     if (!task || statusChangesInFlight.has(id)) return;
     const nextStatus =
@@ -8312,6 +10492,7 @@
       if (completing) await animateCompletionCard(row);
       task.status = nextStatus;
       task.completed_at = completing ? new Date().toISOString() : null;
+      if (completing) void trackTaskUsage(task, "completed_count");
       if (!supabase || !session) saveLocalTasks();
       render();
       showToast(
@@ -8397,7 +10578,10 @@
     const timeValue = String(formData.get("move_time") || "") || "23:59";
     const newDue = new Date(`${dateValue}T${timeValue}:00`);
     if (Number.isNaN(newDue.getTime())) throw new Error("Choose a valid date.");
-    const patch = { due_at: newDue.toISOString() };
+    const patch = {
+      due_at: newDue.toISOString(),
+      postpone_count: Number(task.postpone_count || 0) + 1,
+    };
     if (task.starts_at) {
       const oldDue = task.due_at
         ? new Date(task.due_at).getTime()
@@ -8408,11 +10592,17 @@
       ).toISOString();
     }
     if (supabase && session) {
-      const { error } = await supabase
+      let result = await supabase
         .from("tasks")
         .update(patch)
         .eq("id", task.id);
-      if (error) throw error;
+      if (result.error && isMissingColumnError(result.error) && "postpone_count" in patch) {
+        taskUsageSupported = false;
+        const { postpone_count: _ignored, ...rest } = patch;
+        result = await supabase.from("tasks").update(rest).eq("id", task.id);
+        delete patch.postpone_count;
+      }
+      if (result.error) throw result.error;
     }
     Object.assign(task, patch);
     if (!supabase || !session) saveLocalTasks();
@@ -9130,7 +11320,10 @@
       type,
       cycle,
       status: "idle",
-      remainingMs: focusDurationFor(type) * 60000,
+      remainingMs:
+        type === "focus" && Number(context?.durationMinutes) >= 1
+          ? Math.min(180, Number(context.durationMinutes)) * 60000
+          : focusDurationFor(type) * 60000,
       endAt: null,
       runStartedAt: null,
       elapsedBeforeRunMs: 0,
@@ -9138,6 +11331,9 @@
       remoteStarted: false,
       subjectId: context?.subjectId || "",
       taskId: context?.taskId || "",
+      goal: context?.goal || "",
+      tools: context?.tools || "",
+      durationMinutes: Number(context?.durationMinutes) || null,
       pendingRecord: null,
     };
   }
@@ -9266,6 +11462,10 @@
   async function startFocusTimer() {
     if (focusSession.status === "running") return;
     const now = Date.now();
+    const linkedTaskId =
+      focusSession.taskId && !String(focusSession.taskId).startsWith("routine:")
+        ? focusSession.taskId
+        : null;
     if (supabase && session) {
       const method = focusSession.remoteStarted
         ? "resume_focus_session"
@@ -9279,7 +11479,7 @@
             ),
             p_session_type: focusSession.type,
             p_subject_id: focusSession.subjectId || null,
-            p_task_id: focusSession.taskId || null,
+            p_task_id: linkedTaskId,
           };
       const { data, error } = await supabase.rpc(method, args);
       if (error) {
@@ -9361,7 +11561,10 @@
       duration_seconds: Math.max(1, Math.floor(elapsed / 1000)),
       completed,
       subject_id: focusSession.subjectId || null,
-      task_id: focusSession.taskId || null,
+      task_id:
+        focusSession.taskId && !String(focusSession.taskId).startsWith("routine:")
+          ? focusSession.taskId
+          : null,
     };
   }
 
@@ -9772,6 +11975,17 @@
       openTaskModal(null, target.dataset.date || dateKey(taskViewDate));
     } else if (target.matches('[data-action="task-edit"]')) {
       openTaskModal(target.dataset.id);
+    } else if (target.matches('[data-action="routine-edit"]')) {
+      const routine = routines.find(
+        (item) => String(item.id) === String(target.dataset.id),
+      );
+      if (routine) openTaskModal(null, null, { routine });
+    } else if (target.matches('[data-action="routine-skip"]')) {
+      await skipRoutineOccurrence(target.dataset.id, target.dataset.date);
+    } else if (target.matches('[data-action="routine-toggle-pause"]')) {
+      await toggleRoutinePause(target.dataset.id);
+    } else if (target.matches('[data-action="routine-delete"]')) {
+      await deleteRoutineById(target.dataset.id);
     } else if (target.matches('[data-action="move-task"]')) {
       openMoveTaskModal(target.dataset.id);
     } else if (target.matches('[data-action="task-select-day"]')) {
@@ -9809,6 +12023,18 @@
         String(taskShowCompleted),
       );
       render();
+    } else if (target.matches('[data-action="toggle-smart-sort"]')) {
+      smartSortEnabled = !smartSortEnabled;
+      render();
+      showToast(
+        smartSortEnabled
+          ? appLanguage === "ar"
+            ? "تم تفعيل الترتيب الذكي. يمكنك العودة للترتيب اليدوي في أي وقت."
+            : "Smart order enabled. You can switch back to manual order anytime."
+          : appLanguage === "ar"
+            ? "تمت العودة إلى الترتيب اليدوي."
+            : "Manual order restored.",
+      );
     } else if (target.matches('[data-action="toggle-task-section"]')) {
       const key = target.dataset.section;
       taskSectionState[key] = taskSectionState[key] === false;
@@ -9876,6 +12102,56 @@
       await toggleTeamTask(target.dataset.id);
     } else if (target.matches('[data-action="team-task-delete"]')) {
       await deleteTeamTask(target.dataset.id);
+    } else if (target.matches('[data-action="team-member-role"]')) {
+      const teamId = target.dataset.teamId;
+      const userId = target.dataset.userId;
+      const role = ["owner", "admin", "member"].includes(
+        String(target.dataset.role || "member"),
+      )
+        ? String(target.dataset.role)
+        : "member";
+      const member = teamMembers.find(
+        (item) =>
+          String(item.team_id) === String(teamId) &&
+          String(item.user_id) === String(userId),
+      );
+      if (!member) return;
+      if (
+        member.role === "owner" &&
+        role !== "owner" &&
+        !window.confirm(
+          appLanguage === "ar"
+            ? "ستزيل المالك الحالي؟ سيتولى أحد المسؤولين هذا الدور."
+            : "Remove the current owner? An admin will take over this role.",
+        )
+      )
+        return;
+      await updateTeamMemberRole(teamId, userId, role);
+    } else if (target.matches('[data-action="team-member-remove"]')) {
+      const teamId = target.dataset.teamId;
+      const userId = target.dataset.userId;
+      const member = teamMembers.find(
+        (item) =>
+          String(item.team_id) === String(teamId) &&
+          String(item.user_id) === String(userId),
+      );
+      if (!member) return;
+      const confirmed =
+        appLanguage === "ar"
+          ? "إزالة هذا العضو من الفريق؟"
+          : "Remove this member from the team?";
+      if (!window.confirm(confirmed)) return;
+      await removeTeamMember(teamId, userId);
+    } else if (target.matches('[data-action="team-join-review"]')) {
+      const approve = String(target.dataset.approve) === "true";
+      const request = teamJoinRequests.find(
+        (item) => String(item.id) === String(target.dataset.id),
+      );
+      if (request) await reviewTeamJoinRequest(request.id, approve);
+    } else if (target.matches('[data-action="team-invite"]')) {
+      await sendTeamInvite(target.dataset.teamId);
+    } else if (target.matches('[data-action="team-request-join"]')) {
+      await createTeamJoinRequest(target.dataset.teamId);
     } else if (target.matches('[data-action="voice-open"]')) {
       openVoiceModal();
     } else if (target.matches('[data-action="voice-start"]')) {
@@ -9986,7 +12262,46 @@
       }
     } else if (target.matches('[data-action="focus-distraction"]')) {
       distractionFree = !distractionFree;
+      document.body.classList.toggle("focus-distraction", distractionFree);
       render();
+    } else if (target.matches('[data-action="quick-capture-open"]')) {
+      openQuickCapture(target.dataset.type || "task");
+    } else if (target.matches('[data-action="global-search-open"]')) {
+      openGlobalSearch();
+    } else if (target.matches('[data-action="search-open-task"]')) {
+      closeModal(document.getElementById("global-search-modal"));
+      openTaskModal(target.dataset.id);
+    } else if (target.matches('[data-action="search-open-routine"]')) {
+      const routine = routines.find(
+        (item) => String(item.id) === String(target.dataset.id),
+      );
+      closeModal(document.getElementById("global-search-modal"));
+      if (routine) openTaskModal(null, null, { routine });
+    } else if (target.matches('[data-action="navigate-search"]')) {
+      const page = target.dataset.id || "dashboard";
+      closeModal(document.getElementById("global-search-modal"));
+      navigate(page);
+    } else if (target.matches('[data-action="focus-prep-open"]')) {
+      openFocusPrep();
+    } else if (target.matches('[data-action="focus-distraction-log"]')) {
+      openDistractionModal();
+    } else if (target.matches('[data-action="focus-sound"]')) {
+      startFocusSound(target.dataset.sound || "off");
+    } else if (target.matches('[data-action="focus-deep-toggle"]')) {
+      distractionFree = !distractionFree;
+      document.body.classList.toggle("focus-distraction", distractionFree);
+      render();
+    } else if (target.matches('[data-action="focus-fullscreen"]')) {
+      await toggleFocusFullscreen();
+    } else if (target.matches('[data-action="shortcuts-open"]')) {
+      openShortcuts();
+    } else if (target.matches('[data-action="journal-select"]')) {
+      journalDate = target.dataset.date || dateKey(new Date());
+      render();
+    } else if (target.matches('[data-action="backup-export"]')) {
+      await exportBackup();
+    } else if (target.matches('[data-action="backup-import"]')) {
+      document.getElementById("backup-import-input")?.click();
     } else if (target.id === "timer-toggle") {
       if (focusSession.status === "running") pauseFocusTimer();
       else void startFocusTimer();
@@ -10167,10 +12482,16 @@
       error.textContent = "";
       try {
         const formData = new FormData(form);
+        const routineId = String(formData.get("routine_id") || "");
+        const editingRoutine = routineId
+          ? routines.find((item) => String(item.id) === routineId)
+          : null;
         const editingTask = tasks.find(
           (item) => String(item.id) === String(formData.get("task_id")),
         );
-        if (editingTask) {
+        if (editingRoutine) {
+          await updateRoutineFromForm(editingRoutine, formData);
+        } else if (editingTask) {
           const payload = taskPayloadFromForm(formData);
           if (editingTask.recurrence_group_id) {
             openSeriesScopeDialog("edit", editingTask, payload);
@@ -10208,6 +12529,89 @@
         button.disabled = false;
       }
     });
+
+  document.addEventListener("submit", async (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (form.id === "quick-capture-form") {
+      event.preventDefault();
+      const button = form.querySelector('button[type="submit"]');
+      const error = document.getElementById("quick-capture-error");
+      button.disabled = true;
+      error.textContent = "";
+      try {
+        await saveQuickCapture(new FormData(form));
+      } catch (reason) {
+        error.textContent = reason?.message || "Could not save this item.";
+        console.error("Quick capture failed.", reason);
+      } finally {
+        button.disabled = false;
+      }
+    } else if (form.id === "focus-prep-form") {
+      event.preventDefault();
+      try {
+        prepareFocusSession(new FormData(form));
+      } catch (reason) {
+        showToast(reason?.message || "Could not start the focus session.");
+      }
+    } else if (form.id === "distraction-form") {
+      event.preventDefault();
+      const button = form.querySelector('button[type="submit"]');
+      const error = document.getElementById("distraction-error");
+      button.disabled = true;
+      error.textContent = "";
+      try {
+        await logDistraction(new FormData(form));
+      } catch (reason) {
+        error.textContent = reason?.message || "Could not log the distraction.";
+        console.error("Could not log the distraction.", reason);
+      } finally {
+        button.disabled = false;
+      }
+    } else if (form.id === "journal-form") {
+      event.preventDefault();
+      const button = form.querySelector('button[type="submit"]');
+      const error = document.getElementById("journal-error");
+      button.disabled = true;
+      error.textContent = "";
+      try {
+        await saveJournalEntry(new FormData(form));
+      } catch (reason) {
+        error.textContent = reason?.message || "Could not save the reflection.";
+        console.error("Could not save the journal entry.", reason);
+      } finally {
+        button.disabled = false;
+      }
+    }
+  });
+
+  document.addEventListener("change", async (event) => {
+    const target = event.target;
+    if (target?.id === "backup-import-input") {
+      const file = target.files?.[0];
+      target.value = "";
+      if (!file) return;
+      try {
+        await importBackupFile(file);
+      } catch (reason) {
+        showToast(reason?.message || "Could not restore this backup.");
+        console.error("Backup restore failed.", reason);
+      }
+    } else if (target?.id === "journal-date") {
+      journalDate = target.value || dateKey(new Date());
+      render();
+    } else if (target?.id === "focus-sound-volume") {
+      updateFocusSoundVolume(target.value);
+    } else if (target?.id === "quick-capture-type") {
+      quickCaptureType = target.value;
+    }
+  });
+
+  document.addEventListener("input", (event) => {
+    if (event.target?.id === "focus-sound-volume") {
+      updateFocusSoundVolume(event.target.value);
+    }
+  });
 
   document
     .querySelectorAll(
@@ -10358,6 +12762,48 @@
       if (document.hidden) animation.pause();
       else animation.play();
     });
+  });
+
+  // Keyboard shortcuts. Never trigger while the user is typing in a field.
+  document.addEventListener("keydown", (event) => {
+    const element = event.target;
+    const typing =
+      element instanceof HTMLElement &&
+      (element.matches("input, textarea, select") ||
+        element.isContentEditable ||
+        element.closest("[contenteditable='true']"));
+    if (typing) return;
+    const modalOpen = Boolean(
+      document.querySelector(".modal-backdrop:not([hidden])"),
+    );
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      openGlobalSearch();
+      return;
+    }
+    if (modalOpen || event.ctrlKey || event.metaKey || event.altKey) return;
+    const key = event.key.toLowerCase();
+    if (key === "n") {
+      event.preventDefault();
+      openTaskModal(null, dateKey(taskViewDate));
+    } else if (key === "q") {
+      event.preventDefault();
+      openQuickCapture("task");
+    } else if (key === "f") {
+      event.preventDefault();
+      navigate("focus");
+    } else if (key === "h") {
+      event.preventDefault();
+      navigate("dashboard");
+    } else if (event.key === "?") {
+      event.preventDefault();
+      openShortcuts();
+    } else if (event.code === "Space" && currentPage === "focus") {
+      if (element instanceof HTMLElement && element.closest("button, a")) return;
+      event.preventDefault();
+      if (focusSession.status === "running") pauseFocusTimer();
+      else void startFocusTimer();
+    }
   });
 
   if ("serviceWorker" in navigator) {

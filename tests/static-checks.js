@@ -11,6 +11,10 @@ const sw = read("service-worker.js");
 const manifest = read("manifest.json");
 const migrationPath = "supabase/migrations/001_studyzone_enhancements.sql";
 const migration = existsSync(join(root, migrationPath)) ? read(migrationPath) : "";
+const migration2Path = "supabase/migrations/002_focus_intelligence.sql";
+const migration2 = existsSync(join(root, migration2Path))
+  ? read(migration2Path)
+  : "";
 
 let passed = 0;
 const failures = [];
@@ -47,7 +51,7 @@ check("Notification preferences form exists", app.includes('id="notification-pre
 check("Team creation exists", /\.from\(\s*["']teams["']\s*\)\s*\.insert\(/.test(app));
 check("Team join RPC exists", app.includes('rpc("join_team"'));
 check("No service-role key assignment in browser files", !/service_role\s*[:=]/i.test(app + html + read("supabase-config.js")) && !/serviceRole/i.test(app + html + read("supabase-config.js")));
-check("Service worker cache was bumped", sw.includes("studyzone-shell-v17"));
+check("Service worker cache was bumped", sw.includes("studyzone-shell-v18"));
 
 check("Web app manifest keeps standalone display", /"display"\s*:\s*"standalone"/.test(manifest));
 check("Web app manifest has a start url and scope", /"start_url"\s*:/.test(manifest) && /"scope"\s*:/.test(manifest));
@@ -111,6 +115,56 @@ if (migration) {
 check("Task loading falls back before the recurrence migration is applied", app.includes("recurrenceSupported") && app.includes("baseTaskColumns"));
 check("Series edits preserve each occurrence date unless the date changes", app.includes("dueShift") && app.includes("startShift"));
 check("Guests can open a session-only voice recording", app.includes('data-action="voice-open"') && app.includes("session-only recording"));
+
+// Focus intelligence & routines
+check("Permanent routines use a definition table", app.includes('from("task_routines")'));
+check("Routine completion is stored per date", app.includes("task_routine_days") && app.includes("routineDayFor("));
+check("Routine occurrences are virtual, not duplicated tasks", app.includes("function routineVirtualTask(") && app.includes("routine:${routine.id}:${key}"));
+check("Routine pause/skip/delete actions exist", app.includes("toggleRoutinePause(") && app.includes("skipRoutineOccurrence(") && app.includes("deleteRoutineById("));
+check("All-day tasks are supported", app.includes("function isAllDayTask(") && app.includes("is_all_day"));
+check("Smart priority suggestions exist", app.includes("function smartTaskScore(") && app.includes("SMART PRIORITIES"));
+check("Most-used task ranking exists", app.includes("function mostUsedTasks("));
+check("Task usage counters are tracked", app.includes("function trackTaskUsage(") && app.includes("open_count"));
+check("Quick capture exists", app.includes("function openQuickCapture(") && app.includes("function saveQuickCapture("));
+check("Global search exists", app.includes("function globalSearchMarkup("));
+check("Focus preparation exists", app.includes("function openFocusPrep(") && app.includes("function prepareFocusSession("));
+check("Per-session focus duration is supported", app.includes("durationMinutes") && app.includes("getFocusDurationMs"));
+check("Deep focus / full screen exists", app.includes("focus-deep-toggle") && app.includes("toggleFocusFullscreen("));
+check("Distraction tracking exists", app.includes("function logDistraction(") && app.includes("function distractionSummary("));
+check("Focus soundscape is synthesized", app.includes("function startFocusSound(") && app.includes("buildNoiseBuffer("));
+check("Study journal exists", app.includes("function journalPage(") && app.includes("function saveJournalEntry("));
+check("Weekly review compares weeks", app.includes("function weeklyReviewData(") && app.includes("summarizeWeek("));
+check("Backup export and validated restore exist", app.includes("async function exportBackup(") && app.includes("function validateBackup(") && app.includes("async function importBackupFile("));
+check("Backup restore deduplicates tasks", app.includes("existingTaskKeys"));
+check("Keyboard shortcuts exist and ignore typing", app.includes('document.addEventListener("keydown"') && app.includes("element.isContentEditable"));
+check("Journal page is registered", app.includes("journal: journalPage") && app.includes('journal: "Study journal"'));
+
+check("Index has quick capture modal", html.includes('id="quick-capture-modal"'));
+check("Index has global search modal", html.includes('id="global-search-modal"'));
+check("Index has focus preparation modal", html.includes('id="focus-prep-modal"'));
+check("Index has distraction modal", html.includes('id="distraction-modal"'));
+check("Index has shortcuts modal", html.includes('id="shortcuts-modal"'));
+check("Index has quick capture button", html.includes('data-action="quick-capture-open"'));
+check("Index has journal navigation", html.includes('data-page="journal"'));
+check("New components have styles", css.includes("/* ---- Focus intelligence, routines, journal, search additions"));
+
+if (migration2) {
+  check("Focus intelligence migration exists", true);
+  for (const table of [
+    "task_routines",
+    "task_routine_days",
+    "focus_distractions",
+    "study_journal_entries",
+  ]) {
+    check(`Migration 002 mentions ${table}`, migration2.includes(table));
+  }
+  check("Migration 002 enables RLS", /alter table public\.task_routines enable row level security/i.test(migration2));
+  check("Migration 002 keeps routine days owner-scoped", /task_routine_days_insert_own/i.test(migration2));
+  check("Migration 002 is additive", !/\bdrop table\b|\btruncate\b|\bdrop column\b/i.test(migration2));
+  check("Migration 002 can be re-run safely", /add column if not exists/i.test(migration2) && /create table if not exists/i.test(migration2));
+} else {
+  check("Focus intelligence migration file is missing", false);
+}
 
 if (failures.length) {
   console.error(`Static checks failed (${failures.length}):`);

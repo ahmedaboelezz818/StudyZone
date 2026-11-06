@@ -26,10 +26,10 @@
       href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&family=Tajawal:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=premium-clock-1" />
+    <link rel="stylesheet" href="./styles.css?v=focus-intelligence-1" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="./supabase-config.js"></script>
-    <script src="./app.js?v=premium-clock-1" defer></script>
+    <script src="./app.js?v=focus-intelligence-1" defer></script>
   </head>
   <body>
     <div class="scroll-progress" id="scroll-progress" aria-hidden="true"></div>
@@ -75,6 +75,9 @@
           <a class="nav-link" href="#teams" data-page="teams"
             ><span class="nav-icon">⚭</span>Teams</a
           >
+          <a class="nav-link" href="#team-leaderboard" data-page="team-leaderboard"
+            ><span class="nav-icon">🏆</span>Team battle</a
+          >
           <a class="nav-link" href="#focus" data-page="focus"
             ><span class="nav-icon">◷</span>Focus timer</a
           >
@@ -92,6 +95,9 @@
           >
           <a class="nav-link" href="#achievements" data-page="achievements"
             ><span class="nav-icon">✧</span>Achievements</a
+          >
+          <a class="nav-link" href="#journal" data-page="journal"
+            ><span class="nav-icon">✎</span>Study journal</a
           >
           <a class="nav-link" href="#notifications" data-page="notifications"
             ><span class="nav-icon">♧</span>Notifications<span
@@ -165,6 +171,23 @@
               ♧<i></i>
             </button>
             <button
+              class="icon-button"
+              id="global-search-open"
+              data-action="global-search-open"
+              aria-label="Search everything"
+              title="Search (Ctrl+K)"
+            >
+              ⌕
+            </button>
+            <button
+              class="icon-button"
+              data-action="shortcuts-open"
+              aria-label="Keyboard shortcuts"
+              title="Keyboard shortcuts (?)"
+            >
+              ⌨
+            </button>
+            <button
               class="avatar avatar-top"
               id="top-profile"
               aria-label="Open profile"
@@ -194,6 +217,15 @@
       </main>
     </div>
 
+    <button
+      class="quick-capture-fab"
+      data-action="quick-capture-open"
+      aria-label="Quick capture"
+      title="Quick capture (N)"
+    >
+      ＋
+    </button>
+
     <div class="modal-backdrop" id="task-modal" hidden>
       <section
         class="modal task-modal"
@@ -211,6 +243,7 @@
         </p>
         <form id="task-form" class="form-stack">
           <input type="hidden" name="task_id" value="" />
+          <input type="hidden" name="routine_id" value="" />
           <label
             >Task name<input
               name="title"
@@ -266,6 +299,10 @@
             /></label>
             <label>Due date<input name="due_at" type="datetime-local" /></label>
           </div>
+          <label class="check-line"
+            ><input type="checkbox" name="all_day" /> All-day task — no specific
+            time, complete it anytime</label
+          >
           <label
             >Reminder<select name="reminder_before_minutes">
               <option value="0">No reminder</option>
@@ -278,10 +315,19 @@
             <label
               >Repeat<select name="repeat_type">
                 <option value="none">Does not repeat</option>
-                <option value="daily">Every day</option>
-                <option value="weekly">Every week</option>
-                <option value="monthly">Every month</option>
-                <option value="custom">Choose weekdays</option>
+                <option value="daily_permanent">
+                  Every day (permanent routine)
+                </option>
+                <option value="weekdays_permanent">
+                  Selected weekdays (permanent routine)
+                </option>
+                <option value="interval_permanent">
+                  Every few days (permanent routine)
+                </option>
+                <option value="daily">Every day (for one year)</option>
+                <option value="weekly">Every week (for one year)</option>
+                <option value="monthly">Every month (for one year)</option>
+                <option value="custom">Choose weekdays (for one year)</option>
               </select></label
             >
             <fieldset class="repeat-days" data-repeat-days hidden>
@@ -309,12 +355,25 @@
                 Sun</label
               >
             </fieldset>
+            <label data-repeat-interval hidden
+              >Repeat every
+              <input
+                name="repeat_interval"
+                type="number"
+                min="1"
+                max="365"
+                value="2"
+              />
+              days</label
+            >
             <label data-repeat-until hidden
-              >Repeat until<input name="repeat_until" type="date"
+              >Repeat until (optional for permanent routines)<input
+                name="repeat_until"
+                type="date"
             /></label>
             <p class="data-caption" data-repeat-help hidden>
-              Choose an end date within the next year. Each occurrence is saved
-              as its own task.
+              Permanent routines appear automatically every matching day, with
+              an independent completion record for each date.
             </p>
           </div>
           <p class="data-caption series-note" data-series-note hidden></p>
@@ -452,6 +511,21 @@
           <p class="data-caption">
             A short join code is generated automatically so classmates can join.
           </p>
+          <label
+            >Join mode <span class="optional-label">Optional</span
+            ><select name="join_mode">
+              <option value="open">Open — join instantly with the code</option>
+              <option value="approval">Approval — owner/admin reviews requests</option>
+            </select></label
+          >
+          <label
+            >Team logo <span class="optional-label">Optional</span
+            ><input
+              name="logo_url"
+              dir="auto"
+              maxlength="240"
+              placeholder="Image URL (optional)"
+            /></label>
           <div class="form-error" id="team-error" role="alert"></div>
           <div class="modal-actions">
             <button
@@ -491,6 +565,17 @@
               autocomplete="off"
               placeholder="e.g. A1B2C3D4"
           /></label>
+          <label
+            >Why are you joining? <span class="optional-label">Optional</span
+            ><textarea
+              id="team-join-request-note"
+              name="note"
+              dir="auto"
+              rows="2"
+              maxlength="300"
+              placeholder="A sentence helps the team prepare"
+            ></textarea>
+          </label>
           <div class="form-error" id="team-join-error" role="alert"></div>
           <div class="modal-actions">
             <button
@@ -862,6 +947,219 @@
             Done
           </button>
         </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="quick-capture-modal" hidden>
+      <section
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="quick-capture-title"
+      >
+        <button class="modal-close" data-close-modal aria-label="Close">
+          ×
+        </button>
+        <p class="eyebrow">CAPTURE IT NOW</p>
+        <h2 id="quick-capture-title">Quick capture</h2>
+        <p class="modal-subtitle">
+          Save a task, idea, note, or reminder without leaving this page.
+        </p>
+        <form id="quick-capture-form" class="form-stack">
+          <label
+            >What is it?<select name="capture_type" id="quick-capture-type">
+              <option value="task">Task</option>
+              <option value="note">Note</option>
+              <option value="idea">Idea</option>
+              <option value="reminder">Reminder</option>
+            </select></label
+          >
+          <label
+            >Title<input
+              name="title"
+              dir="auto"
+              required
+              maxlength="160"
+              placeholder="e.g. Review chapter 4"
+          /></label>
+          <label
+            >Details <span class="optional-label">Optional</span
+            ><textarea
+              name="details"
+              dir="auto"
+              rows="2"
+              maxlength="2000"
+              placeholder="A little context helps later"
+            ></textarea>
+          </label>
+          <label
+            >Date <span class="optional-label">Optional</span
+            ><input name="capture_date" type="date"
+          /></label>
+          <div class="form-error" id="quick-capture-error" role="alert"></div>
+          <div class="modal-actions">
+            <button class="button button-secondary" type="button" data-close-modal>
+              Cancel
+            </button>
+            <button class="button button-primary" type="submit">
+              Save <span>→</span>
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="global-search-modal" hidden>
+      <section
+        class="modal search-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="global-search-title"
+      >
+        <button class="modal-close" data-close-modal aria-label="Close">
+          ×
+        </button>
+        <p class="eyebrow">FIND ANYTHING</p>
+        <h2 id="global-search-title">Search Study Zone</h2>
+        <label class="search-box search-box-large"
+          ><span>⌕</span><input
+            id="global-search-input"
+            type="search"
+            dir="auto"
+            autocomplete="off"
+            placeholder="Tasks, notes, subjects, files, deadlines…"
+            aria-label="Search everything"
+        /></label>
+        <div id="global-search-results" class="global-search-results"></div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="focus-prep-modal" hidden>
+      <section
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="focus-prep-title"
+      >
+        <button class="modal-close" data-close-modal aria-label="Close">
+          ×
+        </button>
+        <p class="eyebrow">READY TO FOCUS</p>
+        <h2 id="focus-prep-title">Prepare your session</h2>
+        <p class="modal-subtitle">
+          One quick step, then the timer gets out of your way.
+        </p>
+        <form id="focus-prep-form" class="form-stack">
+          <div class="form-row">
+            <label>Subject<select id="focus-prep-subject" name="subject_id"></select></label>
+            <label>Task<select id="focus-prep-task" name="task_id"></select></label>
+          </div>
+          <label
+            >Goal for this session<input
+              name="goal"
+              dir="auto"
+              maxlength="160"
+              placeholder="e.g. Finish problems 1–10"
+          /></label>
+          <label
+            >Tools ready <span class="optional-label">Optional</span
+            ><input
+              name="tools"
+              dir="auto"
+              maxlength="160"
+              placeholder="e.g. Textbook, notebook, water"
+          /></label>
+          <label
+            >Focus length<select name="minutes" id="focus-prep-minutes">
+              <option value="15">15 minutes</option>
+              <option value="25" selected>25 minutes</option>
+              <option value="45">45 minutes</option>
+              <option value="60">60 minutes</option>
+              <option value="90">90 minutes</option>
+            </select></label
+          >
+          <div class="modal-actions">
+            <button class="button button-secondary" type="button" data-close-modal>
+              Cancel
+            </button>
+            <button class="button button-primary" type="submit">
+              Start focus <span>→</span>
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="distraction-modal" hidden>
+      <section
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="distraction-title"
+      >
+        <button class="modal-close" data-close-modal aria-label="Close">
+          ×
+        </button>
+        <p class="eyebrow">NOTICE IT, THEN RETURN</p>
+        <h2 id="distraction-title">I got distracted</h2>
+        <p class="modal-subtitle">
+          Naming the distraction makes it easier to come back.
+        </p>
+        <form id="distraction-form" class="form-stack">
+          <label
+            >What pulled you away?<select name="reason" id="distraction-reason">
+              <option value="Phone">Phone</option>
+              <option value="Thoughts">Thoughts</option>
+              <option value="Tired">Tired</option>
+              <option value="Noise">Noise</option>
+              <option value="other">Something else</option>
+            </select></label
+          >
+          <label
+            >Custom reason <span class="optional-label">Optional</span
+            ><input
+              name="custom_reason"
+              dir="auto"
+              maxlength="120"
+              placeholder="Name it in your own words"
+          /></label>
+          <div class="form-error" id="distraction-error" role="alert"></div>
+          <div class="modal-actions">
+            <button class="button button-secondary" type="button" data-close-modal>
+              Back to focus
+            </button>
+            <button class="button button-primary" type="submit">
+              Log distraction <span>→</span>
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="shortcuts-modal" hidden>
+      <section
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="shortcuts-title"
+      >
+        <button class="modal-close" data-close-modal aria-label="Close">
+          ×
+        </button>
+        <p class="eyebrow">MOVE FASTER</p>
+        <h2 id="shortcuts-title">Keyboard shortcuts</h2>
+        <div class="shortcut-list">
+          <div><kbd>N</kbd><span>New task</span></div>
+          <div><kbd>Q</kbd><span>Quick capture</span></div>
+          <div><kbd>Ctrl</kbd><kbd>K</kbd><span>Search everything</span></div>
+          <div><kbd>Space</kbd><span>Start or pause focus</span></div>
+          <div><kbd>F</kbd><span>Open focus timer</span></div>
+          <div><kbd>H</kbd><span>Go to dashboard</span></div>
+          <div><kbd>?</kbd><span>Show this list</span></div>
+        </div>
+        <p class="data-caption">
+          Shortcuts pause automatically while you are typing in a field.
+        </p>
       </section>
     </div>
 

@@ -14,7 +14,7 @@ Then open `http://127.0.0.1:5500`.
 
 ## Connect Supabase
 
-1. Apply the SQL migrations in `supabase/migrations/` in order in the Supabase SQL Editor (or with `supabase db push`). `001_studyzone_enhancements.sql` is idempotent and non-destructive; it adds the note color column, recurring-task indexes, private teams, voice-note metadata, and notification preferences. The original `supabase/schema.sql` referenced by earlier versions of this README is not present in this repository, so apply the migrations on top of an existing Study Zone project rather than assuming a fresh schema file can be run.
+1. Apply the SQL migrations in `supabase/migrations/` in order in the Supabase SQL Editor (or with `supabase db push`). `001_studyzone_enhancements.sql` is idempotent and non-destructive; it adds the note color column, recurring-task indexes, private teams, voice-note metadata, and notification preferences. `002_focus_intelligence.sql` is also idempotent and additive: it adds all-day/usage columns to `tasks`, the `task_routines` and `task_routine_days` tables, `focus_distractions`, `study_journal_entries`, indexes, triggers, and owner-scoped RLS policies. The original `supabase/schema.sql` referenced by earlier versions of this README is not present in this repository, so apply the migrations on top of an existing Study Zone project rather than assuming a fresh schema file can be run. The app detects missing columns/tables at runtime and keeps working with reduced features until each migration is applied.
 2. Add the project URL and **public anon/publishable key** to `supabase-config.js`.
 3. Keep the `service_role` key out of this project and all browser code.
 4. For daily Web Push, generate a VAPID key pair (for example, `npx web-push generate-vapid-keys`) and configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (a `mailto:` contact), and `DEADLINE_CRON_SECRET` as server-side Edge Function secrets. Put only the matching public key in `supabase-config.js` as `vapidPublicKey`; never add the private key or service-role key to browser files. A current public key is already stored in `supabase-config.js` (`vapidPublicKey`); the matching private key, subject, and cron secret must still be set on the deployed `deadline-reminders` Edge Function before task notifications can be delivered.
@@ -28,6 +28,30 @@ Tasks and deadlines can repeat daily, weekly, monthly, or on selected weekdays. 
 ## Daily task workspace
 
 The Tasks page opens on today and only shows what belongs to the selected day. Overdue, no-date, and completed work sit in separate collapsible sections, so a task never appears in two sections at once. The page includes previous/next day navigation, a seven-day strip with per-day open counts, a completion ring, per-day search and status filters, an "All tasks" view, an edit dialog, and a move dialog. Dates are built from local calendar parts (`getFullYear`, `getMonth`, `getDate`) so a task does not shift to the previous or next day because of UTC conversion.
+
+## Routines, all-day tasks, and priorities
+
+Permanent routines are stored once in `task_routines` and rendered as virtual tasks for each matching date; completion, skip, or reopen is stored per date in `task_routine_days`. A routine supports daily, selected-weekday, and fixed-interval schedules, an optional end date, and pause/resume. Pausing records the pause date so past days keep their history, and editing or deleting the definition never rewrites earlier completion rows. Because no daily copy of the task is created, there is no duplicate-occurrence or rollover drift; the selected day is always derived from local calendar parts.
+
+Permanent routines coexist with the earlier materialized series model (`recurrence_group_id` + `001` columns), which remains supported for backwards compatibility. All-day tasks use the new `tasks.is_all_day` flag and are labelled "All day" instead of a fake time; an untimed task never becomes overdue merely because the clock passed a default time.
+
+The Tasks page also offers **Smart priorities** (an explained, suggested order based on overdue state, priority, postponements, and opens) and **Most used** (ranked from `open_count`/`completed_count`). Suggestions never change a task's fields or a user's chosen order unless the user explicitly enables smart order. Quick capture (`Q`) and global search (`Ctrl/⌘+K`) are available from the topbar and floating action button.
+
+## Focus intelligence
+
+The Focus page supports a short preparation step (subject, linked task, session goal, tools, session length) before starting. The countdown remains timestamp-based, so recovery after sleep, tab suspension, or reload does not lose time, and a session can only be saved once because saves use a per-session idempotency key. A per-session duration overrides the global Pomodoro length without changing saved settings.
+
+Deep focus hides navigation and unrelated chrome; full screen uses the browser Fullscreen API when available. During an active focus session, **Distracted** logs a reason (with an optional custom reason) to `focus_distractions`; today's, this week's, and most-common counts are shown on the Focus page and feed the weekly review. Break suggestions follow the configured long-break interval, and completion sounds are the existing configurable alert sounds.
+
+Focus soundscapes (Rain, White, Brown, Forest, Fireplace) are synthesized in-browser with the Web Audio API, so no external audio files or licences are required. The selection and volume are stored locally and the sound stops when the session or page ends.
+
+## Study journal and weekly review
+
+The Study journal page records an optional daily reflection: what went well, what stayed unfinished, what got in the way, a 1–5 focus rating, and the most important thing for tomorrow. One entry per local date is stored in `study_journal_entries` for signed-in users and in browser storage for guests. Past reflections can be reopened by date. A weekly review compares this week with last week on focus hours, sessions, task completion, top subject, and distractions, then offers non-punitive suggestions. Streaks only count activity days; rest days are not penalized or erased.
+
+## Backup and restore
+
+Settings can export a JSON backup containing tasks, routines, per-date routine history, notes, journal entries, focus records, distractions, and preferences. Restore validates the file type/version/size first, then merges: tasks are deduplicated by normalized title plus due date and notes by title plus created time. Existing records are never overwritten, imports are capped at 500 tasks and 500 notes per restore for safety, and nothing is uploaded anywhere; a guest restore stays in the browser.
 
 ## Rich notes and voice notes
 
@@ -50,7 +74,7 @@ node --check server.js
 node tests/static-checks.js
 ```
 
-The checks cover required page functions, modal/ID wiring, safe date helpers, absence of a service-role key in browser files, the new migration contents/RLS, and cache versioning. They do not replace authenticated multi-user testing against a real Supabase project.
+The checks cover required page functions, modal/ID wiring, safe date helpers, absence of a service-role key in browser files, routine/journal/distraction/search/backup wiring, the migration contents/RLS, and cache versioning. They do not replace authenticated multi-user testing against a real Supabase project.
 
 ## Admin authorization
 
@@ -95,5 +119,7 @@ The service worker caches only the versioned static app-shell files and branded 
 - Notification sounds and do-not-disturb hours are available in Settings, persist locally, and sync to `user_notification_preferences` when the migration has been applied. Task reminder sounds, Pomodoro sounds, preview, volume, duration, and repeat controls are available in Settings. The notification list is refreshed while the app is open; it is not a realtime subscription.
 - The `team_task_comments` table is created by the migration, but the team comment UI is not wired yet.
 - Recurring-series changes use separate owner-scoped updates. A network failure partway through a series update can leave some occurrences updated; there is no transactional series RPC yet.
+- `002_focus_intelligence.sql` has not been applied to the live Supabase project from this environment (no admin/service credentials), so the new routines, distractions, and journal tables are only present locally until you run it. The app detects this and stores guest data locally, but signed-in sync of the new tables requires the migration.
+- Offline mode still serves only the cached app shell. Tasks and focus sessions continue to work from local state after a reconnect-safe save pattern, but full conflict resolution for simultaneous edits on two devices is not implemented; the last write wins per row.
 - No automated browser test suite exists in the repository. Verification for this round was limited to static checks (`node --check`), ID/wiring audits, and a local server smoke test; authenticated RLS behavior still needs testing in a real Supabase project.
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
