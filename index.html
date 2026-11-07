@@ -2,8 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <meta name="theme-color" content="#0C4137" />
+    <meta name="color-scheme" content="dark light" />
     <meta
       name="description"
       content="Study Zone — Your Study Life, Organized."
@@ -20,16 +24,42 @@
     />
     <meta name="apple-mobile-web-app-title" content="Study Zone" />
     <title>Study Zone — Your Study Life, Organized</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&family=Tajawal:wght@400;500;600;700;800&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="stylesheet" href="./styles.css?v=focus-intelligence-1" />
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="preconnect" href="https://lcysfoymnobmbxwwapll.supabase.co" crossorigin />
+    <link rel="preload" as="font" href="./fonts/font-01.woff2" type="font/woff2" crossorigin />
+    <link rel="preload" as="font" href="./fonts/font-03.woff2" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="./fonts/fonts.css" />
+    <link rel="preload" as="style" href="./styles.css?v=focus-intelligence-2" />
+    <link rel="stylesheet" href="./styles.css?v=focus-intelligence-2" />
+    <link rel="preload" as="style" href="./themes.css?v=1" />
+    <link rel="stylesheet" href="./themes.css?v=1" />
+    <link rel="stylesheet" href="./mobile.css?v=1" />
+    <script>
+      // Apply the saved language and color theme before first paint.
+      try {
+        var storedLanguage = localStorage.getItem("studyflow.language");
+        if (storedLanguage === "ar" || storedLanguage === "en") {
+          document.documentElement.lang = storedLanguage;
+          document.documentElement.dir = storedLanguage === "ar" ? "rtl" : "ltr";
+        }
+        var storedThemePreset = localStorage.getItem("studyflow.theme.preset");
+        if (storedThemePreset) {
+          document.documentElement.dataset.themePreset = storedThemePreset;
+        }
+        var storedScheme = localStorage.getItem("studyflow.theme");
+        if (storedScheme === "light") {
+          document.documentElement.dataset.theme = "light";
+        }
+      } catch (error) {
+        /* private mode / storage disabled */
+      }
+    </script>
+    <script src="./vendor/supabase.js"></script>
     <script src="./supabase-config.js"></script>
-    <script src="./app.js?v=focus-intelligence-1" defer></script>
+    <script src="./locales.js"></script>
+    <script src="./offline-sync.js"></script>
+    <script src="./app.js?v=focus-intelligence-2" defer></script>
+    <script src="./sync-ui.js?v=1" defer></script>
+    <script src="./native-shell.js?v=1" defer></script>
   </head>
   <body>
     <div class="scroll-progress" id="scroll-progress" aria-hidden="true"></div>
@@ -152,9 +182,6 @@
             ><strong id="page-crumb">Dashboard</strong>
           </div>
           <div class="topbar-actions">
-            <div class="today-date">
-              <span class="date-icon">▦</span><span id="today-date">Today</span>
-            </div>
             <button
               class="button button-secondary install-button"
               id="pwa-install"
@@ -163,30 +190,9 @@
             >
               Install app
             </button>
-            <button
-              class="icon-button notification-button"
-              data-navigate="notifications"
-              aria-label="Notifications"
-            >
-              ♧<i></i>
-            </button>
-            <button
-              class="icon-button"
-              id="global-search-open"
-              data-action="global-search-open"
-              aria-label="Search everything"
-              title="Search (Ctrl+K)"
-            >
-              ⌕
-            </button>
-            <button
-              class="icon-button"
-              data-action="shortcuts-open"
-              aria-label="Keyboard shortcuts"
-              title="Keyboard shortcuts (?)"
-            >
-              ⌨
-            </button>
+            <div class="today-date">
+              <span class="date-icon">▦</span><span id="today-date">Today</span>
+            </div>
             <button
               class="avatar avatar-top"
               id="top-profile"
@@ -203,8 +209,8 @@
           aria-live="polite"
           hidden
         >
-          You’re offline. Network-backed data and sync are unavailable; changes
-          may not be saved.
+          You’re offline. Changes are saved on this device and will sync
+          automatically when the connection returns.
         </div>
         <div class="content" id="page-content"></div>
         <footer class="footer">

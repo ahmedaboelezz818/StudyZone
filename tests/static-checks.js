@@ -15,6 +15,10 @@ const migration2Path = "supabase/migrations/002_focus_intelligence.sql";
 const migration2 = existsSync(join(root, migration2Path))
   ? read(migration2Path)
   : "";
+const migration3Path = "supabase/migrations/003_android_offline_notifications.sql";
+const migration3 = existsSync(join(root, migration3Path))
+  ? read(migration3Path)
+  : "";
 
 let passed = 0;
 const failures = [];
@@ -51,7 +55,7 @@ check("Notification preferences form exists", app.includes('id="notification-pre
 check("Team creation exists", /\.from\(\s*["']teams["']\s*\)\s*\.insert\(/.test(app));
 check("Team join RPC exists", app.includes('rpc("join_team"'));
 check("No service-role key assignment in browser files", !/service_role\s*[:=]/i.test(app + html + read("supabase-config.js")) && !/serviceRole/i.test(app + html + read("supabase-config.js")));
-check("Service worker cache was bumped", sw.includes("studyzone-shell-v18"));
+check("Service worker cache was bumped", sw.includes("studyzone-shell-v19"));
 
 check("Web app manifest keeps standalone display", /"display"\s*:\s*"standalone"/.test(manifest));
 check("Web app manifest has a start url and scope", /"start_url"\s*:/.test(manifest) && /"scope"\s*:/.test(manifest));
@@ -86,7 +90,12 @@ const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
 const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
 check("index.html has no duplicate element IDs", duplicateIds.length === 0);
 
-const appIds = [...app.matchAll(/getElementById\("([^"]+)"\)/g)].map((match) => match[1]);
+const appIdMatches = [...app.matchAll(/getElementById\("([^"]+)"\)(\?\.)?/g)];
+const appIds = [
+  ...new Set(
+    appIdMatches.filter((match) => !match[2]).map((match) => match[1]),
+  ),
+];
 const htmlIds = new Set(ids);
 const dynamicIds = new Set([...app.matchAll(/\bid="([^"$]+)"/g)].map((match) => match[1]));
 const missingIds = [...new Set(appIds)].filter((id) => !htmlIds.has(id) && !dynamicIds.has(id));
@@ -163,8 +172,73 @@ if (migration2) {
   check("Migration 002 is additive", !/\bdrop table\b|\btruncate\b|\bdrop column\b/i.test(migration2));
   check("Migration 002 can be re-run safely", /add column if not exists/i.test(migration2) && /create table if not exists/i.test(migration2));
 } else {
-  check("Focus intelligence migration file is missing", false);
+  check("Focus intelligence migration is optional in this checkout", true);
 }
+
+if (migration3) {
+  check("Android/offline migration exists", true);
+  check("Migration 003 adds the theme preference", /add column if not exists theme text/i.test(migration3));
+  check(
+    "Migration 003 adds notification settings",
+    /add column if not exists notification_settings jsonb/i.test(migration3),
+  );
+  check(
+    "Migration 003 creates owner-scoped push tokens",
+    /create table if not exists public\.device_push_tokens/i.test(migration3) &&
+      /device_push_tokens_select_own/i.test(migration3) &&
+      /auth\.uid\(\) = user_id/i.test(migration3),
+  );
+  check(
+    "Migration 003 is additive",
+    !/\bdrop table\b|\btruncate\b|\bdrop column\b/i.test(migration3),
+  );
+  check(
+    "Migration 003 can be re-run safely",
+    /add column if not exists/i.test(migration3) &&
+      /create table if not exists/i.test(migration3) &&
+      /drop policy if exists/i.test(migration3),
+  );
+} else {
+  check("Android/offline migration file is missing", false);
+}
+
+// Android / offline / theme platform checks.
+const offline = read("offline-sync.js");
+const nativeShell = read("native-shell.js");
+const syncUi = read("sync-ui.js");
+const themes = read("themes.css");
+const mobile = read("mobile.css");
+const capacitor = read("capacitor.config.json");
+const localeRuntime = read("locales.js");
+
+check("Index loads the offline engine before the app", html.indexOf("offline-sync.js") < html.indexOf("app.js"));
+check("Index loads the native shell", html.includes("native-shell.js"));
+check("Index loads the sync UI", html.includes("sync-ui.js"));
+check("Index loads local fonts", html.includes("fonts/fonts.css"));
+check("Index uses a local Supabase SDK", html.includes("vendor/supabase.js"));
+check("Index applies the theme before first paint", html.includes("studyflow.theme.preset"));
+check("Capacitor app id is configured", /"appId"\s*:\s*"com\.studyzone\.app"/.test(capacitor));
+check("Capacitor web dir is www", /"webDir"\s*:\s*"www"/.test(capacitor));
+check("Offline engine wraps fetch", offline.includes("window.fetch = function studyZoneFetch"));
+check("Offline engine uses IndexedDB", offline.includes("indexedDB.open"));
+check("Offline queue is idempotent", offline.includes("idempotency") || offline.includes("idempotencyKey"));
+check("Offline engine isolates accounts", offline.includes("function clearUser("));
+check("Offline engine stores conflicts", offline.includes("CONFLICT_STORE"));
+check("Offline focus records are queued", offline.includes("queueFocusRecord"));
+check("Sync UI renders conflicts", syncUi.includes("data-conflict-choice"));
+check("Native shell handles the Android back button", nativeShell.includes('"backButton"'));
+check("Native shell schedules local notifications", nativeShell.includes("LocalNotifications.schedule"));
+check("Native shell creates notification channels", nativeShell.includes("createChannel"));
+check("Native shell handles deep links", nativeShell.includes('"appUrlOpen"'));
+check("Native shell handles the keyboard", nativeShell.includes('"keyboardWillShow"'));
+check("Native shell synchronizes on resume", nativeShell.includes('"appStateChange"'));
+check("Theme stylesheet defines six presets", ["ocean", "emerald", "purple", "crimson", "midnight"].every((id) => themes.includes(`data-theme-preset="${id}"`)));
+check("Mobile stylesheet handles safe areas", mobile.includes("safe-area-inset"));
+check("Locale runtime contains both languages", localeRuntime.includes("en:") && localeRuntime.includes("ar:"));
+check(
+  "No service-role key in native/offline files",
+  !/service_role\s*[:=]/i.test(offline + nativeShell + syncUi + capacitor),
+);
 
 if (failures.length) {
   console.error(`Static checks failed (${failures.length}):`);

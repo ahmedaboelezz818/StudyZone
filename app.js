@@ -1363,6 +1363,8 @@
     "Designed for focus, day or night": "مصممة للتركيز ليلًا ونهارًا",
     "Emerald accents": "لمسات الزمرد",
     "Official Study Zone color palette": "لوحة ألوان Study Zone الرسمية",
+    "Orange": "Orange",
+    "Warm orange surfaces with a bright amber accent": "Warm orange surfaces with a bright amber accent",
     Language: "اللغة",
     "Display language": "لغة العرض",
     "Deadlines appear in the selected language.":
@@ -1557,6 +1559,12 @@
     "Today ·": "اليوم ·",
     "Tomorrow ·": "غدًا ·",
   };
+  // The runtime dictionaries are generated into locales.js from this object
+  // plus the additive Android/offline strings. Merging keeps one central
+  // source while still allowing the translation files to be edited directly.
+  if (window.studyZoneLocales?.ar) {
+    Object.assign(interfaceText, window.studyZoneLocales.ar);
+  }
   const originalTextNodes = new WeakMap();
   const originalAttributes = new WeakMap();
 
@@ -7407,6 +7415,201 @@
     return `${pageHeading("YOUR ACCOUNT", "Profile", "Your academic workspace, at a glance.", "")}<div class="profile-layout"><section class="panel profile-card"><div class="profile-avatar" dir="ltr">${avatar}</div><h2 dir="auto">${escapeHtml(displayName)}</h2><p dir="ltr">${escapeHtml(email)}</p><div class="profile-stats"><div><strong>${session && rewardSummary ? rewardCounterMarkup("profile-level", rewardSummary.level) : "—"}</strong><small>Level</small></div><div><strong>${session && rewardSummary ? rewardCounterMarkup("profile-streak", rewardSummary.current_streak) : "—"}</strong><small>Day streak</small></div></div><p class="profile-xp">${session && rewardSummary ? `${rewardCounterMarkup("profile-xp", rewardSummary.total_xp)} XP` : translateUiText("Sign in to earn secure rewards.")}</p></section><section class="panel">${panelHeading("Academic profile", "Personal details stay private to your account")}<div class="setting-row"><div><strong>Email</strong><small dir="ltr">${escapeHtml(email)}</small></div></div><div class="setting-row"><div><strong>Timezone</strong><small dir="ltr">${escapeHtml(timezone)}</small></div></div><div class="setting-row"><div><strong>Language</strong><small>${escapeHtml(accountProfile?.language || appLanguage)}</small></div></div><button class="button button-secondary button-small section-spacer" data-action="profile-edit" ${session ? "" : "disabled"}>Edit profile</button>${session ? "" : `<p class="data-caption">Sign in to edit your account profile.</p>`}</section></div>`;
   }
 
+  const THEME_PRESETS = [
+    {
+      id: "original",
+      label: "Original",
+      description: "Original Study Zone identity",
+      colors: ["#0C4137", "#06D6A0"],
+      meta: "#0C4137",
+    },
+    {
+      id: "ocean",
+      label: "Ocean Blue",
+      description: "Calm blue surfaces with a bright sky accent",
+      colors: ["#0B3245", "#38BDF8"],
+      meta: "#0B3245",
+    },
+    {
+      id: "emerald",
+      label: "Emerald",
+      description: "Deep green surfaces with a fresh emerald accent",
+      colors: ["#0A3529", "#10B981"],
+      meta: "#0A3529",
+    },
+    {
+      id: "purple",
+      label: "Purple",
+      description: "Soft violet surfaces with a lavender accent",
+      colors: ["#241A44", "#A78BFA"],
+      meta: "#241A44",
+    },
+    {
+      id: "crimson",
+      label: "Crimson",
+      description: "Warm crimson surfaces with a rose accent",
+      colors: ["#4A1220", "#FB7185"],
+      meta: "#4A1220",
+    },
+    {
+      id: "midnight",
+      label: "Midnight",
+      description: "Deep navy surfaces with a clear blue accent",
+      colors: ["#101C33", "#60A5FA"],
+      meta: "#101C33",
+    },
+    {
+      id: "orange",
+      label: "Orange",
+      description: "Warm orange surfaces with a bright amber accent",
+      colors: ["#3A1F0E", "#F97316"],
+      meta: "#3A1F0E",
+    },
+  ];
+  const themePresetIds = new Set(THEME_PRESETS.map((preset) => preset.id));
+
+  function normalizeThemePreset(value) {
+    return themePresetIds.has(value) ? value : "original";
+  }
+
+  function currentThemePreset() {
+    return normalizeThemePreset(
+      document.documentElement.dataset.themePreset ||
+        localStorage.getItem("studyflow.theme.preset") ||
+        "original",
+    );
+  }
+
+  function applyThemePreset(themeId, { persist = true, announce = false } = {}) {
+    const id = normalizeThemePreset(themeId);
+    if (id === "original") {
+      delete document.documentElement.dataset.themePreset;
+    } else {
+      document.documentElement.dataset.themePreset = id;
+    }
+    if (persist) localStorage.setItem("studyflow.theme.preset", id);
+    const preset = THEME_PRESETS.find((item) => item.id === id);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta && preset?.meta) meta.content = preset.meta;
+    document.querySelectorAll("[data-theme-preset-option]").forEach((option) => {
+      const selected = option.dataset.themePresetOption === id;
+      option.classList.toggle("selected", selected);
+      option.setAttribute("aria-pressed", String(selected));
+    });
+    window.dispatchEvent(
+      new CustomEvent("studyzone:theme-changed", { detail: { theme: id } }),
+    );
+    if (announce) showToast("Theme applied.");
+  }
+
+  async function saveThemePreset(themeId) {
+    const id = normalizeThemePreset(themeId);
+    applyThemePreset(id, { announce: true });
+    if (!supabase || !session) return;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ theme: id })
+      .eq("id", session.user.id);
+    if (error) {
+      console.warn("Could not save the theme to the profile.", error);
+      showToast(
+        `Theme saved on this device, but account sync failed: ${error.message}`,
+      );
+    }
+  }
+
+  function themeSettingsPanel() {
+    const selected = currentThemePreset();
+    const options = THEME_PRESETS.map(
+      (preset) =>
+        `<button class="theme-option ${selected === preset.id ? "selected" : ""}" type="button" data-theme-preset-option="${preset.id}" aria-pressed="${selected === preset.id}"><span class="theme-preview" style="--theme-preview-a:${preset.colors[0]};--theme-preview-b:${preset.colors[1]}"><i></i><i></i><i></i></span><strong>${translateUiText(preset.label)}</strong><small>${translateUiText(preset.description)}</small><span class="theme-check" aria-hidden="true">✓</span></button>`,
+    ).join("");
+    return `<section class="panel">${panelHeading(translateUiText("Themes"), translateUiText("Themes keep the same layout and only change the color palette."))}<div class="theme-grid" role="group" aria-label="${translateUiText("Choose a color theme")}">${options}</div></section>`;
+  }
+
+  const notificationTypesKey = "studyzone.notification.types";
+  const defaultNotificationTypes = {
+    tasks: true,
+    deadlines: true,
+    exams: true,
+    sessions: true,
+    pomodoro: true,
+    goals: true,
+    team: true,
+    challenges: true,
+    achievements: true,
+  };
+
+  function notificationTypes() {
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem(notificationTypesKey) || "null",
+      );
+      return { ...defaultNotificationTypes, ...(saved || {}) };
+    } catch {
+      return { ...defaultNotificationTypes };
+    }
+  }
+
+  function saveNotificationTypes(next) {
+    const value = { ...notificationTypes(), ...next };
+    localStorage.setItem(notificationTypesKey, JSON.stringify(value));
+    window.dispatchEvent(
+      new CustomEvent("studyzone:notification-types", { detail: value }),
+    );
+    if (supabase && session) {
+      void supabase
+        .from("profiles")
+        .update({ notification_settings: value })
+        .eq("id", session.user.id)
+        .then(({ error }) => {
+          if (error && !isMissingColumnError(error))
+            console.warn("Could not sync notification settings.", error);
+        });
+    }
+    return value;
+  }
+
+  function notificationSettingsPanel() {
+    const types = notificationTypes();
+    const rows = [
+      ["tasks", "Task reminders"],
+      ["deadlines", "Deadline reminders"],
+      ["exams", "Exam reminders"],
+      ["sessions", "Study session reminders"],
+      ["pomodoro", "Pomodoro start and end"],
+      ["goals", "Daily goals"],
+      ["team", "Team activity"],
+      ["challenges", "Challenge updates"],
+      ["achievements", "Achievement alerts"],
+    ]
+      .map(
+        ([key, label]) =>
+          `<label class="notification-type"><span>${translateUiText(label)}</span><input type="checkbox" data-notification-type="${key}" ${types[key] ? "checked" : ""}></label>`,
+      )
+      .join("");
+    const native = Boolean(window.StudyZoneNotifications?.isNative);
+    return `<section class="panel">${panelHeading(translateUiText("Android notifications"), translateUiText("Reminders are scheduled on this device and work while the app is closed."))}<div class="notification-type-grid">${rows}</div><div class="setting-row"><div><strong>${translateUiText("Enable notifications")}</strong><small>${translateUiText(native ? "Native notifications" : "Notifications are not available on this device.")}</small></div><button class="button button-secondary button-small" type="button" data-action="native-notification-permission">${translateUiText("Enable notifications")}</button></div><p class="data-caption" data-notification-status role="status"></p></section>`;
+  }
+
+  function syncSettingsPanel() {
+    const offline = window.StudyZoneOffline;
+    const snapshot = offline?.state || {
+      status: navigator.onLine ? "synced" : "offline",
+      pending: 0,
+      failed: 0,
+      conflicts: 0,
+      lastSyncAt: 0,
+    };
+    const lastSync = snapshot.lastSyncAt
+      ? new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", {
+          dateStyle: "medium",
+          timeStyle: "short",
+        }).format(new Date(snapshot.lastSyncAt))
+      : translateUiText("Never");
+    return `<section class="panel" data-sync-settings>${panelHeading(translateUiText("Offline & sync"), translateUiText("Changes are saved on this device and sent automatically when you reconnect."))}<div class="sync-summary"><div class="sync-summary-row"><span>${translateUiText("Status")}</span><strong data-sync-status>${translateUiText(snapshot.status === "synced" ? "Synced" : snapshot.status === "offline" ? "Offline" : snapshot.status === "syncing" ? "Syncing" : snapshot.status === "failed" ? "Sync failed" : "Pending sync")}</strong></div><div class="sync-summary-row"><span>${translateUiText("Queued changes")}</span><strong data-sync-pending>${snapshot.pending}</strong></div><div class="sync-summary-row"><span>${translateUiText("Failed changes")}</span><strong data-sync-failed>${snapshot.failed}</strong></div><div class="sync-summary-row"><span>${translateUiText("Conflicts")}</span><strong data-sync-conflicts>${snapshot.conflicts}</strong></div><div class="sync-summary-row"><span>${translateUiText("Last sync")}</span><strong data-sync-last>${escapeHtml(lastSync)}</strong></div></div><div class="sync-conflicts" data-sync-conflict-list></div><button class="button button-primary button-small" type="button" data-action="sync-now">${translateUiText("Sync now")}</button><p class="data-caption">${translateUiText("Your account data stays private.")} ${translateUiText("All data is protected by Supabase row-level security.")}</p></section>`;
+  }
+
   function settingsPage() {
     const motionOptions = [
       ["full", "Full Motion", "Layered transitions and celebrations"],
@@ -7421,7 +7624,7 @@
     const reminderForm = session
       ? `<form id="daily-reminder-form" class="form-stack daily-reminder-form"><label class="focus-setting-toggle"><span>${translateUiText("Enable push reminders")}</span><input type="checkbox" name="enabled" ${dailyReminderPreference.enabled ? "checked" : ""}><i aria-hidden="true"></i></label><p class="data-caption">${translateUiText("Get a daily task check-in plus deadline and achievement notifications, even when Study Zone is closed.")}</p><label>${translateUiText("Reminder time")}<input type="time" name="local_time" value="${escapeHtml(String(dailyReminderPreference.local_time || "09:00").slice(0, 5))}" required></label><small>${translateUiText("Uses this device’s timezone.")}</small><button class="button button-primary button-small" type="submit">${translateUiText("Save reminder")}</button><p class="data-caption">${translateUiText("Push reminders need notification permission and the server setup described in README.md.")}</p><p class="form-error" data-reminder-error role="alert"></p></form>`
       : `<p class="data-caption">${translateUiText("Sign in to configure daily reminders.")}</p>`;
-    return `${pageHeading("MAKE IT YOURS", "Settings", "Tune Study Zone to the way you like to work.", "")}<div class="grid settings-grid"><section class="panel">${panelHeading("Appearance")}<div class="setting-row"><div><strong>Dark theme</strong><small>Designed for focus, day or night</small></div><button class="toggle on" data-action="theme-toggle" aria-label="Toggle light theme" aria-pressed="false"></button></div><div class="setting-row"><div><strong>Emerald accents</strong><small>Official Study Zone color palette</small></div><span class="subject-color"></span></div><div class="setting-row"><div><strong>Motion & celebrations</strong><small>Choose how much motion Study Zone uses.</small></div></div><div class="motion-options" role="group" aria-label="Animation level">${motionOptions}</div></section><section class="panel">${panelHeading("Language")}<div class="setting-row"><div><strong>Display language</strong><small>Deadlines appear in the selected language.</small></div></div><div class="language-switcher" role="group" aria-label="Choose language"><span class="language-indicator ${appLanguage === "ar" ? "arabic" : ""}"></span><button class="language-option ${appLanguage === "ar" ? "selected" : ""}" data-language="ar" aria-pressed="${appLanguage === "ar"}">عربي <span>العربية</span></button><button class="language-option ${appLanguage === "en" ? "selected" : ""}" data-language="en" aria-pressed="${appLanguage === "en"}">EN <span>English</span></button></div></section><section class="panel">${panelHeading("Reminders")}<div class="setting-row"><div><strong>Daily study check-in</strong><small>Review your open tasks once a day, even when Study Zone is closed.</small></div></div>${reminderForm}</section>${notificationPreferencesPanel()}<section class="panel">${panelHeading("Data & privacy")}<div class="setting-row"><div><strong>Account data</strong><small>Stored in your private Supabase account when configured</small></div></div><div class="setting-row"><div><strong>Service keys</strong><small>Only the public anon key belongs in this browser config.</small></div></div></section><section class="panel">${panelHeading("Backup & restore", "Your data, portable")}<p class="panel-copy">Download a private JSON copy of your tasks, routines, notes, journal, focus history, and preferences. Restoring merges new items and skips duplicates.</p><div class="setting-row"><div><strong>Export a backup</strong><small>Nothing leaves this device except the file you download.</small></div><button class="button button-secondary button-small" data-action="backup-export">Download</button></div><div class="setting-row"><div><strong>Restore from a backup</strong><small>Validated first, then merged without overwriting existing records.</small></div><button class="button button-secondary button-small" data-action="backup-import">Choose file</button></div><input id="backup-import-input" type="file" accept="application/json,.json" hidden /><p class="data-caption">Only restore files you exported from Study Zone. Never share a backup publicly.</p></section></div>`;
+    return `${pageHeading("MAKE IT YOURS", "Settings", "Tune Study Zone to the way you like to work.", "")}<div class="grid settings-grid"><section class="panel">${panelHeading("Appearance")}<div class="setting-row"><div><strong>Dark theme</strong><small>Designed for focus, day or night</small></div><button class="toggle on" data-action="theme-toggle" aria-label="Toggle light theme" aria-pressed="false"></button></div><div class="setting-row"><div><strong>Emerald accents</strong><small>Official Study Zone color palette</small></div><span class="subject-color"></span></div><div class="setting-row"><div><strong>Motion & celebrations</strong><small>Choose how much motion Study Zone uses.</small></div></div><div class="motion-options" role="group" aria-label="Animation level">${motionOptions}</div></section>${themeSettingsPanel()}<section class="panel">${panelHeading("Language")}<div class="setting-row"><div><strong>Display language</strong><small>Deadlines appear in the selected language.</small></div></div><div class="language-switcher" role="group" aria-label="Choose language"><span class="language-indicator ${appLanguage === "ar" ? "arabic" : ""}"></span><button class="language-option ${appLanguage === "ar" ? "selected" : ""}" data-language="ar" aria-pressed="${appLanguage === "ar"}">عربي <span>العربية</span></button><button class="language-option ${appLanguage === "en" ? "selected" : ""}" data-language="en" aria-pressed="${appLanguage === "en"}">EN <span>English</span></button></div></section><section class="panel">${panelHeading("Reminders")}<div class="setting-row"><div><strong>Daily study check-in</strong><small>Review your open tasks once a day, even when Study Zone is closed.</small></div></div>${reminderForm}</section>${notificationSettingsPanel()}${notificationPreferencesPanel()}${syncSettingsPanel()}<section class="panel">${panelHeading("Data & privacy")}<div class="setting-row"><div><strong>Account data</strong><small>Stored in your private Supabase account when configured</small></div></div><div class="setting-row"><div><strong>Service keys</strong><small>Only the public anon key belongs in this browser config.</small></div></div></section><section class="panel">${panelHeading("Backup & restore", "Your data, portable")}<p class="panel-copy">Download a private JSON copy of your tasks, routines, notes, journal, focus history, and preferences. Restoring merges new items and skips duplicates.</p><div class="setting-row"><div><strong>Export a backup</strong><small>Nothing leaves this device except the file you download.</small></div><button class="button button-secondary button-small" data-action="backup-export">Download</button></div><div class="setting-row"><div><strong>Restore from a backup</strong><small>Validated first, then merged without overwriting existing records.</small></div><button class="button button-secondary button-small" data-action="backup-import">Choose file</button></div><input id="backup-import-input" type="file" accept="application/json,.json" hidden /><p class="data-caption">Only restore files you exported from Study Zone. Never share a backup publicly.</p></section></div>`;
   }
 
   function formatAdminDate(value) {
@@ -8529,6 +8732,8 @@
     ).format(new Date());
     updateStreakSidebar();
     updateAdminNavigation();
+    window.StudyZoneNotifications?.syncTaskReminders?.(tasks, examResults);
+    window.StudyZoneSyncUI?.refresh?.();
     if (currentPage === "tasks") {
       document
         .getElementById("task-search")
@@ -9264,6 +9469,33 @@
       localStorage.setItem("studyflow.language", appLanguage);
       document.documentElement.lang = appLanguage;
       document.documentElement.dir = appLanguage === "ar" ? "rtl" : "ltr";
+    }
+    try {
+      const { data: appearance, error: appearanceError } = await supabase
+        .from("profiles")
+        .select("theme,notification_settings")
+        .eq("id", session.user.id)
+        .maybeSingle();
+      if (!appearanceError && appearance) {
+        if (themePresetIds.has(appearance.theme)) {
+          applyThemePreset(appearance.theme, { persist: true });
+        }
+        if (
+          appearance.notification_settings &&
+          typeof appearance.notification_settings === "object"
+        ) {
+          localStorage.setItem(
+            notificationTypesKey,
+            JSON.stringify({
+              ...defaultNotificationTypes,
+              ...appearance.notification_settings,
+            }),
+          );
+        }
+      }
+    } catch (appearanceError) {
+      if (!isMissingColumnError(appearanceError))
+        console.warn("Could not load appearance preferences.", appearanceError);
     }
   }
 
@@ -10985,6 +11217,7 @@
       return;
     }
     session = result.data.session;
+    window.StudyZoneOffline?.setUser?.(session?.user?.id || null);
     localStorage.setItem(authPromptStorageKey, "seen");
     closeModal(document.getElementById("auth-modal"));
     updateUserUi();
@@ -11028,6 +11261,7 @@
       return;
     }
     session = data.session;
+    window.StudyZoneOffline?.setUser?.(session?.user?.id || null);
     if (session) localStorage.setItem(authPromptStorageKey, "seen");
     else if (!localStorage.getItem(authPromptStorageKey)) {
       openModal(document.getElementById("auth-modal"));
@@ -11042,6 +11276,35 @@
         tasks = [];
         subjects = [];
         clearAccountWorkspace();
+        // Offline-first: render cached local data instantly, then refresh from network
+        const offline = window.StudyZoneOffline;
+        const userId = session.user.id;
+        if (offline) {
+          const cachedSubjects = await offline.getCachedTableData(userId, "subjects");
+          if (cachedSubjects) {
+            subjects = cachedSubjects.map((s) => ({
+              ...s,
+              credits: s.credit_hours,
+              progress: null,
+            }));
+          }
+          const cachedTasks = await offline.getCachedTableData(userId, "tasks");
+          if (cachedTasks) {
+            tasks = cachedTasks.map((t) => ({
+              recurrence_group_id: null,
+              recurrence_type: "none",
+              recurrence_days: [],
+              recurrence_until: null,
+              open_count: 0,
+              completed_count: 0,
+              postpone_count: 0,
+              is_all_day: false,
+              ...t,
+              subject: t.subjects?.name || "Independent study",
+            }));
+          }
+          scheduleRender();
+        }
         await loadRemoteTasks();
         await loadAccountWorkspace();
         await loadRemoteNotifications();
@@ -11053,6 +11316,7 @@
     }
     supabase.auth.onAuthStateChange((_event, nextSession) => {
       session = nextSession;
+      window.StudyZoneOffline?.setUser?.(session?.user?.id || null);
       adminAuthorization = {
         status: "unknown",
         userId: session?.user?.id || null,
@@ -11068,6 +11332,34 @@
           try {
             await verifyAdminAccess();
             await loadLanguagePreference();
+            const offline = window.StudyZoneOffline;
+            const userId = session.user.id;
+            if (offline) {
+              const cachedSubjects = await offline.getCachedTableData(userId, "subjects");
+              if (cachedSubjects) {
+                subjects = cachedSubjects.map((s) => ({
+                  ...s,
+                  credits: s.credit_hours,
+                  progress: null,
+                }));
+              }
+              const cachedTasks = await offline.getCachedTableData(userId, "tasks");
+              if (cachedTasks) {
+                tasks = cachedTasks.map((t) => ({
+                  recurrence_group_id: null,
+                  recurrence_type: "none",
+                  recurrence_days: [],
+                  recurrence_until: null,
+                  open_count: 0,
+                  completed_count: 0,
+                  postpone_count: 0,
+                  is_all_day: false,
+                  ...t,
+                  subject: t.subjects?.name || "Independent study",
+                }));
+              }
+              scheduleRender();
+            }
             await loadRemoteTasks();
             await loadAccountWorkspace();
             await loadRemoteNotifications();
@@ -11488,10 +11780,13 @@
         showToast(`${focusText[appLanguage].sessionError} ${error.message}`);
         return;
       }
-      if (!focusSession.startedAt) focusSession.startedAt = data.started_at;
+      if (!focusSession.startedAt)
+        focusSession.startedAt = data?.started_at || new Date(now).toISOString();
       focusSession.remoteStarted = true;
-      focusSession.elapsedBeforeRunMs =
-        Number(data.elapsed_seconds || 0) * 1000;
+      if (window.StudyZoneOffline?.isOnline?.() !== false) {
+        focusSession.elapsedBeforeRunMs =
+          Number(data?.elapsed_seconds || 0) * 1000;
+      }
       focusSession.remainingMs = Math.max(
         0,
         getFocusDurationMs(focusSession.type) - focusSession.elapsedBeforeRunMs,
@@ -11520,7 +11815,12 @@
     if (focusSession.status !== "running") return;
     const now = Date.now();
     let remoteElapsedMs = null;
-    if (focusSession.remoteStarted && supabase && session) {
+    if (
+      focusSession.remoteStarted &&
+      supabase &&
+      session &&
+      window.StudyZoneOffline?.isOnline?.() !== false
+    ) {
       const { data, error } = await supabase.rpc("pause_focus_session", {
         p_session_key: focusSession.id,
       });
@@ -11592,6 +11892,20 @@
       pendingFocusRecords.push(record);
     focusSaving = true;
     persistFocusState();
+    if (
+      navigator.onLine === false ||
+      window.StudyZoneOffline?.isOnline?.() === false
+    ) {
+      void window.StudyZoneOffline?.queueFocusRecord?.(record);
+      focusSaving = false;
+      focusDataError = "";
+      updateActivityFromFocusRecords();
+      persistFocusState();
+      focusRecordSavesInFlight.delete(record.idempotency_key);
+      if (currentPage === "focus") render();
+      showToast("This change is saved on this device.");
+      return true;
+    }
     const rpc = record.completed
       ? "finish_focus_session"
       : "cancel_focus_session";
@@ -11627,6 +11941,17 @@
       historyError = error;
     }
     if (historyError || !data) {
+      if (
+        navigator.onLine === false ||
+        window.StudyZoneOffline?.isOnline?.() === false
+      ) {
+        focusSaving = false;
+        focusDataError = "";
+        focusRecordSavesInFlight.delete(record.idempotency_key);
+        persistFocusState();
+        if (currentPage === "focus") render();
+        return true;
+      }
       focusDataError =
         historyError?.message ||
         "The verified focus record could not be read back.";
@@ -11957,7 +12282,7 @@
 
   document.addEventListener("click", async (event) => {
     const target = event.target.closest(
-      "[data-page], [data-navigate], [data-action], [data-motion-level], [data-close-modal], [data-deadline-filter], [data-deadline-view], [data-language], #open-auth, #top-profile, #mobile-menu, #timer-toggle, #timer-reset, #timer-skip, [data-auth-mode], #sign-out",
+      "[data-page], [data-navigate], [data-action], [data-motion-level], [data-close-modal], [data-deadline-filter], [data-deadline-view], [data-language], #open-auth, #top-profile, #mobile-menu, #timer-toggle, #timer-reset, #timer-skip, [data-auth-mode], #sign-out, [data-theme-preset-option]",
     );
     if (!target) return;
     if (target.matches("[data-page], [data-navigate]")) {
@@ -12350,6 +12675,44 @@
           { duration: 180, easing: "ease-out" },
         );
       showToast("Settings saved.");
+    } else if (target.matches("[data-theme-preset-option]")) {
+      await saveThemePreset(target.dataset.themePresetOption);
+      if (shouldAnimate())
+        target.animate?.(
+          [{ transform: "scale(.97)" }, { transform: "scale(1)" }],
+          { duration: 180, easing: "ease-out" },
+        );
+    } else if (target.matches('[data-action="sync-now"]')) {
+      target.disabled = true;
+      try {
+        const result = await window.StudyZoneOffline?.syncNow();
+        showToast(
+          result?.ok
+            ? "Sync complete."
+            : result?.reason === "offline"
+              ? "Working offline"
+              : "Could not sync. Will retry automatically.",
+        );
+      } finally {
+        target.disabled = false;
+      }
+    } else if (target.matches('[data-action="native-notification-permission"]')) {
+      const status = document.querySelector("[data-notification-status]");
+      try {
+        const permission =
+          await window.StudyZoneNotifications?.requestPermission?.();
+        if (status)
+          status.textContent =
+            permission === "granted"
+              ? appLanguage === "ar"
+                ? "تم تفعيل الإشعارات."
+                : "Notifications are enabled."
+              : appLanguage === "ar"
+                ? "إذن الإشعارات مطلوب."
+                : "Notification permission is required.";
+      } catch (error) {
+        if (status) status.textContent = error?.message || String(error);
+      }
     } else if (target.matches("[data-motion-level]")) {
       motionLevel = target.dataset.motionLevel;
       animationsEnabled = motionLevel !== "off";
@@ -12412,12 +12775,32 @@
         );
         showToast(`Push subscription cleanup failed: ${error.message}`);
       }
+      const offlineStore = window.StudyZoneOffline;
+      const offlineUserId = session?.user?.id;
+      if (offlineStore && offlineUserId) {
+        const snapshot = offlineStore.state;
+        if ((snapshot.pending || snapshot.failed) && snapshot.online) {
+          await offlineStore.syncNow({ silent: true }).catch(() => {});
+        } else if (
+          (snapshot.pending || snapshot.failed) &&
+          !snapshot.online &&
+          !window.confirm(
+            appLanguage === "ar"
+              ? "لديك تغييرات محفوظة على هذا الجهاز ولم تُزامن بعد. ستُحذف عند تسجيل الخروج. هل تريد المتابعة؟"
+              : "You have changes saved on this device that have not synced yet. They will be removed when you sign out. Continue?",
+          )
+        ) {
+          return;
+        }
+      }
       const { error } = await supabase.auth.signOut();
       if (error) {
         showToast(`Could not sign out: ${error.message}`);
         console.error("Supabase sign out failed.", error);
         return;
       }
+      await offlineStore?.clearUser?.(offlineUserId);
+      window.StudyZoneNotifications?.cancelAll?.();
       session = null;
       adminAuthorization = { status: "denied", userId: null };
       adminUsersRequest += 1;
@@ -12604,6 +12987,12 @@
       updateFocusSoundVolume(target.value);
     } else if (target?.id === "quick-capture-type") {
       quickCaptureType = target.value;
+    } else if (target?.matches?.("[data-notification-type]")) {
+      saveNotificationTypes({
+        [target.dataset.notificationType]: target.checked,
+      });
+      if (window.StudyZoneNotifications?.syncTaskReminders)
+        window.StudyZoneNotifications.syncTaskReminders(tasks, examResults);
     }
   });
 
@@ -12836,6 +13225,50 @@
 
   const storedTheme = localStorage.getItem("studyflow.theme");
   if (storedTheme === "light") document.documentElement.dataset.theme = "light";
+  applyThemePreset(currentThemePreset(), { persist: false });
+  window.StudyZoneApp = {
+    get tasks() {
+      return tasks;
+    },
+    get exams() {
+      return examResults;
+    },
+    get language() {
+      return appLanguage;
+    },
+    get page() {
+      return currentPage;
+    },
+    get focus() {
+      return {
+        id: focusSession.id,
+        type: focusSession.type,
+        status: focusSession.status,
+        cycle: focusSession.cycle,
+        endAt: focusSession.endAt,
+        remainingMs: getFocusRemainingMs(),
+        taskId: focusSession.taskId,
+        subjectId: focusSession.subjectId,
+        goal: focusSession.goal,
+      };
+    },
+    reconcileFocus: () => reconcileFocusTimer(),
+    render,
+    setLanguage,
+    setTheme: saveThemePreset,
+    applyTheme: applyThemePreset,
+    navigate,
+    syncReminders: () =>
+      window.StudyZoneNotifications?.syncTaskReminders?.(tasks, examResults),
+    reloadWorkspace: async () => {
+      if (!supabase || !session) return;
+      await loadRemoteTasks();
+      await loadAccountWorkspace();
+      await loadRemoteNotifications({ silent: true });
+    },
+    isOffline: () => navigator.onLine === false,
+    translate: translateUiText,
+  };
   document.getElementById("footer-year").textContent = new Date().getFullYear();
   updateOfflineStatus();
   document.documentElement.dataset.motion = motionLevel;

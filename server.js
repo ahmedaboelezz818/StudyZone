@@ -13,6 +13,9 @@ const mimeTypes = {
   ".png": "image/png",
   ".ico": "image/x-icon",
   ".webmanifest": "application/manifest+json; charset=utf-8",
+  ".woff2": "font/woff2",
+  ".woff": "font/woff",
+  ".wav": "audio/wav",
 };
 const port = Number(process.env.PORT || 5500);
 

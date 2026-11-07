@@ -65,16 +65,14 @@ The Teams page supports creating a private team, joining with a short code, list
 
 ## Static checks
 
-This repository has no build step or browser test runner. Run the dependency-free static checks and syntax checks with:
+The website has no frontend build step. The Android wrapper is generated with Capacitor. Run every dependency-free syntax, static, platform and localization check with:
 
 ```text
-node --check app.js
-node --check service-worker.js
-node --check server.js
-node tests/static-checks.js
+npm install
+npm run check
 ```
 
-The checks cover required page functions, modal/ID wiring, safe date helpers, absence of a service-role key in browser files, routine/journal/distraction/search/backup wiring, the migration contents/RLS, and cache versioning. They do not replace authenticated multi-user testing against a real Supabase project.
+The checks cover required page functions, modal/ID wiring, safe date helpers, absence of a service-role key in browser files, routine/journal/distraction/search/backup wiring, migration contents/RLS, cache versioning, the Capacitor configuration, the offline queue, native notification wiring, the six theme presets, and Arabic/English dictionary parity. They do not replace authenticated multi-user testing against a real Supabase project or a physical Android device.
 
 ## Admin authorization
 
@@ -113,13 +111,101 @@ The service worker caches only the versioned static app-shell files and branded 
 ## Notes
 
 - In preview mode, task, note, and voice-note edits are stored in this browser (voice previews are session-only). Sign in for account-backed sync.
-- The browser loads Supabase JS v2 from jsDelivr. A network connection is needed for Supabase auth/database/storage features.
+- Supabase JS v2 is vendored locally at `vendor/supabase.js`, and fonts are stored in `fonts/`, so the interface shell works without a CDN. Supabase auth/database/storage still needs a network connection.
 - The Admin page shows no fabricated user-wide metrics. Admin authorization is backed by the `site_admins` allowlist; no cross-user admin data endpoint is implemented.
 - Voice transcription is optional and not implemented in this round; `voice_notes.transcription_status` is ready for a future Edge Function.
 - Notification sounds and do-not-disturb hours are available in Settings, persist locally, and sync to `user_notification_preferences` when the migration has been applied. Task reminder sounds, Pomodoro sounds, preview, volume, duration, and repeat controls are available in Settings. The notification list is refreshed while the app is open; it is not a realtime subscription.
 - The `team_task_comments` table is created by the migration, but the team comment UI is not wired yet.
 - Recurring-series changes use separate owner-scoped updates. A network failure partway through a series update can leave some occurrences updated; there is no transactional series RPC yet.
 - `002_focus_intelligence.sql` has not been applied to the live Supabase project from this environment (no admin/service credentials), so the new routines, distractions, and journal tables are only present locally until you run it. The app detects this and stores guest data locally, but signed-in sync of the new tables requires the migration.
-- Offline mode still serves only the cached app shell. Tasks and focus sessions continue to work from local state after a reconnect-safe save pattern, but full conflict resolution for simultaneous edits on two devices is not implemented; the last write wins per row.
-- No automated browser test suite exists in the repository. Verification for this round was limited to static checks (`node --check`), ID/wiring audits, and a local server smoke test; authenticated RLS behavior still needs testing in a real Supabase project.
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
+- Offline mode now keeps the cached app shell plus an IndexedDB read cache and write queue for tasks, notes, subjects, schedules, goals, exams, routines, journal entries, distractions, profiles, settings and focus-session RPCs. Pending writes are replayed automatically with idempotency keys; simultaneous edits are detected and surfaced in Settings for the user to resolve. Storage-backed files and team collaboration stay online-only and say so explicitly.
+- No browser automation suite is included. Verification uses `npm run check` plus manual Android emulator/device testing; authenticated RLS and push delivery still need testing against the live Supabase/Firebase projects.
+
+
+## Android app (Capacitor)
+
+The website in the repository root is still the canonical app. `scripts/build-web.js` copies it into `www/`, and Capacitor packages that folder as a native Android application. No page, design or feature is rebuilt or replaced.
+
+### Requirements
+
+- Node.js 18 or newer.
+- Android Studio with Android SDK 35 (or the SDK required by the installed Capacitor version).
+- JDK 21 (the JDK bundled with Android Studio is sufficient).
+- For release builds: a private keystore and its passwords.
+
+### Build and run
+
+```text
+npm install
+npm run build:web
+npx cap add android      # first time only
+npm run cap:sync         # copy the latest website into the Android project
+npm run android:debug    # assemble a debug APK
+```
+
+The debug APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`. Open the project with `npm run cap:open` to run it on an emulator or a connected device from Android Studio. Every change to the website must be followed by `npm run cap:sync` before rebuilding.
+
+### Release signing
+
+1. Create a keystore once (keep it out of git):
+
+   ```text
+   keytool -genkeypair -v -keystore studyzone-release.jks -alias studyzone -keyalg RSA -keysize 2048 -validity 10000
+   ```
+
+2. Create `android/keystore.properties` (ignored by git):
+
+   ```text
+   storeFile=../studyzone-release.jks
+   storePassword=YOUR_STORE_PASSWORD
+   keyAlias=studyzone
+   keyPassword=YOUR_KEY_PASSWORD
+   ```
+
+3. Reference it from `android/app/build.gradle` as described in the Capacitor signing guide, then run `npm run android:release`. The release APK is written to `android/app/build/outputs/apk/release/`. Use `bundletool` or Android Studio to produce an `.aab` for Google Play.
+
+The keystore, passwords, `keystore.properties`, `google-services.json` and any service-role key are deliberately excluded from the repository. They cannot be generated by this project and must be supplied by the account owner.
+
+### Native behaviour
+
+- `native-shell.js` detects Capacitor and configures the status bar, splash screen, keyboard resize, safe areas, hardware back button, deep links and app lifecycle. On the website it is a no-op.
+- The Android back button closes an open dialog, then the mobile sidebar, then returns to the dashboard; pressing it again at the dashboard minimises the app.
+- Resuming the app reconciles the timestamp-based focus timer, refreshes reminders and runs the offline sync queue. A focus session is still saved only once because the database RPC receives the per-session idempotency key.
+- Local notifications use three Android channels: study reminders, focus timer and achievements. Per-type switches in Settings are respected. Reminders are scheduled from the data already loaded by the app, so they work while the app is closed.
+- File and image inputs continue to use the Android document picker and camera because `captureInput` is enabled.
+
+### Push notifications (external requirement)
+
+Local notifications need no external service. Real server-sent push requires a Firebase project:
+
+1. Create a Firebase Android app with package name `com.studyzone.app`.
+2. Download `google-services.json` into `android/app/`.
+3. Add the Google Services Gradle plugin and the Firebase Messaging dependency as described by Capacitor Push Notifications.
+4. Deploy a trusted server/Edge Function that reads `device_push_tokens` and sends FCM messages with the service-role key. The key must never appear in `www/` or any browser file.
+
+Without these external files, the app still builds and local notifications still work; only remote push delivery is disabled.
+
+## Offline-first data
+
+`offline-sync.js` loads before the Supabase client and wraps `window.fetch`. GET responses for user-owned tables are cached in IndexedDB per account. Writes to safe text-first tables and focus RPCs are queued when the network is unavailable, receive a generated UUID and idempotency key, and replay in order when connectivity returns. The queue is retried automatically every 30 seconds, when the app becomes visible, when Android reports a network change, and when the user taps **Sync now**.
+
+Each account has an isolated cache, queue and conflict list. Signing out clears the local copy for that account. Settings shows the live state (Synced, Pending sync, Syncing, Sync failed, Offline), queued/failed counts, the last sync time, and any conflicts. For a conflict the user can keep the device version or the server version. Files, voice notes and team collaboration remain online-only and return an explicit message rather than a false success.
+
+Apply `supabase/migrations/003_android_offline_notifications.sql` to add the profile theme/notification columns and the owner-scoped `device_push_tokens` table. The migration is additive and safe to re-run; it does not drop or rewrite existing data.
+
+## Themes and localization
+
+Six color presets are available in Settings: Original, Ocean Blue, Emerald, Purple, Crimson and Midnight. They are implemented with CSS custom properties in `themes.css`; `data-theme` still controls light/dark so the existing toggle keeps working, while `data-theme-preset` selects the palette. The choice applies instantly, is saved on the device before first paint, and syncs to `profiles.theme` when the account is online.
+
+The Arabic and English dictionaries are generated from the original `interfaceText` source into `locales/ar.json`, `locales/en.json` and `locales.js`. Run `npm run locales` after changing the dictionary and `npm run i18n:audit` to verify parity. Language switching updates the document direction, dates, numbers, navigation, dialogs, status messages and accessibility labels without a reload; user-entered content is never translated.
+
+## Verification checklist
+
+- `npm run check` — syntax, static wiring, Capacitor/platform wiring and localization parity.
+- Website smoke test with `npm start` at `http://127.0.0.1:5500`.
+- Android emulator/device: install the debug APK, sign in with the same account as the website, and confirm shared tasks/notes/goals/focus history.
+- Airplane mode: create/edit a task, note, goal and focus session; confirm the pending badge, then reconnect and confirm replay.
+- Theme: switch all six presets, toggle light/dark, force-stop and reopen the app; confirm persistence and account sync.
+- Language: switch Arabic/English, confirm RTL/LTR and that no static label stays in the other language.
+- Notifications: grant permission, create a task due in a few minutes and a focus session; confirm the native notification appears with the app closed.
+- Back button: open a dialog, the mobile sidebar and a sub-page; confirm each back press closes the right layer.
