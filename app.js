@@ -559,6 +559,43 @@
       ? "off"
       : "full";
   let animationsEnabled = motionLevel !== "off";
+
+  // ---- Animation settings ---------------------------------------------------
+  const savedAnimationEnabled = localStorage.getItem("studyflow.animation-enabled");
+  let animationEnabled = savedAnimationEnabled === null ? true : savedAnimationEnabled === "true";
+  const savedAnimationIntensity = localStorage.getItem("studyflow.animation-intensity");
+  let animationIntensity = ["low", "medium", "high"].includes(savedAnimationIntensity)
+    ? savedAnimationIntensity
+    : "medium";
+  const savedAnimationSpeed = localStorage.getItem("studyflow.animation-speed");
+  let animationSpeed = ["slow", "normal", "fast"].includes(savedAnimationSpeed)
+    ? savedAnimationSpeed
+    : "normal";
+  const savedReducedMotion = localStorage.getItem("studyflow.reduced-motion");
+  let reducedMotion =
+    savedReducedMotion === "true" ||
+    (typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)")).matches;
+
+  let animationEffects = {
+    pageTransitions: true,
+    buttonEffects: true,
+    completionEffects: true,
+    xpAnimations: true,
+    chartAnimations: true,
+    pixelEffects: true,
+  };
+  try {
+    const savedEffectPrefs = JSON.parse(
+      localStorage.getItem("studyflow.animation-effects") || "null",
+    );
+    if (savedEffectPrefs && typeof savedEffectPrefs === "object") {
+      animationEffects = { ...animationEffects, ...savedEffectPrefs };
+    }
+  } catch {
+    /* use defaults */
+  }
+
   let searchTerm = "";
   let statusFilter = "all";
   let deadlineSearch = "";
@@ -989,6 +1026,17 @@
     }
   }
 
+  /** Reads a CSS custom property from the document root so JS can use theme colors. */
+  function getThemeColor(name, fallback) {
+    try {
+      const value = getComputedStyle(document.documentElement).getPropertyValue(name);
+      const trimmed = (value || "").trim();
+      return trimmed ? trimmed : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
   function saveLocalRoutines() {
     writeLocalJson(routinesStorageKey, routines);
   }
@@ -1244,12 +1292,13 @@
         ? "ar"
         : "en";
 
-  function shouldAnimate() {
-    return (
-      animationsEnabled &&
-      document.visibilityState === "visible" &&
-      !window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    );
+  function shouldAnimate(effectId) {
+    if (!animationsEnabled) return false;
+    if (document.visibilityState !== "visible") return false;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
+    if (reducedMotion) return false;
+    if (effectId && animationEffects[effectId] === false) return false;
+    return true;
   }
 
   function shouldUseFullMotion() {
@@ -2651,7 +2700,11 @@
     const layer = document.createElement("div");
     layer.className = "celebration-particles";
     layer.setAttribute("aria-hidden", "true");
-    const colors = ["#06D6A0", "#E6FBF6", "#75CDB1"];
+    const colors = [
+      getThemeColor("--color-primary", "#6b7280"),
+      getThemeColor("--color-text", "#f3f4f6"),
+      getThemeColor("--color-secondary", "#d1d5db"),
+    ];
     for (let index = 0; index < 24; index += 1) {
       const particle = document.createElement("i");
       particle.style.setProperty(
@@ -2885,7 +2938,8 @@
         : session
           ? "Verified focus time over the last seven days"
           : "Sample study hours over the last seven days";
-    return `<div class="chart-area"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel}"><defs><linearGradient id="chart-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#06D6A0" stop-opacity=".21"/><stop offset="100%" stop-color="#06D6A0" stop-opacity="0"/></linearGradient></defs>${yLines}<path class="chart-area-fill" d="${areaPath}"/><path class="chart-line" pathLength="1" d="${line}"/>${dots}${labels}</svg></div>`;
+    const themePrimary = getThemeColor("--color-primary", "#6b7280");
+    return `<div class="chart-area"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel}"><defs><linearGradient id="chart-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="${themePrimary}" stop-opacity=".21"/><stop offset="100%" stop-color="${themePrimary}" stop-opacity="0"/></linearGradient></defs>${yLines}<path class="chart-area-fill" d="${areaPath}"/><path class="chart-line" pathLength="1" d="${line}"/>${dots}${labels}</svg></div>`;
   }
 
   function dashboardPage() {
@@ -4250,7 +4304,12 @@
 
   function noteColor(note) {
     if (note.color && /^#[0-9a-f]{6}$/i.test(note.color)) return note.color;
-    const palette = ["#06D6A0", "#75CDB1", "#E6BA6C", "#A5C9BF"];
+    const palette = [
+      getThemeColor("--color-primary", "#6b7280"),
+      getThemeColor("--color-secondary", "#d1d5db"),
+      getThemeColor("--color-warning", "#fbbf24"),
+      getThemeColor("--color-muted", "#9ca3af"),
+    ];
     let hash = 0;
     for (const char of String(note.id || note.title || "note"))
       hash = (hash * 31 + char.charCodeAt(0)) % 997;
@@ -4365,11 +4424,11 @@
     const colorSwatches = notesColorSupported
       ? `<div class="note-color-row" role="group" aria-label="${appLanguage === "ar" ? "لون الملاحظة" : "Note color"}">${[
           ["", appLanguage === "ar" ? "افتراضي" : "Default"],
-          ["#06D6A0", "Emerald"],
-          ["#75CDB1", "Mint"],
-          ["#E6BA6C", "Amber"],
-          ["#A5C9BF", "Sage"],
-          ["#7FB3D5", "Blue"],
+          [getThemeColor("--color-primary", "#6b7280"), "Primary"],
+          [getThemeColor("--color-secondary", "#d1d5db"), "Secondary"],
+          [getThemeColor("--color-warning", "#fbbf24"), "Warning"],
+          [getThemeColor("--color-muted", "#9ca3af"), "Muted"],
+          [getThemeColor("--color-info", "#7FB3D5"), "Blue"],
         ]
           .map(
             ([value, label]) =>
@@ -4420,13 +4479,13 @@
             ${toolButton("italic", "Italic (Ctrl+I)", "<em>I</em>")}
             ${toolButton("underline", "Underline (Ctrl+U)", "<u>U</u>")}
             ${toolButton("strikeThrough", "Strikethrough", "<s>S</s>")}
-            <label class="rt-color" title="${appLanguage === "ar" ? "لون الخط" : "Text color"}"><span style="--swatch:#E6FBF6"></span><input type="color" id="rt-fore-color" value="#E6FBF6" aria-label="${appLanguage === "ar" ? "لون الخط" : "Text color"}" /></label>
+            <label class="rt-color" title="${appLanguage === "ar" ? "لون الخط" : "Text color"}"><span style="--swatch:${getThemeColor("--color-text", "#E6FBF6")}"></span><input type="color" id="rt-fore-color" value="${getThemeColor("--color-text", "#E6FBF6")}" aria-label="${appLanguage === "ar" ? "لون الخط" : "Text color"}" /></label>
           </div>
           <div class="rt-group rt-highlights" role="group" aria-label="${appLanguage === "ar" ? "تظليل النص" : "Highlight text"}">
             ${[
-              ["#E6BA6C", "Yellow"],
-              ["#06D6A0", "Green"],
-              ["#7FB3D5", "Blue"],
+              [getThemeColor("--color-warning", "#fbbf24"), "Yellow"],
+              [getThemeColor("--color-primary", "#6b7280"), "Primary"],
+              [getThemeColor("--color-info", "#6b7280"), "Info"],
               ["#E39AC7", "Pink"],
               ["#E39A5B", "Orange"],
             ]
@@ -5063,7 +5122,7 @@
     let fields = "";
 
     if (type === "subject") {
-      fields = `${featureField("name", "title", "text", record?.name, 'required maxlength="100"')}${featureField("description", "description", "textarea", record?.description, 'rows="3" maxlength="2000"')}<div class="form-row">${featureField("color", "color", "color", record?.color || "#06D6A0", "required")}${featureField("credit_hours", "credits", "number", record?.credit_hours ?? record?.credits ?? 0, 'min="0" max="30" required')}</div>`;
+      fields = `${featureField("name", "title", "text", record?.name, 'required maxlength="100"')}${featureField("description", "description", "textarea", record?.description, 'rows="3" maxlength="2000"')}<div class="form-row">${featureField("color", "color", "color", record?.color || getThemeColor("--color-primary", "#6b7280"), "required")}${featureField("credit_hours", "credits", "number", record?.credit_hours ?? record?.credits ?? 0, 'min="0" max="30" required')}</div>`;
     } else if (type === "schedule") {
       fields = `${featureField("title", "title", "text", record?.title, 'required maxlength="120"')}${featureField("details", "details", "textarea", record?.details, 'rows="2" maxlength="2000"')}<label>${featureText("subject")}<select name="subject_id">${featureSubjectOptions(record?.subject_id)}</select></label><div class="form-row">${featureField("starts_at", "startsAt", "datetime-local", localDateTimeValue(record?.starts_at), "required")}${featureField("ends_at", "endsAt", "datetime-local", localDateTimeValue(record?.ends_at), "required")}</div><label>${featureText("recurrence")}<select name="recurrence"><option value="none">Does not repeat</option><option value="daily" ${record?.recurrence === "daily" ? "selected" : ""}>Daily</option><option value="weekly" ${record?.recurrence === "weekly" ? "selected" : ""}>Weekly</option></select></label>`;
     } else if (type === "file") {
@@ -5158,7 +5217,7 @@
       row = {
         name: String(values.get("name") || "").trim(),
         description: String(values.get("description") || "").trim(),
-        color: String(values.get("color") || "#06D6A0"),
+        color: String(values.get("color") || getThemeColor("--color-primary", "#6b7280")),
         credit_hours: Number(values.get("credit_hours")),
       };
     } else if (type === "schedule") {
@@ -7993,6 +8052,118 @@
       colors: ["#3A1F0E", "#F97316"],
       meta: "#3A1F0E",
     },
+    {
+      id: "sky",
+      label: "Sky Blue",
+      description: "Calm dark blue surfaces with a bright sky accent",
+      colors: ["#0F172A", "#0EA5E9"],
+      meta: "#0F172A",
+    },
+    {
+      id: "cyan",
+      label: "Cyan",
+      description: "Deep teal surfaces with a bright cyan accent",
+      colors: ["#134E4A", "#22D3EE"],
+      meta: "#134E4A",
+    },
+    {
+      id: "turquoise",
+      label: "Turquoise",
+      description: "Dark turquoise surfaces with a fresh aqua accent",
+      colors: ["#0F4C44", "#14B8A6"],
+      meta: "#0F4C44",
+    },
+    {
+      id: "teal",
+      label: "Teal",
+      description: "Dark teal surfaces with a clear teal accent",
+      colors: ["#0B3D37", "#0D9488"],
+      meta: "#0B3D37",
+    },
+    {
+      id: "mint",
+      label: "Mint",
+      description: "Dark green surfaces with a fresh mint accent",
+      colors: ["#064E3B", "#4ADE80"],
+      meta: "#064E3B",
+    },
+    {
+      id: "lime",
+      label: "Lime",
+      description: "Dark olive surfaces with a bright lime accent",
+      colors: ["#365314", "#84CC16"],
+      meta: "#365314",
+    },
+    {
+      id: "violet",
+      label: "Violet",
+      description: "Deep purple surfaces with a vivid violet accent",
+      colors: ["#3B0764", "#8B5CF6"],
+      meta: "#3B0764",
+    },
+    {
+      id: "lavender",
+      label: "Lavender",
+      description: "Soft purple surfaces with a light lavender accent",
+      colors: ["#431A6E", "#A78BFA"],
+      meta: "#431A6E",
+    },
+    {
+      id: "indigo",
+      label: "Indigo",
+      description: "Deep indigo surfaces with a clear blue-violet accent",
+      colors: ["#312E81", "#6366F1"],
+      meta: "#312E81",
+    },
+    {
+      id: "rose",
+      label: "Rose",
+      description: "Deep rose surfaces with a warm pink-red accent",
+      colors: ["#4A044E", "#F43F5E"],
+      meta: "#4A044E",
+    },
+    {
+      id: "pink",
+      label: "Pink",
+      description: "Dark magenta surfaces with a bright pink accent",
+      colors: ["#5C0B4E", "#EC4899"],
+      meta: "#5C0B4E",
+    },
+    {
+      id: "magenta",
+      label: "Magenta",
+      description: "Dark purple surfaces with a vivid magenta accent",
+      colors: ["#581C87", "#D946EF"],
+      meta: "#581C87",
+    },
+    {
+      id: "coral",
+      label: "Coral",
+      description: "Dark coral surfaces with a warm salmon accent",
+      colors: ["#4E1A20", "#FB7185"],
+      meta: "#4E1A20",
+    },
+    {
+      id: "amber",
+      label: "Amber",
+      description: "Dark amber surfaces with a warm golden accent",
+      colors: ["#5B3A0E", "#F59E0B"],
+      meta: "#5B3A0E",
+    },
+    {
+      id: "yellow",
+      label: "Yellow",
+      description: "Dark yellow surfaces with a bright golden accent",
+      colors: ["#5C4E0E", "#EAB308"],
+      meta: "#5C4E0E",
+    },
+    {
+      id: "graphite",
+      label: "Graphite",
+      description: "Neutral dark gray surfaces with a slate accent",
+      colors: ["#1F2224", "#6B7280"],
+      meta: "#1F2224",
+    },
   ];
   const themePresetIds = new Set(THEME_PRESETS.map((preset) => preset.id));
 
@@ -8031,6 +8202,56 @@
     if (announce) showToast("Theme applied.");
   }
 
+  // ---- Visual style (Modern / Pixel) --------------------------------------
+
+  const VISUAL_STYLE_KEY = "studyflow.visual-style";
+  const VISUAL_STYLE_IDS = new Set(["modern", "pixel"]);
+
+  function normalizeVisualStyle(value) {
+    return VISUAL_STYLE_IDS.has(value) ? value : "modern";
+  }
+
+  function currentVisualStyle() {
+    return normalizeVisualStyle(
+      document.documentElement.dataset.visualStyle ||
+        localStorage.getItem(VISUAL_STYLE_KEY) ||
+        "modern",
+    );
+  }
+
+  function applyVisualStyle(styleId, { persist = true } = {}) {
+    const id = normalizeVisualStyle(styleId);
+    if (id === "modern") {
+      delete document.documentElement.dataset.visualStyle;
+    } else {
+      document.documentElement.dataset.visualStyle = id;
+    }
+    if (persist) localStorage.setItem(VISUAL_STYLE_KEY, id);
+    document.querySelectorAll("[data-visual-style-option]").forEach((option) => {
+      const selected = option.dataset.visualStyleOption === id;
+      option.classList.toggle("selected", selected);
+      option.setAttribute("aria-pressed", String(selected));
+    });
+    window.dispatchEvent(
+      new CustomEvent("studyzone:visual-style-changed", {
+        detail: { style: id },
+      }),
+    );
+    syncWidgetData();
+  }
+
+  async function saveVisualStyle(styleId) {
+    applyVisualStyle(styleId);
+    if (!supabase || !session) return;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ visual_style: styleId })
+      .eq("id", session.user.id);
+    if (error) {
+      console.warn("Could not save visual style to the profile.", error);
+    }
+  }
+
   async function saveThemePreset(themeId) {
     const id = normalizeThemePreset(themeId);
     applyThemePreset(id, { announce: true });
@@ -8044,10 +8265,8 @@
       .update({ theme: id })
       .eq("id", session.user.id);
     if (error) {
-      console.warn("Could not save the theme to the profile.", error);
-      showToast(
-        `Theme saved on this device, but account sync failed: ${error.message}`,
-      );
+      // Theme is already saved locally; Supabase sync failure is non-critical.
+      console.warn("Theme saved locally. Supabase profile sync skipped.", error);
     }
   }
 
@@ -8057,7 +8276,67 @@
       (preset) =>
         `<button class="theme-option ${selected === preset.id ? "selected" : ""}" type="button" data-theme-preset-option="${preset.id}" aria-pressed="${selected === preset.id}"><span class="theme-preview" style="--theme-preview-a:${preset.colors[0]};--theme-preview-b:${preset.colors[1]}"><i></i><i></i><i></i></span><strong>${translateUiText(preset.label)}</strong><small>${translateUiText(preset.description)}</small><span class="theme-check" aria-hidden="true">✓</span></button>`,
     ).join("");
-    return `<section class="panel">${panelHeading(translateUiText("Themes"), translateUiText("Themes keep the same layout and only change the color palette."))}<div class="theme-grid" role="group" aria-label="${translateUiText("Choose a color theme")}">${options}</div></section>`;
+
+    const styleSelected = currentVisualStyle();
+    const styleOptions = [
+      { id: "modern", label: "Modern", description: "Smooth rounded cards, elegant shadows, and clean typography" },
+      { id: "pixel", label: "Pixel", description: "8-bit / 16-bit pixel-art UI with stepped borders and crisp edges" },
+    ].map(
+      (style) =>
+        `<button class="theme-option ${styleSelected === style.id ? "selected" : ""}" type="button" data-visual-style-option="${style.id}" aria-pressed="${styleSelected === style.id}"><span class="theme-preview" style="--theme-preview-a:var(--color-surface);--theme-preview-b:var(--color-primary)"><i></i><i></i><i></i></span><strong>${translateUiText(style.label)}</strong><small>${translateUiText(style.description)}</small><span class="theme-check" aria-hidden="true">✓</span></button>`,
+    ).join("");
+
+    const intensityOptions = [
+      { id: "low", label: "Low", description: "Subtle, minimal animations" },
+      { id: "medium", label: "Medium", description: "Balanced, pleasant motion" },
+      { id: "high", label: "High", description: "Expressive, lively transitions" },
+    ].map(
+      (intensity) =>
+        `<button class="theme-option ${animationIntensity === intensity.id ? "selected" : ""}" type="button" data-animation-intensity="${intensity.id}" aria-pressed="${animationIntensity === intensity.id}"><span class="theme-preview" style="--theme-preview-a:var(--color-surface);--theme-preview-b:var(--color-primary)"><i></i><i></i><i></i></span><strong>${translateUiText(intensity.label)}</strong><small>${translateUiText(intensity.description)}</small><span class="theme-check" aria-hidden="true">✓</span></button>`,
+    ).join("");
+
+    const speedOptions = [
+      { id: "slow", label: "Slow", description: "Gentle, calm movement" },
+      { id: "normal", label: "Normal", description: "Standard pace" },
+      { id: "fast", label: "Fast", description: "Quick, snappy responses" },
+    ].map(
+      (speed) =>
+        `<button class="theme-option ${animationSpeed === speed.id ? "selected" : ""}" type="button" data-animation-speed="${speed.id}" aria-pressed="${animationSpeed === speed.id}"><span class="theme-preview" style="--theme-preview-a:var(--color-surface);--theme-preview-b:var(--color-primary)"><i></i><i></i><i></i></span><strong>${translateUiText(speed.label)}</strong><small>${translateUiText(speed.description)}</small><span class="theme-check" aria-hidden="true">✓</span></button>`,
+    ).join("");
+
+    const animationEffectOptions = [
+      { id: "pageTransitions", label: "Page Transitions", description: "Smooth transitions between pages" },
+      { id: "cardAnimations", label: "Card Animations", description: "Entrance and exit effects for cards" },
+      { id: "buttonInteractions", label: "Button Interactions", description: "Press and hover effects on buttons" },
+      { id: "hoverPressEffects", label: "Hover / Press Effects", description: "Visual feedback on interactive elements" },
+      { id: "taskCompletion", label: "Task Completion", description: "Celebration when completing tasks" },
+      { id: "progressAnimations", label: "Progress Animations", description: "Animated progress bars and fill effects" },
+      { id: "xpGain", label: "XP Gain", description: "Experience point gain animations" },
+      { id: "achievementUnlock", label: "Achievement Unlock", description: "Badge unlock celebrations" },
+      { id: "levelUp", label: "Level Up", description: "Level up celebrations and effects" },
+      { id: "notifications", label: "Notifications", description: "Toast and notification animations" },
+      { id: "focusTimer", label: "Focus Timer", description: "Timer pulse and completion effects" },
+      { id: "pixelEffects", label: "Pixel Effects", description: "Pixel-specific visual effects (Pixel style only)" },
+    ];
+
+    const renderEffectSwitch = (effect) => {
+      const isEnabled = animationEffects[effect.id] !== false;
+      const isPixelOnly = effect.id === "pixelEffects";
+      const visible = isPixelOnly ? (currentVisualStyle() === "pixel" ? "" : "hidden") : "";
+      return `<div class="setting-row ${visible}" data-effect="${effect.id}">
+        <div class="setting-label">
+          <strong>${translateUiText(effect.label)}</strong><small>${translateUiText(effect.description)}</small>
+        </div>
+        <label class="focus-setting-toggle"><span>${translateUiText("Enabled")}</span><input type="checkbox" name="animation-effect" data-effect="${effect.id}" ${isEnabled ? "checked" : ""}><i aria-hidden="true"></i></label>
+      </div>`;
+    };
+
+    const effectSwitches = animationEffectOptions.map(renderEffectSwitch).join("");
+
+    const toggleChecked = animationEnabled ? "checked" : "";
+    const reducedChecked = reducedMotion ? "checked" : "";
+
+    return `<section class="panel">${panelHeading(translateUiText("Themes"), translateUiText("Themes keep the same layout and only change the color palette."))}<div class="theme-grid" role="group" aria-label="${translateUiText("Choose a color theme")}">${options}</div></section><section class="panel">${panelHeading(translateUiText("Visual Style"), translateUiText("Choose how Study Zone looks. Modern is smooth and clean; Pixel is inspired by retro video games."))}<div class="theme-grid" role="group" aria-label="${translateUiText("Choose a visual style")}">${styleOptions}</div></section><section class="panel">${panelHeading(translateUiText("Animation Settings"), translateUiText("Control how Study Zone moves. Respects your system's reduced motion preference."))}<div class="animation-section"><div class="setting-row"><div><strong>${translateUiText("Enable Animations")}</strong><small>${translateUiText("Turn all motion effects on or off")}</small></div><label class="focus-setting-toggle"><span>${translateUiText("Animations On")}</span><input type="checkbox" name="animation-enabled" ${toggleChecked}><i aria-hidden="true"></i></label></div><div class="setting-row"><div><strong>${translateUiText("Animation Intensity")}</strong><small>${translateUiText("How strong the motion effects are")}</small></div><div role="group" aria-label="${translateUiText("Animation intensity")}">${intensityOptions}</div></div><div class="setting-row"><div><strong>${translateUiText("Animation Speed")}</strong><small>${translateUiText("How quickly animations play")}</small></div><div role="group" aria-label="${translateUiText("Animation speed")}">${speedOptions}</div></div><div class="setting-row"><div><strong>${translateUiText("Reduced Motion")}</strong><small>${translateUiText("Minimize motion for accessibility")}</small></div><label class="focus-setting-toggle"><span>${translateUiText("Reduce Motion")}</span><input type="checkbox" name="reduced-motion" ${reducedChecked}><i aria-hidden="true"></i></label></div><div class="setting-row"><div><strong>${translateUiText("Individual Effects")}</strong><small>${translateUiText("Enable or disable specific animation categories")}</small></div><div class="effect-switches">${effectSwitches}</div></div></div></section>`;
   }
 
   const notificationTypesKey = "studyzone.notification.types";
@@ -10053,8 +10332,44 @@
         .eq("id", session.user.id)
         .maybeSingle();
       if (!appearanceError && appearance) {
-        if (themePresetIds.has(appearance.theme)) {
+        // Only sync a real theme choice from Supabase. Never let the default
+        // "original" value (or a missing theme) overwrite a locally saved
+        // preference. If the user chose Ocean/Emerald/etc. on this device,
+        // that local choice wins until the user explicitly picks another theme.
+        if (
+          appearance.theme &&
+          appearance.theme !== "original" &&
+          themePresetIds.has(appearance.theme)
+        ) {
           applyThemePreset(appearance.theme, { persist: true });
+        }
+        // Restore visual style from Supabase (Modern / Pixel)
+        if (
+          appearance.visual_style &&
+          ["modern", "pixel"].includes(appearance.visual_style)
+        ) {
+          applyVisualStyle(appearance.visual_style, { persist: true });
+        }
+        // Restore animation settings from Supabase
+        if (appearance.animation_enabled !== undefined) {
+          animationEnabled = appearance.animation_enabled === true;
+          animationsEnabled = animationEnabled && motionLevel !== "off";
+          localStorage.setItem(
+            "studyflow.animation-enabled",
+            String(animationEnabled),
+          );
+        }
+        if (appearance.animation_intensity) {
+          animationIntensity = appearance.animation_intensity;
+          localStorage.setItem("studyflow.animation-intensity", animationIntensity);
+        }
+        if (appearance.animation_speed) {
+          animationSpeed = appearance.animation_speed;
+          localStorage.setItem("studyflow.animation-speed", animationSpeed);
+        }
+        if (appearance.reduced_motion !== undefined) {
+          reducedMotion = appearance.reduced_motion === true;
+          localStorage.setItem("studyflow.reduced-motion", String(reducedMotion));
         }
         if (
           appearance.notification_settings &&
@@ -10324,14 +10639,11 @@
         .update({ language })
         .eq("id", session.user.id);
       if (error) {
-        console.error(
-          "Could not save language preference to the profile.",
+        // Language is already saved locally; Supabase sync failure is non-critical.
+        console.warn(
+          "Language saved locally. Supabase profile sync skipped.",
           error,
         );
-        showToast(
-          `Language saved on this device, but account sync failed: ${error.message}`,
-        );
-        return;
       }
     }
     showToast("Language changed.");
@@ -10465,6 +10777,7 @@
     }
     closeModal(document.getElementById("task-modal"));
     render();
+    syncWidgetData();
     showToast(
       supabase && session
         ? `${instances.length} task${instances.length === 1 ? "" : "s"} saved to your account.`
@@ -10577,6 +10890,7 @@
     closeModal(document.getElementById("task-modal"));
     taskEditingId = null;
     render();
+    syncWidgetData();
     showToast(appLanguage === "ar" ? "تم تحديث المهمة." : "Task updated.");
   }
 
@@ -11351,6 +11665,7 @@
       if (completing) void trackTaskUsage(task, "completed_count");
       if (!supabase || !session) saveLocalTasks();
       render();
+      syncWidgetData();
       showToast(
         completing
           ? task.due_at
@@ -11402,6 +11717,7 @@
     tasks = tasks.filter((item) => item.id !== id);
     if (!supabase || !session) saveLocalTasks();
     render();
+    syncWidgetData();
     showToast("Task deleted.");
   }
 
@@ -11464,6 +11780,7 @@
     if (!supabase || !session) saveLocalTasks();
     closeModal(document.getElementById("move-task-modal"));
     render();
+    syncWidgetData();
     showToast(appLanguage === "ar" ? "تم نقل المهمة." : "Task moved.");
   }
 
@@ -11880,6 +12197,7 @@
     } finally {
       endRenderBatch();
     }
+    syncWidgetData();
     showToast(
       authMode === "signup" ? "Your account is ready." : "Welcome back.",
     );
@@ -12015,6 +12333,7 @@
           } finally {
             endRenderBatch();
           }
+          syncWidgetData();
         }, 0);
       } else {
         adminAuthorization = { status: "denied", userId: null };
@@ -12024,7 +12343,7 @@
           {
             id: "subject-calculus",
             name: "Calculus II",
-            color: "#06D6A0",
+            color: "#6b7280",
             credits: 4,
             progress: 72,
           },
@@ -12406,38 +12725,57 @@
         ? focusSession.taskId
         : null;
     if (supabase && session) {
-      const method = focusSession.remoteStarted
-        ? "resume_focus_session"
-        : "start_focus_session";
-      const args = focusSession.remoteStarted
-        ? { p_session_key: focusSession.id }
-        : {
-            p_session_key: focusSession.id,
-            p_target_seconds: Math.round(
-              getFocusDurationMs(focusSession.type) / 1000,
-            ),
-            p_session_type: focusSession.type,
-            p_subject_id: focusSession.subjectId || null,
-            p_task_id: linkedTaskId,
-          };
-      const { data, error } = await supabase.rpc(method, args);
-      if (error) {
+      try {
+        const { error: startError, data: startData } = await supabase
+          .from("study_sessions")
+          .upsert(
+            {
+              idempotency_key: focusSession.id,
+              session_type: focusSession.type,
+              started_at: focusSession.startedAt || new Date(now).toISOString(),
+              ended_at: null,
+              duration_seconds: Math.round(
+                getFocusDurationMs(focusSession.type) / 1000,
+              ),
+              completed: false,
+              subject_id: focusSession.subjectId || null,
+              task_id: linkedTaskId,
+              updated_at: new Date(now).toISOString(),
+            },
+            { onConflict: "idempotency_key" },
+          )
+          .select(
+            "id,idempotency_key,session_type,started_at,ended_at,duration_seconds,completed,subject_id,task_id",
+          )
+          .single();
+        if (startError) {
+          focusDataError = startError.message;
+          console.error(
+            "Could not start the verified focus session.",
+            startError,
+          );
+          showToast(
+            `${focusText[appLanguage].sessionError} ${startError.message}`,
+          );
+          return;
+        }
+        if (!focusSession.startedAt)
+          focusSession.startedAt =
+            startData?.started_at || new Date(now).toISOString();
+        focusSession.remoteStarted = true;
+        focusSession.remainingMs = Math.max(
+          0,
+          getFocusDurationMs(focusSession.type),
+        );
+      } catch (error) {
         focusDataError = error.message;
-        console.error("Could not start the verified focus session.", error);
+        console.error(
+          "Could not start the verified focus session.",
+          error,
+        );
         showToast(`${focusText[appLanguage].sessionError} ${error.message}`);
         return;
       }
-      if (!focusSession.startedAt)
-        focusSession.startedAt = data?.started_at || new Date(now).toISOString();
-      focusSession.remoteStarted = true;
-      if (window.StudyZoneOffline?.isOnline?.() !== false) {
-        focusSession.elapsedBeforeRunMs =
-          Number(data?.elapsed_seconds || 0) * 1000;
-      }
-      focusSession.remainingMs = Math.max(
-        0,
-        getFocusDurationMs(focusSession.type) - focusSession.elapsedBeforeRunMs,
-      );
     } else if (!focusSession.startedAt) {
       focusSession.startedAt = new Date(now).toISOString();
     }
@@ -12461,34 +12799,45 @@
   async function pauseFocusTimer() {
     if (focusSession.status !== "running") return;
     const now = Date.now();
-    let remoteElapsedMs = null;
-    if (
-      focusSession.remoteStarted &&
-      supabase &&
-      session &&
-      window.StudyZoneOffline?.isOnline?.() !== false
-    ) {
-      const { data, error } = await supabase.rpc("pause_focus_session", {
-        p_session_key: focusSession.id,
-      });
-      if (error) {
-        console.error("Could not pause the verified focus session.", error);
-        showToast(`${focusText[appLanguage].sessionError} ${error.message}`);
+    const elapsedMs = Math.max(0, now - focusSession.runStartedAt);
+    const totalElapsedMs =
+      focusSession.elapsedBeforeRunMs + elapsedMs;
+    if (supabase && session && focusSession.remoteStarted) {
+      try {
+        const { error: pauseError } = await supabase
+          .from("study_sessions")
+          .update({
+            ended_at: new Date(now).toISOString(),
+            duration_seconds: Math.floor(totalElapsedMs / 1000),
+            updated_at: new Date(now).toISOString(),
+          })
+          .eq("idempotency_key", focusSession.id);
+        if (pauseError) {
+          console.error(
+            "Could not pause the verified focus session.",
+            pauseError,
+          );
+          showToast(
+            `${focusText[appLanguage].sessionError} ${pauseError.message}`,
+          );
+          return;
+        }
+      } catch (error) {
+        console.error(
+          "Could not pause the verified focus session.",
+          error,
+        );
+        showToast(
+          `${focusText[appLanguage].sessionError} ${error.message}`,
+        );
         return;
       }
-      remoteElapsedMs = Number(data || 0) * 1000;
     }
-    focusSession.remainingMs = Math.max(0, focusSession.endAt - now);
-    focusSession.elapsedBeforeRunMs =
-      remoteElapsedMs ??
-      focusSession.elapsedBeforeRunMs +
-        Math.max(0, now - focusSession.runStartedAt);
-    if (remoteElapsedMs !== null) {
-      focusSession.remainingMs = Math.max(
-        0,
-        getFocusDurationMs(focusSession.type) - remoteElapsedMs,
-      );
-    }
+    focusSession.remainingMs = Math.max(
+      0,
+      getFocusDurationMs(focusSession.type) - totalElapsedMs,
+    );
+    focusSession.elapsedBeforeRunMs = totalElapsedMs;
     focusSession.runStartedAt = null;
     focusSession.endAt = null;
     focusSession.status = "paused";
@@ -12553,14 +12902,33 @@
       showToast("This change is saved on this device.");
       return true;
     }
-    const rpc = record.completed
-      ? "finish_focus_session"
-      : "cancel_focus_session";
     let rpcError;
     try {
-      ({ error: rpcError } = await supabase.rpc(rpc, {
-        p_session_key: record.idempotency_key,
-      }));
+      const { error: insertError, data: insertedData } = await supabase
+        .from("study_sessions")
+        .upsert(
+          {
+            idempotency_key: record.idempotency_key,
+            session_type: record.session_type,
+            started_at: record.started_at,
+            ended_at: record.ended_at,
+            duration_seconds: record.duration_seconds,
+            completed: record.completed,
+            subject_id: record.subject_id,
+            task_id: record.task_id,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "idempotency_key" },
+        )
+        .select(
+          "id,idempotency_key,session_type,started_at,ended_at,duration_seconds,completed,subject_id,task_id",
+        )
+        .single();
+      if (insertError) {
+        rpcError = insertError;
+      } else {
+        data = insertedData;
+      }
     } catch (error) {
       rpcError = error;
     }
@@ -12574,20 +12942,7 @@
       render();
       return false;
     }
-    let data;
-    let historyError;
-    try {
-      ({ data, error: historyError } = await supabase
-        .from("study_sessions")
-        .select(
-          "id,idempotency_key,session_type,started_at,ended_at,duration_seconds,completed,subject_id,task_id",
-        )
-        .eq("idempotency_key", record.idempotency_key)
-        .maybeSingle());
-    } catch (error) {
-      historyError = error;
-    }
-    if (historyError || !data) {
+    if (!data) {
       if (
         navigator.onLine === false ||
         window.StudyZoneOffline?.isOnline?.() === false
@@ -12599,15 +12954,10 @@
         if (currentPage === "focus") render();
         return true;
       }
-      focusDataError =
-        historyError?.message ||
-        "The verified focus record could not be read back.";
+      focusDataError = "The verified focus record could not be saved.";
       focusSaving = false;
       focusRecordSavesInFlight.delete(record.idempotency_key);
-      console.error(
-        "Could not refresh the verified focus record.",
-        historyError,
-      );
+      console.error("Could not save focus session: no data returned.");
       showToast(`${focusText[appLanguage].dataError} ${focusDataError}`);
       return false;
     }
@@ -12929,7 +13279,7 @@
 
   document.addEventListener("click", async (event) => {
     const target = event.target.closest(
-      "[data-page], [data-navigate], [data-action], [data-motion-level], [data-close-modal], [data-deadline-filter], [data-deadline-view], [data-language], #open-auth, #top-profile, #mobile-menu, #timer-toggle, #timer-reset, #timer-skip, [data-auth-mode], #sign-out, [data-theme-preset-option]",
+      "[data-page], [data-navigate], [data-action], [data-motion-level], [data-close-modal], [data-deadline-filter], [data-deadline-view], [data-language], #open-auth, #top-profile, #mobile-menu, #timer-toggle, #timer-reset, #timer-skip, [data-auth-mode], #sign-out, [data-theme-preset-option], [data-visual-style-option], [data-animation-intensity], [data-animation-speed]",
     );
     if (!target) return;
     if (target.matches("[data-page], [data-navigate]")) {
@@ -13329,6 +13679,65 @@
           [{ transform: "scale(.97)" }, { transform: "scale(1)" }],
           { duration: 180, easing: "ease-out" },
         );
+    } else if (target.matches("[data-visual-style-option]")) {
+      await saveVisualStyle(target.dataset.visualStyleOption);
+      if (shouldAnimate())
+        target.animate?.(
+          [{ transform: "scale(.97)" }, { transform: "scale(1)" }],
+          { duration: 180, easing: "ease-out" },
+        );
+    } else if (target.matches("[data-animation-intensity]")) {
+      animationIntensity = target.dataset.animationIntensity;
+      localStorage.setItem("studyflow.animation-intensity", animationIntensity);
+      if (supabase && session) {
+        void supabase
+          .from("profiles")
+          .update({ animation_intensity: animationIntensity })
+          .eq("id", session.user.id);
+      }
+      render();
+    } else if (target.matches("[data-animation-speed]")) {
+      animationSpeed = target.dataset.animationSpeed;
+      localStorage.setItem("studyflow.animation-speed", animationSpeed);
+      if (supabase && session) {
+        void supabase
+          .from("profiles")
+          .update({ animation_speed: animationSpeed })
+          .eq("id", session.user.id);
+      }
+      render();
+    } else if (target.matches('input[name="animation-enabled"]')) {
+      animationEnabled = target.checked;
+      localStorage.setItem("studyflow.animation-enabled", String(animationEnabled));
+      animationsEnabled = animationEnabled && motionLevel !== "off";
+      if (supabase && session) {
+        void supabase
+          .from("profiles")
+          .update({ animation_enabled: animationEnabled })
+          .eq("id", session.user.id);
+      }
+      render();
+    } else if (target.matches('input[name="animation-effect"]')) {
+      const effectId = target.dataset.effect;
+      animationEffects[effectId] = target.checked;
+      localStorage.setItem("studyflow.animation-effects", JSON.stringify(animationEffects));
+      if (supabase && session) {
+        void supabase
+          .from("profiles")
+          .update({ animation_effects: JSON.stringify(animationEffects) })
+          .eq("id", session.user.id);
+      }
+      render();
+    } else if (target.matches('input[name="reduced-motion"]')) {
+      reducedMotion = target.checked;
+      localStorage.setItem("studyflow.reduced-motion", String(reducedMotion));
+      if (supabase && session) {
+        void supabase
+          .from("profiles")
+          .update({ reduced_motion: reducedMotion })
+          .eq("id", session.user.id);
+      }
+      render();
     } else if (target.matches('[data-action="sync-now"]')) {
       target.disabled = true;
       try {
@@ -13454,6 +13863,7 @@
       adminUsers = [];
       adminUsersTotal = 0;
       resetAccountWorkspacePreview();
+      syncWidgetData();
       subjects = [
         {
           id: "subject-calculus",

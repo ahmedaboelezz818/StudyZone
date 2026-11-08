@@ -16,4 +16,9 @@
     <string name="widget_daily_progress">التقدم اليومي</string>
     <string name="widget_focus">مؤقت التركيز</string>
     <string name="widget_upcoming_deadlines">المواعيد القادمة</string>
+    <string name="widget_description_today_tasks">مهام اليوم - عرض المهام المجدولة ليومك الحالي</string>
+    <string name="widget_description_large_tasks">المهام الكبيرة - عرض قائمة المهام المفصلة</string>
+    <string name="widget_description_daily_progress">التقدم اليومي - تتبع تقدم دراستك اليومي</string>
+    <string name="widget_description_focus">مؤقت التركيز - تتبع جلسات التركيز الخاصة بك</string>
+    <string name="widget_description_upcoming_deadlines">المواعيد القادمة - عرض أقرب المواعيد النهائية</string>
 </resources>

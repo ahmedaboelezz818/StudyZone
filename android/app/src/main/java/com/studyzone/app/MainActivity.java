@@ -34,6 +34,22 @@ public class MainActivity extends BridgeActivity {
     private static final String ALIAS_PURPLE = "com.studyzone.app.MainActivityPurple";
     private static final String ALIAS_CRIMSON = "com.studyzone.app.MainActivityCrimson";
     private static final String ALIAS_MIDNIGHT = "com.studyzone.app.MainActivityMidnight";
+    private static final String ALIAS_SKY = "com.studyzone.app.MainActivitySky";
+    private static final String ALIAS_CYAN = "com.studyzone.app.MainActivityCyan";
+    private static final String ALIAS_TURQUOISE = "com.studyzone.app.MainActivityTurquoise";
+    private static final String ALIAS_TEAL = "com.studyzone.app.MainActivityTeal";
+    private static final String ALIAS_MINT = "com.studyzone.app.MainActivityMint";
+    private static final String ALIAS_LIME = "com.studyzone.app.MainActivityLime";
+    private static final String ALIAS_VIOLET = "com.studyzone.app.MainActivityViolet";
+    private static final String ALIAS_LAVENDER = "com.studyzone.app.MainActivityLavender";
+    private static final String ALIAS_INDIGO = "com.studyzone.app.MainActivityIndigo";
+    private static final String ALIAS_ROSE = "com.studyzone.app.MainActivityRose";
+    private static final String ALIAS_PINK = "com.studyzone.app.MainActivityPink";
+    private static final String ALIAS_MAGENTA = "com.studyzone.app.MainActivityMagenta";
+    private static final String ALIAS_CORAL = "com.studyzone.app.MainActivityCoral";
+    private static final String ALIAS_AMBER = "com.studyzone.app.MainActivityAmber";
+    private static final String ALIAS_YELLOW = "com.studyzone.app.MainActivityYellow";
+    private static final String ALIAS_GRAPHITE = "com.studyzone.app.MainActivityGraphite";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -105,13 +121,34 @@ public class MainActivity extends BridgeActivity {
             case "purple": targetAlias = ALIAS_PURPLE; break;
             case "crimson": targetAlias = ALIAS_CRIMSON; break;
             case "midnight": targetAlias = ALIAS_MIDNIGHT; break;
+            case "sky": targetAlias = ALIAS_SKY; break;
+            case "cyan": targetAlias = ALIAS_CYAN; break;
+            case "turquoise": targetAlias = ALIAS_TURQUOISE; break;
+            case "teal": targetAlias = ALIAS_TEAL; break;
+            case "mint": targetAlias = ALIAS_MINT; break;
+            case "lime": targetAlias = ALIAS_LIME; break;
+            case "violet": targetAlias = ALIAS_VIOLET; break;
+            case "lavender": targetAlias = ALIAS_LAVENDER; break;
+            case "indigo": targetAlias = ALIAS_INDIGO; break;
+            case "rose": targetAlias = ALIAS_ROSE; break;
+            case "pink": targetAlias = ALIAS_PINK; break;
+            case "magenta": targetAlias = ALIAS_MAGENTA; break;
+            case "coral": targetAlias = ALIAS_CORAL; break;
+            case "amber": targetAlias = ALIAS_AMBER; break;
+            case "yellow": targetAlias = ALIAS_YELLOW; break;
+            case "graphite": targetAlias = ALIAS_GRAPHITE; break;
             case "original":
             default: targetAlias = ALIAS_ORIGINAL; break;
         }
 
         String[] aliases = {
                 ALIAS_ORIGINAL, ALIAS_OCEAN, ALIAS_EMERALD,
-                ALIAS_PURPLE, ALIAS_CRIMSON, ALIAS_MIDNIGHT
+                ALIAS_PURPLE, ALIAS_CRIMSON, ALIAS_MIDNIGHT,
+                ALIAS_SKY, ALIAS_CYAN, ALIAS_TURQUOISE, ALIAS_TEAL,
+                ALIAS_MINT, ALIAS_LIME,
+                ALIAS_VIOLET, ALIAS_LAVENDER, ALIAS_INDIGO,
+                ALIAS_ROSE, ALIAS_PINK, ALIAS_MAGENTA,
+                ALIAS_CORAL, ALIAS_AMBER, ALIAS_YELLOW, ALIAS_GRAPHITE
         };
         for (String alias : aliases) {
             int state = alias.equals(targetAlias)

@@ -7,6 +7,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.os.Bundle;
 import android.widget.RemoteViews;
 
 import java.util.regex.Matcher;
@@ -39,6 +40,25 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
     public void onAppWidgetOptionsChanged(Context context, AppWidgetManager manager,
                                           int appWidgetId, android.os.Bundle newOptions) {
         updateAppWidget(context, manager, appWidgetId, widgetType());
+    }
+
+    @Override
+    public void onEnabled(Context context) {
+        super.onEnabled(context);
+        // Ensure widget data exists when first widget of this type is enabled.
+        StudyZoneWidgetProvider.updateAll(context);
+    }
+
+    @Override
+    public void onDisabled(Context context) {
+        super.onDisabled(context);
+    }
+
+    @Override
+    public void onRestored(Context context, int[] oldWidgetIds, int[] newWidgetIds) {
+        super.onRestored(context, oldWidgetIds, newWidgetIds);
+        AppWidgetManager manager = AppWidgetManager.getInstance(context);
+        updateWidgets(context, manager, newWidgetIds, widgetType());
     }
 
     @Override

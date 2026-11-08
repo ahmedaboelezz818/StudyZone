@@ -5,7 +5,10 @@
     android:resizeMode="horizontal|vertical"
     android:minResizeWidth="160dp"
     android:minResizeHeight="100dp"
+    android:targetCellWidth="3"
+    android:targetCellHeight="2"
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_daily_progress"
     android:widgetCategory="home_screen"
-    android:previewImage="@mipmap/ic_launcher" />
+    android:previewImage="@mipmap/ic_launcher"
+    android:description="@string/widget_description_daily_progress" />

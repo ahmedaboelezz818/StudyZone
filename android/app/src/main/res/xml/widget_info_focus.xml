@@ -5,7 +5,10 @@
     android:resizeMode="horizontal|vertical"
     android:minResizeWidth="140dp"
     android:minResizeHeight="100dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_focus"
     android:widgetCategory="home_screen"
-    android:previewImage="@mipmap/ic_launcher" />
+    android:previewImage="@mipmap/ic_launcher"
+    android:description="@string/widget_description_focus" />

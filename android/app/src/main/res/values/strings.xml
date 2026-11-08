@@ -19,4 +19,9 @@
     <string name="widget_daily_progress">Daily Progress</string>
     <string name="widget_focus">Focus Timer</string>
     <string name="widget_upcoming_deadlines">Upcoming Deadlines</string>
+    <string name="widget_description_today_tasks">Today Tasks - View your scheduled tasks for today</string>
+    <string name="widget_description_large_tasks">Large Tasks - View your detailed task list</string>
+    <string name="widget_description_daily_progress">Daily Progress - Track your daily study progress</string>
+    <string name="widget_description_focus">Focus Timer - Track your focus sessions</string>
+    <string name="widget_description_upcoming_deadlines">Upcoming Deadlines - View your upcoming deadlines</string>
 </resources>

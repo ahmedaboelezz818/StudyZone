@@ -5,7 +5,10 @@
     android:resizeMode="horizontal|vertical"
     android:minResizeWidth="140dp"
     android:minResizeHeight="110dp"
+    android:targetCellWidth="3"
+    android:targetCellHeight="2"
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_today_tasks"
     android:widgetCategory="home_screen"
-    android:previewImage="@mipmap/ic_launcher" />
+    android:previewImage="@mipmap/ic_launcher"
+    android:description="@string/widget_description_today_tasks" />
