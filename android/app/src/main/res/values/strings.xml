@@ -4,4 +4,19 @@
     <string name="title_activity_main">Study Zone</string>
     <string name="package_name">com.studyzone.app</string>
     <string name="custom_url_scheme">studyzone</string>
+    <string name="shortcut_my_tasks">My Tasks</string>
+    <string name="shortcut_my_tasks_long">Open your tasks list</string>
+    <string name="shortcut_focus_mode">Focus Mode</string>
+    <string name="shortcut_focus_mode_long">Start a focus session</string>
+    <string name="shortcut_my_notes">My Notes</string>
+    <string name="shortcut_my_notes_long">Open your notes</string>
+    <string name="shortcut_daily_schedule">Daily Schedule</string>
+    <string name="shortcut_daily_schedule_long">View your study planner</string>
+    <string name="shortcut_analytics">Analytics</string>
+    <string name="shortcut_analytics_long">View your study analytics</string>
+    <string name="widget_today_tasks">Today Tasks</string>
+    <string name="widget_large_tasks">Large Tasks</string>
+    <string name="widget_daily_progress">Daily Progress</string>
+    <string name="widget_focus">Focus Timer</string>
+    <string name="widget_upcoming_deadlines">Upcoming Deadlines</string>
 </resources>

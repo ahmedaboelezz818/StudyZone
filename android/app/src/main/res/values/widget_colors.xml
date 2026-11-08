@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Widget theme colors — Original -->
+    <color name="widget_background">#071C18</color>
+    <color name="widget_text">#E6FBF6</color>
+    <color name="widget_muted">#73968D</color>
+    <color name="widget_border">#20594C</color>
+    <color name="widget_primary">#06D6A0</color>
+
+    <!-- Ocean Blue -->
+    <color name="widget_background_ocean">#071a24</color>
+    <color name="widget_text_ocean">#e6f6ff</color>
+    <color name="widget_muted_ocean">#7396a3</color>
+    <color name="widget_border_ocean">#1f5670</color>
+    <color name="widget_primary_ocean">#38bdf8</color>
+
+    <!-- Emerald -->
+    <color name="widget_background_emerald">#061f17</color>
+    <color name="widget_text_emerald">#e8fbf3</color>
+    <color name="widget_muted_emerald">#749886</color>
+    <color name="widget_border_emerald">#1c5947</color>
+    <color name="widget_primary_emerald">#10b981</color>
+
+    <!-- Purple -->
+    <color name="widget_background_purple">#130f24</color>
+    <color name="widget_text_purple">#f1ecff</color>
+    <color name="widget_muted_purple">#8f84ad</color>
+    <color name="widget_border_purple">#43356b</color>
+    <color name="widget_primary_purple">#a78bfa</color>
+
+    <!-- Crimson -->
+    <color name="widget_background_crimson">#210b12</color>
+    <color name="widget_text_crimson">#ffecef</color>
+    <color name="widget_muted_crimson">#a87a85</color>
+    <color name="widget_border_crimson">#6e2434</color>
+    <color name="widget_primary_crimson">#fb7185</color>
+
+    <!-- Midnight -->
+    <color name="widget_background_midnight">#060b18</color>
+    <color name="widget_text_midnight">#e8eefb</color>
+    <color name="widget_muted_midnight">#7585a3</color>
+    <color name="widget_border_midnight">#24365a</color>
+    <color name="widget_primary_midnight">#60a5fa</color>
+
+    <!-- Orange (legacy preset) -->
+    <color name="widget_background_orange">#241205</color>
+    <color name="widget_text_orange">#fff3e8</color>
+    <color name="widget_muted_orange">#c79b80</color>
+    <color name="widget_border_orange">#6b4423</color>
+    <color name="widget_primary_orange">#f97316</color>
+</resources>

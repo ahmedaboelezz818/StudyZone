@@ -1,5 +1,8 @@
 package com.studyzone.app;
 
+import android.content.ComponentName;
+import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.view.View;
 import android.webkit.WebView;
@@ -9,6 +12,7 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import com.getcapacitor.BridgeActivity;
+import org.json.JSONObject;
 
 /**
  * Study Zone Android shell.
@@ -18,11 +22,26 @@ import com.getcapacitor.BridgeActivity;
  * keep its content inside the safe area. The hardware back button, status bar,
  * keyboard and notifications are handled by Capacitor plugins from
  * native-shell.js.
+ *
+ * Handles app shortcuts (page extra) and dynamic app icon switching
+ * (PackageManager.setComponentEnabledSetting on activity aliases).
  */
 public class MainActivity extends BridgeActivity {
+
+    private static final String ALIAS_ORIGINAL = "com.studyzone.app.MainActivityOriginal";
+    private static final String ALIAS_OCEAN = "com.studyzone.app.MainActivityOcean";
+    private static final String ALIAS_EMERALD = "com.studyzone.app.MainActivityEmerald";
+    private static final String ALIAS_PURPLE = "com.studyzone.app.MainActivityPurple";
+    private static final String ALIAS_CRIMSON = "com.studyzone.app.MainActivityCrimson";
+    private static final String ALIAS_MIDNIGHT = "com.studyzone.app.MainActivityMidnight";
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(StudyZoneIconPlugin.class);
+        registerPlugin(StudyZoneWidgetPlugin.class);
         super.onCreate(savedInstanceState);
+
+        handleOpenPage(getIntent());
 
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
 
@@ -47,5 +66,65 @@ public class MainActivity extends BridgeActivity {
             return insets;
         });
         ViewCompat.requestApplyInsets(webView);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleOpenPage(intent);
+    }
+
+    private void handleOpenPage(Intent intent) {
+        if (intent == null || getBridge() == null) return;
+        String page = intent.hasExtra("page") ? intent.getStringExtra("page") : null;
+        if (page == null && intent.getData() != null) {
+            page = intent.getData().getQueryParameter("page");
+        }
+        if (page == null || page.isEmpty()) return;
+        final String target = JSONObject.quote(page);
+        final WebView webView = getBridge().getWebView();
+        webView.post(() -> webView.evaluateJavascript(
+                "setTimeout(function(){window.dispatchEvent(new CustomEvent('studyzone:shortcut-open',{detail:{page:" +
+                        target + "}}));},450);",
+                null));
+    }
+
+    /**
+     * Switches the launcher icon by enabling/disabling activity aliases.
+     * Only one alias is enabled at a time to avoid duplicate launcher icons.
+     */
+    public void setLauncherIcon(String themeId) {
+        PackageManager pm = getPackageManager();
+        if (pm == null) return;
+
+        String targetAlias;
+        switch (themeId == null ? "" : themeId) {
+            case "ocean": targetAlias = ALIAS_OCEAN; break;
+            case "emerald": targetAlias = ALIAS_EMERALD; break;
+            case "purple": targetAlias = ALIAS_PURPLE; break;
+            case "crimson": targetAlias = ALIAS_CRIMSON; break;
+            case "midnight": targetAlias = ALIAS_MIDNIGHT; break;
+            case "original":
+            default: targetAlias = ALIAS_ORIGINAL; break;
+        }
+
+        String[] aliases = {
+                ALIAS_ORIGINAL, ALIAS_OCEAN, ALIAS_EMERALD,
+                ALIAS_PURPLE, ALIAS_CRIMSON, ALIAS_MIDNIGHT
+        };
+        for (String alias : aliases) {
+            int state = alias.equals(targetAlias)
+                    ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                    : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
+            try {
+                pm.setComponentEnabledSetting(
+                        new ComponentName(getPackageName(), alias),
+                        state,
+                        PackageManager.DONT_KILL_APP);
+            } catch (IllegalArgumentException ignored) {
+                // Alias missing from this build: continue with the rest.
+            }
+        }
     }
 }

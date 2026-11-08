@@ -271,6 +271,7 @@
     dnd: false,
     start: "22:00",
     end: "07:00",
+    vibration_enabled: true,
     taskSound: "task-reminder",
     taskVolume: 80,
     taskDuration: 5,
@@ -597,6 +598,292 @@
     nodate: true,
     completed: true,
   };
+
+  // ---- Analytics state -------------------------------------------------------
+  const analyticsStorageKey = "studyzone.analytics.v1";
+  let analyticsRange = "weekly";
+  let analyticsCustomStart = null;
+  let analyticsCustomRange = { start: null, end: null };
+  let analyticsMetric = "studyHours";
+  let analyticsMode = "days";
+  let analyticsBuckets = [];
+  let analyticsValues = [];
+  let analyticsChartMetric = "studyHours";
+  let analyticsChartGeometry = null;
+  let analyticsChartSeries = null;
+  try {
+    const savedAnalytics = JSON.parse(
+      localStorage.getItem(analyticsStorageKey) || "null",
+    );
+    if (savedAnalytics && typeof savedAnalytics === "object") {
+      if (["daily", "weekly", "monthly", "yearly", "rolling7", "rolling30", "custom"].includes(savedAnalytics.range))
+        analyticsRange = savedAnalytics.range;
+      if (savedAnalytics.customStart && Number.isInteger(savedAnalytics.customStart) && savedAnalytics.customStart >= 0 && savedAnalytics.customStart <= 6)
+        analyticsCustomStart = savedAnalytics.customStart;
+      if (savedAnalytics.customRange && savedAnalytics.customRange.start && savedAnalytics.customRange.end)
+        analyticsCustomRange = savedAnalytics.customRange;
+      if (typeof savedAnalytics.metric === "string" && savedAnalytics.metric)
+        analyticsMetric = savedAnalytics.metric;
+    }
+  } catch {
+    /* use defaults */
+  }
+  function saveAnalyticsSettings() {
+    try {
+      localStorage.setItem(analyticsStorageKey, JSON.stringify({
+        range: analyticsRange,
+        customStart: analyticsCustomStart,
+        customRange: analyticsCustomRange,
+        metric: analyticsMetric,
+      }));
+    } catch {
+      /* storage unavailable */
+    }
+    if (supabase && session) {
+      void supabase
+        .from("profiles")
+        .update({ notification_settings: { ...notificationTypes(), analytics_range: analyticsRange, analytics_custom_start: analyticsCustomStart, analytics_custom_range: analyticsCustomRange, analytics_metric: analyticsMetric } })
+        .eq("id", session.user.id)
+        .then(({ error }) => {
+          if (error && !isMissingColumnError(error))
+            console.warn("Could not sync analytics settings.", error);
+        });
+    }
+  }
+
+  const analyticsMetrics = [
+    { id: "studyHours", labelKey: "Study Hours" },
+    { id: "completedTasks", labelKey: "Completed Tasks" },
+    { id: "focusSessions", labelKey: "Focus Sessions" },
+    { id: "productivity", labelKey: "Productivity" },
+    { id: "completionRate", labelKey: "Completion Rate" },
+  ];
+
+  function analyticsMetricLabel(metric) {
+    const entry = analyticsMetrics.find((item) => item.id === metric);
+    return entry ? translateUiText(entry.labelKey) : translateUiText("Study Hours");
+  }
+
+  function buildAnalyticsBuckets(start, end, mode) {
+    const buckets = [];
+    const monthStart = new Date(start.getFullYear(), start.getMonth(), 1);
+    const monthEnd = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+    if (mode === "months" && end > new Date(monthEnd.getFullYear(), monthEnd.getMonth(), 1)) {
+      const year = start.getFullYear();
+      for (let month = 0; month < 12; month += 1) {
+        const ms = new Date(year, month, 1);
+        buckets.push({
+          start: new Date(ms.getFullYear(), ms.getMonth(), 1),
+          end: new Date(ms.getFullYear(), ms.getMonth() + 1, 0),
+          key: localDateKey(ms),
+        });
+      }
+      return buckets;
+    }
+    if (mode === "months") {
+      buckets.push({
+        start: monthStart,
+        end: monthEnd,
+        key: localDateKey(monthStart),
+      });
+      return buckets;
+    }
+    let cursor = new Date(start);
+    const endDate = new Date(end);
+    while (cursor <= endDate) {
+      buckets.push({ start: new Date(cursor), end: new Date(cursor), key: localDateKey(cursor) });
+      cursor = addLocalDays(cursor, 1);
+    }
+    return buckets;
+  }
+
+  function analyticsBucketLabel(bucket, mode) {
+    const date = new Date(bucket.start);
+    const text = new Intl.DateTimeFormat(focusLocale(), {
+      month: "short",
+      day: "numeric",
+      ...(mode === "months" ? { year: "numeric" } : {}),
+    }).format(date);
+    const weekday = new Intl.DateTimeFormat(focusLocale(), { weekday: "short" }).format(date);
+    return { main: appLanguage === "ar" ? weekday : text, key: bucket.key };
+  }
+
+  function formatAnalyticsMetricValue(metric, value) {
+    const number = (next) => new Intl.NumberFormat(focusLocale(), { maximumFractionDigits: 1 }).format(next);
+    if (metric === "studyHours" || metric === "productivity") {
+      const rounded = Math.round(value * 10) / 10;
+      const text = focusText[appLanguage];
+      return `${number(rounded)}${text.hours}`;
+    }
+    if (metric === "completionRate") {
+      return `${Math.round(value)}%`;
+    }
+    const rounded = Math.round(value * 10) / 10;
+    return number(rounded);
+  }
+
+  function analyticsNiceMax(value) {
+    const safe = Math.max(0, value);
+    if (safe <= 0) return 1;
+    const exponent = Math.floor(Math.log10(safe));
+    const base = Math.pow(10, exponent);
+    const ratio = safe / base;
+    const nice = ratio <= 1 ? 1 : ratio <= 2 ? 2 : ratio <= 2.5 ? 2.5 : ratio <= 5 ? 5 : 10;
+    return nice * base;
+  }
+
+  function analyticsSmoothPath(points) {
+    if (points.length === 0) return "";
+    if (points.length < 2) return `M${points[0].x},${points[0].y}`;
+    let d = `M${points[0].x},${points[0].y}`;
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const p0 = points[i - 1] || points[i];
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const p3 = points[i + 2] || p2;
+      const c1x = p1.x + (p2.x - p0.x) / 6;
+      const c1y = p1.y + (p2.y - p0.y) / 6;
+      const c2x = p2.x - (p3.x - p1.x) / 6;
+      const c2y = p2.y - (p3.y - p1.y) / 6;
+      d += ` C${c1x.toFixed(2)},${c1y.toFixed(2)} ${c2x.toFixed(2)},${c2y.toFixed(2)} ${p2.x.toFixed(2)},${p2.y.toFixed(2)}`;
+    }
+    return d;
+  }
+
+  function buildAnalyticsLineChart(buckets, values, metric) {
+    const width = 640;
+    const height = 220;
+    const left = 30;
+    const right = 16;
+    const top = 16;
+    const bottom = 28;
+    const plotWidth = width - left - right;
+    const plotHeight = height - top - bottom;
+    const base = top + plotHeight;
+    const max = analyticsNiceMax(Math.max(...values, metric === "completionRate" ? 10 : 0));
+    const count = buckets.length;
+    const series = values.map((value, index) => {
+      const reversed = appLanguage === "ar";
+      const x = count === 1 ? left + plotWidth / 2 : reversed ? width - right - (plotWidth * index) / (count - 1) : left + (plotWidth * index) / (count - 1);
+      const y = top + plotHeight * (1 - value / max);
+      return { x, y, value, bucket: buckets[index] };
+    });
+    analyticsChartSeries = series;
+    const line = analyticsSmoothPath(series);
+    const first = series[0];
+    const last = series[series.length - 1];
+    const area = `${line} L${last.x.toFixed(2)},${base} L${first.x.toFixed(2)},${base} Z`;
+    const ticks = [0, 1, 2, 3, 4].map((step) => (max * step) / 4);
+    const gridLines = ticks
+      .map((value) => {
+        const y = top + plotHeight * (1 - value / max);
+        const label = formatAnalyticsMetricValue(metric, value);
+        const anchor = appLanguage === "ar" ? "end" : "start";
+        const xPos = appLanguage === "ar" ? width - right - 8 : left + 8;
+        return `<line class="analytics-chart-grid" x1="${left}" x2="${width - right}" y1="${y}" y2="${y}"/><text class="analytics-chart-tick" x="${xPos}" y="${y + 3}" text-anchor="${anchor}">${escapeHtml(label)}</text>`;
+      })
+      .join("");
+    const labelStep = Math.max(1, Math.ceil(count / 6));
+    const labelIndexes = series
+      .map((point, index) => ({ point, index }))
+      .filter(({ index }) => index === series.length - 1 || index % labelStep === 0)
+      .map(({ point, index }) => ({ point, index, label: analyticsBucketLabel(point.bucket, analyticsMode).main }));
+    const dots = series
+      .map(
+        (point, index) =>
+          `<circle class="analytics-chart-dot" cx="${point.x}" cy="${point.y}" r="3.5" data-index="${index}"><title>${escapeHtml(analyticsBucketLabel(point.bucket, analyticsMode).main)}: ${escapeHtml(formatAnalyticsMetricValue(metric, point.value))}</title></circle>`,
+      )
+      .join("");
+    const labels = labelIndexes
+      .map(({ point, label }) => `<text class="analytics-chart-tick" x="${point.x}" y="${height - 8}" text-anchor="middle">${escapeHtml(label)}</text>`)
+      .join("");
+    const svg = `<svg class="analytics-line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(translateUiText("Performance Overview"))}: ${escapeHtml(analyticsMetricLabel(metric))}"><defs><linearGradient id="analytics-chart-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" class="analytics-chart-stop-top"/><stop offset="100%" class="analytics-chart-stop-bottom" /></linearGradient></defs>${gridLines}<path class="analytics-chart-area" d="${area}" /><path class="analytics-chart-line" pathLength="1" d="${line}" />${dots}${labels}</svg>`;
+    analyticsChartMetric = metric;
+    analyticsChartGeometry = { width, height, left, right, top, bottom, plotWidth, plotHeight, base, max, count };
+    return svg;
+  }
+
+  function attachAnalyticsLineChartHandlers(host) {
+    const container = host.querySelector(".analytics-chart-body") || host;
+    const svgEl = container.querySelector("svg");
+    const tip = host.querySelector(".analytics-chart-tip");
+    if (!svgEl || !tip) return;
+    function positionTip(clientX, clientY) {
+      const svgRect = svgEl.getBoundingClientRect();
+      const scaleX = 640 / svgRect.width;
+      const scaleY = 220 / svgRect.height;
+      const x = (clientX - svgRect.left) * scaleX;
+      const y = (clientY - svgRect.top) * scaleY;
+      tip.style.left = `${Math.max(34, Math.min(x, 640 - 34))}px`;
+      tip.style.top = `${Math.max(34, y)}px`;
+      tip.style.transform = "translate(-50%, calc(-100% - 12px))";
+    }
+    function renderTip(index) {
+      const series = analyticsChartSeries;
+      const point = series ? series[index] : null;
+      if (!point) {
+        tip.hidden = true;
+        return;
+      }
+      tip.hidden = false;
+      positionTip(0, 0);
+      tip.innerHTML = `<strong>${escapeHtml(formatAnalyticsMetricValue(analyticsChartMetric, point.value))}</strong><span>${escapeHtml(analyticsBucketLabel(point.bucket, analyticsMode).main)}</span>`;
+    }
+    function indexFromPoint(clientX, clientY) {
+      const geo = analyticsChartGeometry;
+      const series = analyticsChartSeries;
+      if (!geo || !series) return null;
+      const svgRect = svgEl.getBoundingClientRect();
+      const scaleX = 640 / svgRect.width;
+      const scaleY = 220 / svgRect.height;
+      const x = (clientX - svgRect.left) * scaleX;
+      const y = (clientY - svgRect.top) * scaleY;
+      let best = 0;
+      let bestDist = Infinity;
+      series.forEach((point, index) => {
+        const dist = (x - point.x) * (x - point.x) + (y - point.y) * (y - point.y);
+        if (dist <= bestDist) {
+          bestDist = dist;
+          best = index;
+        }
+      });
+      const tolerance = 14 * Math.max(scaleX, scaleY);
+      return Math.sqrt(bestDist) <= tolerance ? best : null;
+    }
+    host.addEventListener("pointermove", (event) => {
+      const index = indexFromPoint(event.clientX, event.clientY);
+      if (index === null) return;
+      renderTip(index);
+    });
+    host.addEventListener("pointerdown", (event) => {
+      const index = indexFromPoint(event.clientX, event.clientY);
+      if (index === null) return;
+      renderTip(index);
+    });
+    host.addEventListener("pointerleave", () => {
+      tip.hidden = true;
+    });
+  }
+
+  function analyticsMetricValue(metric, bucket, recordsInRange, tasksInRange, completedTasks) {
+    const key = bucket.key;
+    const secondsInBucket = recordsInRange
+      .filter((record) => dateKey(new Date(record.ended_at || record.started_at)) === key)
+      .reduce((sum, record) => sum + Number(record.duration_seconds || 0), 0);
+    if (metric === "studyHours") return secondsInBucket / 3600;
+    if (metric === "focusSessions") {
+      return recordsInRange.filter((record) => dateKey(new Date(record.ended_at || record.started_at)) === key).length;
+    }
+    const completedInBucket = completedTasks.filter((task) => taskEndKey(task) === key).length;
+    const tasksInBucket = tasksInRange.filter((task) => taskEndKey(task) === key).length;
+    if (metric === "completedTasks") return completedInBucket;
+    if (metric === "completionRate") return tasksInBucket ? (completedInBucket / tasksInBucket) * 100 : 0;
+    if (metric === "productivity") {
+      const hours = secondsInBucket / 3600;
+      return hours > 0 ? completedInBucket / hours : 0;
+    }
+    return 0;
+  }
 
   let teams = [];
   let teamMembers = [];
@@ -1305,6 +1592,17 @@
     "How to read these numbers": "كيفية قراءة هذه الأرقام",
     "Study time is summed from completed focus sessions. Task completion is completed tasks divided by all tasks in the selected range. Connect your database to replace the preview with your records.":
       "يُحسب وقت الدراسة من جلسات التركيز المكتملة. ونسبة إنجاز المهام هي المهام المكتملة مقسومة على إجمالي المهام في الفترة المحددة. اربط قاعدة بياناتك لعرض سجلاتك الفعلية.",
+    "Performance Overview": "نظرة عامة على الأداء",
+    "Study Hours": "ساعات الدراسة",
+    "Completed Tasks": "المهام المكتملة",
+    "Focus Sessions": "جلسات التركيز",
+    "Productivity": "الإنتاجية",
+    "Completion Rate": "معدل الإنجاز",
+    "Peak value": "أعلى قيمة",
+    "Lowest value": "أدنى قيمة",
+    "Average": "المتوسط",
+    "Change": "التغيير",
+    "Metric": "المؤشر",
     "MILESTONES THAT MATTER": "إنجازات تستحق الاحتفاء",
     "Turn the semester into small, achievable steps.":
       "حوّل الفصل الدراسي إلى خطوات صغيرة قابلة للإنجاز.",
@@ -1558,6 +1856,22 @@
     Yesterday: "أمس",
     "Today ·": "اليوم ·",
     "Tomorrow ·": "غدًا ·",
+    "Control which notifications you receive and how they are delivered.":
+      "التحكم في الإشعارات التي تصلك وطريقة وصولها.",
+    "Preview sound": "معاينة الصوت",
+    Vibration: "الاهتزاز",
+    "Vibrate on notifications": "الاهتزاز عند الإشعارات",
+    "Enable vibration": "تفعيل الاهتزاز",
+    "Default task reminder": "التذكير الافتراضي للمهام",
+    "Default reminder for new tasks": "التذكير الافتراضي للمهام الجديدة",
+    "At task start": "عند بدء المهمة",
+    "30 minutes before": "قبل ٣٠ دقيقة",
+    "Default all-day reminder time": "وقت التذكير الافتراضي لليوم الكامل",
+    "Time to remind for all-day tasks":
+      "وقت التذكير للمهام التي ليس لها وقت محدد",
+    "Suppress notifications during these hours": "كتم الإشعارات خلال هذه الساعات",
+    From: "من",
+    To: "إلى",
   };
   // The runtime dictionaries are generated into locales.js from this object
   // plus the additive Android/offline strings. Merging keeps one central
@@ -1850,7 +2164,8 @@
     );
     let node;
     while ((node = walker.nextNode())) {
-      if (node.parentElement?.closest("script,style,textarea")) continue;
+      if (node.parentElement?.closest("script,style,textarea,[data-sz-no-translate]"))
+        continue;
       if (!originalTextNodes.has(node))
         originalTextNodes.set(node, node.nodeValue);
       const source = originalTextNodes.get(node);
@@ -1867,6 +2182,7 @@
         "input[placeholder],textarea[placeholder],[aria-label],[title]",
       )
       .forEach((element) => {
+        if (element.closest("[data-sz-no-translate]")) return;
         if (!originalAttributes.has(element))
           originalAttributes.set(element, new Map());
         const originals = originalAttributes.get(element);
@@ -5677,49 +5993,258 @@
   }
 
   function analyticsPage() {
-    const weekHours = activity.reduce((sum, item) => sum + item.hours, 0);
-    const completedTasks = tasks.filter((task) => task.status === "completed");
-    const taskRate = tasks.length
-      ? Math.round((completedTasks.length / tasks.length) * 100)
-      : 0;
-    const activeSubjectIds = new Set(
-      focusRecords
-        .filter(
-          (record) =>
-            record.completed &&
-            record.session_type === "focus" &&
-            record.subject_id,
-        )
-        .filter(
-          (record) =>
-            Date.now() - new Date(record.started_at).getTime() <= 7 * 86400000,
-        )
-        .map((record) => record.subject_id),
+    const t = deadlineText[appLanguage];
+    const now = new Date();
+    const startOfToday = startOfLocalDay(now);
+
+    // ---- Compute date range based on analyticsRange ----
+    let rangeStart, rangeEnd, rangeLabel;
+    const oneDay = 86400000;
+    switch (analyticsRange) {
+      case "daily":
+        rangeStart = startOfToday;
+        rangeEnd = startOfToday;
+        rangeLabel = appLanguage === "ar" ? "اليوم" : "Today";
+        break;
+      case "weekly": {
+        const startDay = analyticsCustomStart ?? 1; // default Monday
+        const currentDay = now.getDay();
+        const offset = (currentDay + 7 - startDay) % 7;
+        rangeStart = startOfLocalDay(addLocalDays(now, -offset));
+        rangeEnd = startOfLocalDay(addLocalDays(rangeStart, 6));
+        rangeLabel = appLanguage === "ar" ? "هذا الأسبوع" : "This week";
+        break;
+      }
+      case "monthly": {
+        rangeStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        rangeEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        rangeLabel = new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { month: "long", year: "numeric" }).format(now);
+        break;
+      }
+      case "yearly": {
+        rangeStart = new Date(now.getFullYear(), 0, 1);
+        rangeEnd = new Date(now.getFullYear(), 11, 31);
+        rangeLabel = String(now.getFullYear());
+        break;
+      }
+      case "rolling7":
+        rangeStart = startOfLocalDay(addLocalDays(now, -6));
+        rangeEnd = startOfToday;
+        rangeLabel = appLanguage === "ar" ? "آخر ٧ أيام" : "Last 7 days";
+        break;
+      case "rolling30":
+        rangeStart = startOfLocalDay(addLocalDays(now, -29));
+        rangeEnd = startOfToday;
+        rangeLabel = appLanguage === "ar" ? "آخر ٣٠ يومًا" : "Last 30 days";
+        break;
+      case "custom": {
+        const s = analyticsCustomRange.start ? new Date(`${analyticsCustomRange.start}T00:00:00`) : startOfToday;
+        const e = analyticsCustomRange.end ? new Date(`${analyticsCustomRange.end}T00:00:00`) : startOfToday;
+        rangeStart = s;
+        rangeEnd = e;
+        rangeLabel = `${dateKey(rangeStart)} → ${dateKey(rangeEnd)}`;
+        break;
+      }
+      default:
+        rangeStart = startOfLocalDay(addLocalDays(now, -6));
+        rangeEnd = startOfToday;
+        rangeLabel = appLanguage === "ar" ? "آخر ٧ أيام" : "Last 7 days";
+    }
+
+    const rangeStartKey = dateKey(rangeStart);
+    const rangeEndKey = dateKey(rangeEnd);
+
+    analyticsMode = analyticsRange === "yearly" || analyticsRange === "monthly" ? "months" : "days";
+
+    // ---- Filter focus records by range ----
+    const recordsInRange = focusRecords.filter((record) => {
+      if (!record.completed || record.session_type !== "focus") return false;
+      const ended = new Date(record.ended_at || record.started_at);
+      const key = dateKey(ended);
+      return key >= rangeStartKey && key <= rangeEndKey;
+    });
+
+    const totalFocusSeconds = recordsInRange.reduce(
+      (sum, r) => sum + Number(r.duration_seconds || 0),
+      0,
     );
-    const scoreRows = session
-      ? examResults.flatMap((exam) => {
-          const result = Array.isArray(exam.exam_results)
-            ? exam.exam_results[0]
-            : exam.exam_results;
-          if (result?.obtained_marks == null) return [];
-          const score = Math.round(
-            (Number(result.obtained_marks) / Number(exam.max_marks)) * 100,
-          );
-          return [
-            { subject: exam.subject || subjectName(exam.subject_id), score },
-          ];
-        })
-      : examResults;
-    const bars = scoreRows
+    const focusSessionsCount = recordsInRange.length;
+    const avgSessionMinutes = focusSessionsCount
+      ? Math.round(totalFocusSeconds / focusSessionsCount / 60)
+      : 0;
+
+    // ---- Filter tasks by range ----
+    const tasksInRange = tasks.filter((task) => {
+      if (!task.due_at) return false;
+      const key = taskEndKey(task) || dateKey(new Date(task.due_at));
+      return key >= rangeStartKey && key <= rangeEndKey;
+    });
+    const completedTasks = tasksInRange.filter((t) => t.status === "completed");
+    const taskRate = tasksInRange.length
+      ? Math.round((completedTasks.length / tasksInRange.length) * 100)
+      : 0;
+    const overdueTasks = tasksInRange.filter(
+      (t) => t.status !== "completed" && taskEndKey(t) && taskEndKey(t) < dateKey(startOfToday),
+    );
+
+    analyticsBuckets = buildAnalyticsBuckets(rangeStart, rangeEnd, analyticsMode);
+    analyticsValues = analyticsBuckets.map((bucket) =>
+      analyticsMetricValue(analyticsMetric, bucket, recordsInRange, tasksInRange, completedTasks),
+    );
+
+    // ---- Subject activity ----
+    const subjectSeconds = new Map();
+    recordsInRange.forEach((r) => {
+      if (r.subject_id) {
+        subjectSeconds.set(
+          r.subject_id,
+          (subjectSeconds.get(r.subject_id) || 0) + Number(r.duration_seconds || 0),
+        );
+      }
+    });
+    const topSubjectId = [...subjectSeconds.entries()]
+      .sort((a, b) => b[1] - a[1])[0]?.[0];
+    const topSubject = topSubjectId ? subjectName(topSubjectId) : "—";
+
+    // ---- Study streak (consecutive days with activity) ----
+    const activeDays = new Set(
+      recordsInRange.map((r) => dateKey(new Date(r.ended_at || r.started_at))),
+    );
+    let streak = 0;
+    let cursor = new Date(rangeEnd);
+    while (activeDays.has(dateKey(cursor))) {
+      streak += 1;
+      cursor = addLocalDays(cursor, -1);
+      if (cursor < rangeStart) break;
+    }
+
+    // ---- Daily breakdown for chart ----
+    const dayCount = Math.ceil((rangeEnd - rangeStart) / oneDay) + 1;
+    const dailyData = [];
+    for (let i = 0; i < dayCount; i++) {
+      const day = addLocalDays(rangeStart, i);
+      const key = dateKey(day);
+      const seconds = recordsInRange
+        .filter((r) => dateKey(new Date(r.ended_at || r.started_at)) === key)
+        .reduce((sum, r) => sum + Number(r.duration_seconds || 0), 0);
+      const completed = tasksInRange.filter(
+        (t) => t.status === "completed" && taskEndKey(t) === key,
+      ).length;
+      const total = tasksInRange.filter(
+        (t) => taskEndKey(t) === key,
+      ).length;
+      dailyData.push({ date: day, key, seconds, completed, total });
+    }
+
+    const maxSeconds = Math.max(3600, ...dailyData.map((d) => d.seconds));
+    const bars = dailyData
+      .map((d) => {
+        const label = new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { weekday: "short" }).format(d.date);
+        const height = d.seconds ? Math.max(4, (d.seconds / maxSeconds) * 100) : 0;
+        return `<div class="focus-chart-day" title="${escapeHtml(label)}: ${escapeHtml(formatFocusHours(d.seconds, focusText[appLanguage]))}"><div class="focus-chart-track"><span style="height:${height}%"></span></div><small>${escapeHtml(label)}</small></div>`;
+      })
+      .join("");
+
+    const rangeOptions = [
+      ["daily", appLanguage === "ar" ? "يومي" : "Daily"],
+      ["weekly", appLanguage === "ar" ? "أسبوعي" : "Weekly"],
+      ["monthly", appLanguage === "ar" ? "شهري" : "Monthly"],
+      ["yearly", appLanguage === "ar" ? "سنوي" : "Yearly"],
+      ["rolling7", appLanguage === "ar" ? "آخر ٧ أيام متحركة" : "Rolling 7 days"],
+      ["rolling30", appLanguage === "ar" ? "آخر ٣٠ يومًا متحركة" : "Rolling 30 days"],
+      ["custom", appLanguage === "ar" ? "نطاق مخصص" : "Custom range"],
+    ]
       .map(
-        (item) =>
-          `<div class="score-row"><span>${escapeHtml(item.subject)}</span><div class="progress-track"><div class="progress-fill" style="width:${item.score}%"></div></div><span class="score-value">${item.score}%</span></div>`,
+        ([value, label]) =>
+          `<option value="${value}" ${analyticsRange === value ? "selected" : ""}>${label}</option>`,
       )
       .join("");
-    const stats = session
-      ? `${statCard("STUDY TIME", `${weekHours.toFixed(1)}h`, " across 7 days", "◷")}${statCard("DAILY AVERAGE", `${(weekHours / 7).toFixed(1)}h`, " each day", "⌁")}${statCard("TASK COMPLETION", `${taskRate}%`, ` ${completedTasks.length} of ${tasks.length} tasks`, "✓")}${statCard("SUBJECTS ACTIVE", String(activeSubjectIds.size), " courses this week", "◈")}`
-      : `${statCard("STUDY TIME", "—", " Sign in to view verified focus time", "◷")}${statCard("DAILY AVERAGE", "—", " Based on completed sessions", "⌁")}${statCard("TASK COMPLETION", "—", " Based on your saved tasks", "✓")}${statCard("SUBJECTS ACTIVE", "—", " Based on recent sessions", "◈")}`;
-    return `${pageHeading("YOUR STUDY PATTERNS", "Analytics", "Understand your study habits without losing sight of the bigger picture.", "")}<div class="grid stats-grid">${stats}</div><div class="grid dashboard-grid"><section class="panel">${panelHeading("Daily study hours", session ? "Verified focus time · last 7 days" : "Sample focus time · hours per day")}${lineChart()}</section><section class="panel">${panelHeading("Recent exam results", "Score by subject")}<div class="score-bars">${bars || `<div class="empty-state">${session ? "No recorded exam results yet." : "Sign in to view your exam results."}</div>`}</div></section></div><section class="panel section-spacer">${panelHeading("How to read these numbers")}<p class="panel-copy">${session ? "Study time is summed from completed, verified focus sessions. Task completion is based on your saved tasks; active subjects come from recent sessions." : "Sign in to view account-based analytics. Sample content is not included in your personal metrics."}</p></section>`;
+
+    const weekStartOptions = [
+      [0, appLanguage === "ar" ? "السبت" : "Saturday"],
+      [1, appLanguage === "ar" ? "الإثنين" : "Monday"],
+      [2, appLanguage === "ar" ? "الثلاثاء" : "Tuesday"],
+      [3, appLanguage === "ar" ? "الأربعاء" : "Wednesday"],
+      [4, appLanguage === "ar" ? "الخميس" : "Thursday"],
+      [5, appLanguage === "ar" ? "الجمعة" : "Friday"],
+      [6, appLanguage === "ar" ? "الأحد" : "Sunday"],
+    ]
+      .map(
+        ([value, label]) =>
+          `<option value="${value}" ${analyticsCustomStart === value ? "selected" : ""}>${label}</option>`,
+      )
+      .join("");
+
+    const customRangeUI =
+      analyticsRange === "custom"
+        ? `<div class="form-row"><label>${appLanguage === "ar" ? "من تاريخ" : "From date"}<input type="date" id="analytics-range-start" data-sz-range-group="analytics" data-sz-range-role="start" value="${analyticsCustomRange.start || ""}"></label><label>${appLanguage === "ar" ? "إلى تاريخ" : "To date"}<input type="date" id="analytics-range-end" data-sz-range-group="analytics" data-sz-range-role="end" value="${analyticsCustomRange.end || ""}"></label></div>`
+        : "";
+
+    const weekStartUI =
+      analyticsRange === "weekly"
+        ? `<label>${appLanguage === "ar" ? "بداية الأسبوع" : "Week starts on"}<select id="analytics-week-start">${weekStartOptions}</select></label>`
+        : "";
+
+    const analyticsMetricOptions = analyticsMetrics
+      .map(
+        (metric) =>
+          `<option value="${metric.id}" ${analyticsMetric === metric.id ? "selected" : ""}>${translateUiText(metric.labelKey)}</option>`,
+      )
+      .join("");
+
+    const analyticsChartSvg = buildAnalyticsLineChart(analyticsBuckets, analyticsValues, analyticsMetric);
+    const analyticsChartMax = analyticsChartGeometry ? analyticsChartGeometry.max : 1;
+    const analyticsChartMin = analyticsValues.length ? Math.min(...analyticsValues) : 0;
+    const analyticsChartAvg =
+      analyticsValues.length > 0
+        ? analyticsValues.reduce((sum, value) => sum + value, 0) / analyticsValues.length
+        : 0;
+    const analyticsPeriodSpan = Math.max(1, rangeEnd.getTime() - rangeStart.getTime());
+    const previousBuckets = buildAnalyticsBuckets(
+      new Date(rangeStart.getTime() - analyticsPeriodSpan),
+      new Date(rangeEnd.getTime() - analyticsPeriodSpan),
+      analyticsMode,
+    );
+    const analyticsPreviousValue = previousBuckets.length
+      ? analyticsMetricValue(analyticsMetric, previousBuckets[previousBuckets.length - 1], recordsInRange, tasksInRange, completedTasks)
+      : 0;
+    const analyticsChangePct = analyticsPreviousValue > 0 ? ((analyticsValues[analyticsValues.length - 1] - analyticsPreviousValue) / analyticsPreviousValue) * 100 : 0;
+
+    return `${pageHeading("YOUR STUDY PATTERNS", "Analytics", "Understand your study habits without losing sight of the bigger picture.", `<div class="analytics-controls"><label>${appLanguage === "ar" ? "النطاق الزمني" : "Time range"}<select id="analytics-range">${rangeOptions}</select></label>${weekStartUI}${customRangeUI}<label>${appLanguage === "ar" ? "المؤشر" : "Metric"}<select id="analytics-metric" data-sz-control>${analyticsMetricOptions}</select></label><button class="button button-secondary button-small" data-action="analytics-export">${appLanguage === "ar" ? "تصدير" : "Export"}</button></div>`)}
+    <section class="panel section-spacer" data-analytics-chart-panel>
+      <div class="analytics-chart-head">
+        <div>
+          <h2>${translateUiText("Performance Overview")}</h2>
+          <p>${analyticsMetricLabel(analyticsMetric)}</p>
+        </div>
+      </div>
+      <div class="analytics-chart" data-analytics-line-chart>
+        <div class="analytics-chart-body">${analyticsChartSvg}</div>
+        <div class="analytics-chart-tip" hidden></div>
+      </div>
+      <div class="analytics-chart-summary>
+        <span>${appLanguage === "ar" ? "أعلى قيمة" : "Peak value"}: <strong>${escapeHtml(formatAnalyticsMetricValue(analyticsMetric, analyticsValues.length ? Math.max(...analyticsValues) : 0))}</strong></span>
+        <span>${appLanguage === "ar" ? "أدنى قيمة" : "Lowest value"}: <strong>${escapeHtml(formatAnalyticsMetricValue(analyticsMetric, analyticsValues.length ? Math.min(...analyticsValues) : 0))}</strong></span>
+        <span>${appLanguage === "ar" ? "المتوسط" : "Average"}: <strong>${escapeHtml(formatAnalyticsMetricValue(analyticsMetric, analyticsChartAvg))}</strong></span>
+        <span>${appLanguage === "ar" ? "التغيير" : "Change"}: <strong>${escapeHtml(((analyticsValues[analyticsValues.length - 1] - analyticsPreviousValue) / (analyticsPreviousValue || 1) * 100).toFixed(1))}%</strong></span>
+      </div>
+    </section>
+
+    <div class="grid stats-grid">
+      ${statCard("STUDY TIME", `${formatFocusHours(totalFocusSeconds, focusText[appLanguage])}`, ` across ${dayCount} days`, "◷")}
+      ${statCard("DAILY AVERAGE", `${(totalFocusSeconds / dayCount / 3600).toFixed(1)}h`, ` per day`, "⌁")}
+      ${statCard("TASK COMPLETION", `${taskRate}%`, ` ${completedTasks.length} of ${tasksInRange.length} tasks`, "✓")}
+      ${statCard("STUDY STREAK", `${streak} ${appLanguage === "ar" ? "يوم" : "day"}${streak !== 1 ? appLanguage === "ar" ? "أيام" : "s" : ""}`, streak > 0 ? appLanguage === "ar" ? "أيام متتالية" : "consecutive days" : " No activity yet", "↗")}
+    </div>
+    <div class="grid dashboard-grid">
+      <section class="panel">${panelHeading(appLanguage === "ar" ? "ساعات الدراسة اليومية" : "Daily study hours", rangeLabel)}${`<div class="focus-chart" role="img" aria-label="Daily study hours">${bars}</div>`}</section>
+      <section class="panel">${panelHeading(appLanguage === "ar" ? "أكثر المواد دراسة" : "Top subject", appLanguage === "ar" ? "بناءً على وقت التركيز" : "Based on focus time")}<div class="metric-large">${escapeHtml(topSubject)}</div><p class="metric-caption">${appLanguage === "ar" ? "أكثر مادة قضيتم فيها وقتًا" : "Subject with most focus time in range"}</p></section>
+    </div>
+    <section class="panel section-spacer">${panelHeading(appLanguage === "ar" ? "إنجاز المهام" : "Task completion", appLanguage === "ar" ? "المهام المكتملة في النطاق" : "Completed tasks in range")}
+      ${taskRate > 0 ? `<div class="progress-track"><div class="progress-fill" style="width:${taskRate}%"></div></div><span class="metric-large">${taskRate}%<small> · ${completedTasks.length} / ${tasksInRange.length}</small></span>` : `<div class="empty-state">${appLanguage === "ar" ? "لا توجد مهام في هذا النطاق" : "No tasks in this range"}</div>`}
+      ${overdueTasks.length ? `<p class="data-caption">${appLanguage === "ar" ? "مهام متأخرة" : "Overdue tasks"}: ${overdueTasks.length}</p>` : ""}
+    </section>
+    <section class="panel section-spacer">${panelHeading(appLanguage === "ar" ? "كيفية قراءة الأرقام" : "How to read these numbers")}<p class="panel-copy">${appLanguage === "ar" ? "يُحسب وقت الدراسة من جلسات التركيز المكتملة في النطاق المختار. ونسبة إنجاز المهام هي المهام المكتملة مقسومة على إجمالي المهام التي تنتهي في النطاق. السلسلة هي عدد الأيام المتتالية التي تحتوي على نشاط تركيز." : "Study time is summed from completed focus sessions in the selected range. Task completion is completed tasks divided by all tasks due in the range. Streak is consecutive days with focus activity."}</p></section>`;
   }
 
   function goalsPage() {
@@ -7231,6 +7756,7 @@
     return `<section class="panel">${panelHeading(appLanguage === "ar" ? "إشعارات التطبيق" : "Notification sounds")}
       <form id="notification-prefs-form" class="form-stack notification-prefs-form">
         <label class="focus-setting-toggle"><span>${appLanguage === "ar" ? "صوت عند وصول إشعار جديد" : "Play a sound for new notifications"}</span><input type="checkbox" name="sound" ${notificationPrefs.sound ? "checked" : ""}><i aria-hidden="true"></i></label>
+        <label class="focus-setting-toggle"><span>${appLanguage === "ar" ? "الاهتزاز" : "Vibration"}</span><input type="checkbox" name="vibration_enabled" ${notificationPrefs.vibration_enabled !== false ? "checked" : ""}><i aria-hidden="true"></i></label>
         <label class="focus-setting-toggle"><span>${appLanguage === "ar" ? "وضع عدم الإزعاج" : "Do not disturb"}</span><input type="checkbox" name="dnd" ${notificationPrefs.dnd ? "checked" : ""}><i aria-hidden="true"></i></label>
         <div class="form-row">
           <label>${appLanguage === "ar" ? "من" : "From"}<input type="time" name="dnd_start" value="${escapeHtml(notificationPrefs.start)}" /></label>
@@ -7257,6 +7783,7 @@
       dnd: formData.get("dnd") === "on",
       start: String(formData.get("dnd_start") || "22:00"),
       end: String(formData.get("dnd_end") || "07:00"),
+      vibration_enabled: formData.get("vibration_enabled") === "on",
       taskSound: String(formData.get("taskSound") || "task-reminder"),
       taskVolume: Number(formData.get("taskVolume") || 80),
       taskDuration: Number(formData.get("taskDuration") || 5),
@@ -7274,6 +7801,7 @@
             user_id: session.user.id,
             sound_enabled: notificationPrefs.sound,
             dnd_enabled: notificationPrefs.dnd,
+            vibration_enabled: notificationPrefs.vibration_enabled,
             dnd_start: notificationPrefs.start,
             dnd_end: notificationPrefs.end,
             updated_at: new Date().toISOString(),
@@ -7499,12 +8027,17 @@
     window.dispatchEvent(
       new CustomEvent("studyzone:theme-changed", { detail: { theme: id } }),
     );
+    syncWidgetData();
     if (announce) showToast("Theme applied.");
   }
 
   async function saveThemePreset(themeId) {
     const id = normalizeThemePreset(themeId);
     applyThemePreset(id, { announce: true });
+    // Switch the Android launcher icon to match the theme (native only).
+    if (window.StudyZoneNotifications?.setLauncherIcon) {
+      window.StudyZoneNotifications.setLauncherIcon(id);
+    }
     if (!supabase || !session) return;
     const { error } = await supabase
       .from("profiles")
@@ -7538,7 +8071,19 @@
     team: true,
     challenges: true,
     achievements: true,
+    focus_notifications: true,
+    break_notifications: true,
+    daily_study_reminders: true,
   };
+
+  const defaultAllDayReminderTime = "09:00";
+  let allDayReminderTime = defaultAllDayReminderTime;
+  try {
+    const stored = localStorage.getItem("studyzone.allday-reminder-time");
+    if (stored && /^\d{2}:\d{2}$/.test(stored)) allDayReminderTime = stored;
+  } catch {
+    /* use default */
+  }
 
   function notificationTypes() {
     try {
@@ -7578,10 +8123,13 @@
       ["exams", "Exam reminders"],
       ["sessions", "Study session reminders"],
       ["pomodoro", "Pomodoro start and end"],
+      ["focus_notifications", "Focus notifications"],
+      ["break_notifications", "Break notifications"],
       ["goals", "Daily goals"],
       ["team", "Team activity"],
       ["challenges", "Challenge updates"],
       ["achievements", "Achievement alerts"],
+      ["daily_study_reminders", "Daily study reminders"],
     ]
       .map(
         ([key, label]) =>
@@ -7589,7 +8137,8 @@
       )
       .join("");
     const native = Boolean(window.StudyZoneNotifications?.isNative);
-    return `<section class="panel">${panelHeading(translateUiText("Android notifications"), translateUiText("Reminders are scheduled on this device and work while the app is closed."))}<div class="notification-type-grid">${rows}</div><div class="setting-row"><div><strong>${translateUiText("Enable notifications")}</strong><small>${translateUiText(native ? "Native notifications" : "Notifications are not available on this device.")}</small></div><button class="button button-secondary button-small" type="button" data-action="native-notification-permission">${translateUiText("Enable notifications")}</button></div><p class="data-caption" data-notification-status role="status"></p></section>`;
+    const dndActive = isDoNotDisturbActive();
+    return `<section class="panel">${panelHeading(translateUiText("Notification settings"), translateUiText("Control which notifications you receive and how they are delivered."))}<div class="notification-type-grid">${rows}</div><div class="setting-row"><div><strong>${translateUiText("Notification sound")}</strong><small>${translateUiText(dndActive ? "Sound muted (do not disturb active)" : "Sound enabled for notifications")}</small></div><button class="button button-secondary button-small" type="button" data-action="notification-sound-preview">${translateUiText("Preview sound")}</button></div><div class="setting-row"><div><strong>${translateUiText("Vibration")}</strong><small>${translateUiText("Vibrate on notifications")}</small></div><label class="focus-setting-toggle"><span>${translateUiText("Enable vibration")}</span><input type="checkbox" name="vibration_enabled" ${notificationPrefs.vibration_enabled !== false ? "checked" : ""}><i aria-hidden="true"></i></label></div><div class="setting-row"><div><strong>${translateUiText("Default task reminder")}</strong><small>${translateUiText("Default reminder for new tasks")}</small></div><select name="default_task_reminder" class="filter-select"><option value="0">${translateUiText("No reminder")}</option><option value="-1">${translateUiText("At task start")}</option><option value="15">${translateUiText("15 minutes before")}</option><option value="30">${translateUiText("30 minutes before")}</option><option value="60">${translateUiText("1 hour before")}</option></select></div><div class="setting-row"><div><strong>${translateUiText("Default all-day reminder time")}</strong><small>${translateUiText("Time to remind for all-day tasks")}</small></div><input type="time" name="allday_reminder_time" value="${escapeHtml(allDayReminderTime)}" /></div><div class="setting-row"><div><strong>${translateUiText("Quiet hours")}</strong><small>${translateUiText("Suppress notifications during these hours")}</small></div><div class="form-row"><label>${translateUiText("From")}<input type="time" name="dnd_start" value="${escapeHtml(notificationPrefs.start)}" /></label><label>${translateUiText("To")}<input type="time" name="dnd_end" value="${escapeHtml(notificationPrefs.end)}" /></label></div></div><div class="setting-row"><div><strong>${translateUiText("Enable notifications")}</strong><small>${translateUiText(native ? "Native notifications" : "Notifications are not available on this device.")}</small></div><button class="button button-secondary button-small" type="button" data-action="native-notification-permission">${translateUiText("Enable notifications")}</button></div><p class="data-caption" data-notification-status role="status"></p></section>`;
   }
 
   function syncSettingsPanel() {
@@ -8675,6 +9224,29 @@
     });
   }
 
+  function syncBusyDates() {
+    const api = window.StudyZoneUiControls;
+    if (!api || typeof api.setBusyDates !== "function") return;
+    const keys = new Set();
+    (Array.isArray(tasks) ? tasks : []).forEach((task) => {
+      const range = taskDateRange(task);
+      if (!range) return;
+      const cursor = new Date(range.start);
+      let guard = 0;
+      while (cursor <= range.end && guard < 400) {
+        keys.add(dateKey(cursor));
+        cursor.setDate(cursor.getDate() + 1);
+        guard += 1;
+      }
+    });
+    (getDeadlines() || []).forEach((deadline) => {
+      if (!deadline || !deadline.due_at) return;
+      const date = new Date(deadline.due_at);
+      if (!Number.isNaN(date.getTime())) keys.add(dateKey(date));
+    });
+    api.setBusyDates(Array.from(keys));
+  }
+
   function render() {
     if (scheduledRenderHandle) {
       window.cancelAnimationFrame(scheduledRenderHandle);
@@ -8693,6 +9265,8 @@
     lastRenderedPage = currentPage;
     content.classList.remove("page-enter");
     content.innerHTML = pageRenderers[currentPage]();
+    const analyticsChartHost = content.querySelector("[data-analytics-line-chart]");
+    if (analyticsChartHost) attachAnalyticsLineChartHandlers(analyticsChartHost);
     if (shouldAnimate() && pageChanged) {
       void content.offsetWidth;
       content.classList.add("page-enter");
@@ -8733,6 +9307,8 @@
     updateStreakSidebar();
     updateAdminNavigation();
     window.StudyZoneNotifications?.syncTaskReminders?.(tasks, examResults);
+    syncWidgetData();
+    syncBusyDates();
     window.StudyZoneSyncUI?.refresh?.();
     if (currentPage === "tasks") {
       document
@@ -10080,6 +10656,26 @@
       form.elements.reminder_before_minutes.value = String(
         task.reminder_before_minutes || 0,
       );
+      const reminderCustomRow = document.getElementById("reminder-custom-row");
+      const alldayReminderRow = document.getElementById("allday-reminder-row");
+      if (reminderCustomRow) {
+        reminderCustomRow.hidden = task.reminder_before_minutes !== "custom";
+        if (task.reminder_custom_date) {
+          const el = form.elements.namedItem("reminder_custom_date");
+          if (el) el.value = task.reminder_custom_date;
+        }
+        if (task.reminder_custom_time) {
+          const el = form.elements.namedItem("reminder_custom_time");
+          if (el) el.value = task.reminder_custom_time;
+        }
+      }
+      if (alldayReminderRow) {
+        alldayReminderRow.hidden = !isAllDayTask(task);
+        if (task.allday_reminder_time) {
+          const el = form.elements.namedItem("allday_reminder_time");
+          if (el) el.value = task.allday_reminder_time;
+        }
+      }
       const isSeries = Boolean(task.recurrence_group_id);
       repeatConfig.hidden = true;
       seriesNote.hidden = !isSeries;
@@ -10105,6 +10701,16 @@
       form.elements.reminder_before_minutes.value = String(
         routine.reminder_before_minutes || 0,
       );
+      const reminderCustomRow = document.getElementById("reminder-custom-row");
+      const alldayReminderRow = document.getElementById("allday-reminder-row");
+      if (reminderCustomRow) reminderCustomRow.hidden = true;
+      if (alldayReminderRow) {
+        alldayReminderRow.hidden = false;
+        if (routine.allday_reminder_time) {
+          const el = form.elements.namedItem("allday_reminder_time");
+          if (el) el.value = routine.allday_reminder_time;
+        }
+      }
       form.elements.repeat_type.value = routineTypeFormValue(routine);
       form.querySelectorAll('input[name="repeat_days"]').forEach((input) => {
         input.checked = (routine.weekdays || [])
@@ -10146,6 +10752,19 @@
       }
     }
     updateRepeatControls(form);
+    const reminderSelect = form.elements.namedItem("reminder_before_minutes");
+    const allDayCheckbox = form.elements.namedItem("all_day");
+    const reminderCustomRow = document.getElementById("reminder-custom-row");
+    const alldayReminderRow = document.getElementById("allday-reminder-row");
+    function toggleReminderRows() {
+      if (reminderCustomRow)
+        reminderCustomRow.hidden = reminderSelect.value !== "custom";
+      if (alldayReminderRow)
+        alldayReminderRow.hidden = !allDayCheckbox.checked;
+    }
+    reminderSelect?.addEventListener("change", toggleReminderRows, { once: true });
+    allDayCheckbox?.addEventListener("change", toggleReminderRows, { once: true });
+    toggleReminderRows();
     openModal(document.getElementById("task-modal"));
     translateInterface();
     form.elements.title.focus();
@@ -10173,7 +10792,12 @@
       status: String(formData.get("status") || "not_started"),
       estimated_minutes: Number(formData.get("estimated_minutes")) || 45,
       reminder_before_minutes:
-        Number(formData.get("reminder_before_minutes")) || 0,
+        formData.get("reminder_before_minutes") === "custom"
+          ? "custom"
+          : Number(formData.get("reminder_before_minutes")) || 0,
+      reminder_custom_date: String(formData.get("reminder_custom_date") || "") || null,
+      reminder_custom_time: String(formData.get("reminder_custom_time") || "") || null,
+      allday_reminder_time: String(formData.get("allday_reminder_time") || "") || null,
       is_all_day: allDay,
       starts_at: startsValue ? new Date(startsValue).toISOString() : null,
       due_at: dueValue ? new Date(dueValue).toISOString() : null,
@@ -10886,11 +11510,31 @@
       form.elements.reminder_before_minutes.value = String(
         deadline.reminder_before_minutes || 0,
       );
+      const deadlineReminderCustomRow = document.getElementById("deadline-reminder-custom-row");
+      if (deadlineReminderCustomRow) {
+        deadlineReminderCustomRow.hidden = deadline.reminder_before_minutes !== "custom";
+        if (deadline.reminder_custom_date) {
+          const el = form.elements.namedItem("deadline_reminder_custom_date");
+          if (el) el.value = deadline.reminder_custom_date;
+        }
+        if (deadline.reminder_custom_time) {
+          const el = form.elements.namedItem("deadline_reminder_custom_time");
+          if (el) el.value = deadline.reminder_custom_time;
+        }
+      }
       form.querySelector("[data-repeat-config]").hidden = true;
     } else {
       form.querySelector("[data-repeat-config]").hidden = false;
     }
     updateRepeatControls(form);
+    const deadlineReminderSelect = form.elements.namedItem("reminder_before_minutes");
+    const deadlineReminderCustomRow = document.getElementById("deadline-reminder-custom-row");
+    function toggleDeadlineReminderRow() {
+      if (deadlineReminderCustomRow)
+        deadlineReminderCustomRow.hidden = deadlineReminderSelect.value !== "custom";
+    }
+    deadlineReminderSelect?.addEventListener("change", toggleDeadlineReminderRow, { once: true });
+    toggleDeadlineReminderRow();
     openModal(document.getElementById("deadline-modal"));
     form.elements.title.focus();
   }
@@ -10927,9 +11571,12 @@
       starts_at: startsAt,
       due_at: dueAt,
       priority: String(formData.get("priority") || "medium"),
-      reminder_before_minutes: Number(
-        formData.get("reminder_before_minutes") || 0,
-      ),
+      reminder_before_minutes:
+        formData.get("reminder_before_minutes") === "custom"
+          ? "custom"
+          : Number(formData.get("reminder_before_minutes") || 0),
+      reminder_custom_date: String(formData.get("deadline_reminder_custom_date") || "") || null,
+      reminder_custom_time: String(formData.get("deadline_reminder_custom_time") || "") || null,
     };
 
     if (editingDeadlineId) {
@@ -12987,12 +13634,80 @@
       updateFocusSoundVolume(target.value);
     } else if (target?.id === "quick-capture-type") {
       quickCaptureType = target.value;
+    } else if (target?.id === "analytics-range") {
+      analyticsRange = target.value;
+      analyticsCustomRange = { start: null, end: null };
+      saveAnalyticsSettings();
+      render();
+    } else if (target?.id === "analytics-week-start") {
+      analyticsCustomStart = Number(target.value);
+      saveAnalyticsSettings();
+      render();
+    } else if (target?.id === "analytics-range-start") {
+      analyticsCustomRange.start = target.value || null;
+      saveAnalyticsSettings();
+      render();
+    } else if (target?.id === "analytics-range-end") {
+      analyticsCustomRange.end = target.value || null;
+      saveAnalyticsSettings();
+      render();
+    } else if (target?.id === "analytics-metric") {
+      analyticsMetric = target.value;
+      saveAnalyticsSettings();
+      render();
     } else if (target?.matches?.("[data-notification-type]")) {
       saveNotificationTypes({
         [target.dataset.notificationType]: target.checked,
       });
       if (window.StudyZoneNotifications?.syncTaskReminders)
         window.StudyZoneNotifications.syncTaskReminders(tasks, examResults);
+    } else if (target?.name === "vibration_enabled") {
+      notificationPrefs.vibration_enabled = target.checked;
+      localStorage.setItem(notificationPrefsKey, JSON.stringify(notificationPrefs));
+      if (supabase && session) {
+        void supabase
+          .from("user_notification_preferences")
+          .upsert(
+            {
+              user_id: session.user.id,
+              vibration_enabled: notificationPrefs.vibration_enabled,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id" },
+          )
+          .then(({ error }) => {
+            if (error && !isMissingColumnError(error))
+              console.warn("Could not sync vibration preference.", error);
+          });
+      }
+      render();
+    } else if (target?.name === "default_task_reminder") {
+      localStorage.setItem("studyzone.default-task-reminder", target.value);
+      if (supabase && session) {
+        void supabase
+          .from("profiles")
+          .update({ notification_settings: { ...notificationTypes(), default_task_reminder: target.value } })
+          .eq("id", session.user.id)
+          .then(({ error }) => {
+            if (error && !isMissingColumnError(error))
+              console.warn("Could not sync default task reminder.", error);
+          });
+      }
+      render();
+    } else if (target?.name === "allday_reminder_time") {
+      allDayReminderTime = target.value || defaultAllDayReminderTime;
+      localStorage.setItem("studyzone.allday-reminder-time", allDayReminderTime);
+      if (supabase && session) {
+        void supabase
+          .from("profiles")
+          .update({ notification_settings: { ...notificationTypes(), allday_reminder_time: allDayReminderTime } })
+          .eq("id", session.user.id)
+          .then(({ error }) => {
+            if (error && !isMissingColumnError(error))
+              console.warn("Could not sync all-day reminder time.", error);
+          });
+      }
+      render();
     }
   });
 
@@ -13123,6 +13838,16 @@
     render();
     if (currentPage === "admin") void verifyAdminAccess();
     if (currentPage === "focus") void loadFocusData();
+  });
+  window.addEventListener("studyzone:shortcut-open", (event) => {
+    const detail = event.detail || {};
+    const page = detail.page;
+    if (page && pageRenderers[page]) {
+      currentPage = page;
+      window.location.hash = page;
+      render();
+      if (page === "focus") void loadFocusData();
+    }
   });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
@@ -13258,6 +13983,7 @@
     setTheme: saveThemePreset,
     applyTheme: applyThemePreset,
     navigate,
+    syncWidgets: () => syncWidgetData(),
     syncReminders: () =>
       window.StudyZoneNotifications?.syncTaskReminders?.(tasks, examResults),
     reloadWorkspace: async () => {
@@ -13269,6 +13995,109 @@
     isOffline: () => navigator.onLine === false,
     translate: translateUiText,
   };
+
+  // ---- Widget data sync ------------------------------------------------------
+  function syncWidgetData() {
+    const bridge = window.StudyZoneNotifications;
+    if (!bridge || typeof bridge.setWidgetData !== "function") return;
+    const themeId = currentThemePreset();
+    const ar = appLanguage === "ar";
+    const locale = ar ? "ar-EG" : "en";
+    const todayKey = dateKey(new Date());
+    const todayTasks = tasksForDay(todayKey);
+    const completed = todayTasks.filter((t) => t.status === "completed").length;
+    const total = todayTasks.length;
+    const progress = total ? Math.round((completed / total) * 100) : 0;
+    const dayName = new Intl.DateTimeFormat(locale, { weekday: "short" }).format(new Date());
+    const dateStr = new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(new Date());
+
+    const taskLine = (task) => {
+      const done = task.status === "completed" ? "✓ " : "• ";
+      const title = String(task.title || "").trim();
+      if (!task.due_at || isAllDayTask(task)) return `${done}${title}`;
+      const time = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(new Date(task.due_at));
+      return `${done}${title} · ${time}`;
+    };
+    const lines = todayTasks.slice(0, 4).map(taskLine);
+    const emptyLabel = ar ? "لا توجد مهام اليوم" : "No tasks today";
+
+    let focusSessionsToday = 0;
+    try {
+      focusSessionsToday = getFocusStats().todaySessions || 0;
+    } catch {
+      focusSessionsToday = 0;
+    }
+
+    const activeFocus = focusSession.status === "running" || focusSession.status === "paused";
+    const remaining = Math.max(0, getFocusRemainingMs());
+    const minutes = Math.floor(remaining / 60000);
+    const seconds = Math.floor((remaining % 60000) / 1000);
+    const clock = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    const focusStatus = !activeFocus
+      ? ar ? "خامل" : "Idle"
+      : focusSession.status === "paused"
+        ? ar ? "متوقف مؤقتًا" : "Paused"
+        : ar ? "قيد التركيز" : "Focusing";
+    const focusTask = focusSession.taskId
+      ? tasks.find((task) => task.id === focusSession.taskId)
+      : null;
+    const focusSessionLabel = activeFocus
+      ? focusTask?.title ||
+        (focusSession.type === "break" ? (ar ? "استراحة" : "Break") : ar ? "جلسة تركيز" : "Focus session")
+      : ar ? "لا توجد جلسة نشطة" : "No active session";
+
+    const upcoming = (getDeadlines() || [])
+      .filter((deadline) => getDeadlineStatus(deadline) !== "completed" && deadline.due_at)
+      .slice()
+      .sort((a, b) => new Date(a.due_at) - new Date(b.due_at))
+      .slice(0, 3)
+      .map((deadline) => {
+        const due = new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(new Date(deadline.due_at));
+        return `${deadline.title || (ar ? "موعد نهائي" : "Deadline")} · ${due}`;
+      });
+
+    const payloads = {
+      today_tasks: {
+        date: dateStr,
+        day: dayName,
+        taskCount: `${total} ${ar ? "مهام" : total === 1 ? "task" : "tasks"} · ${completed} ${ar ? "مكتملة" : "done"}`,
+        progress,
+        empty: total ? "" : emptyLabel,
+      },
+      large_tasks: {
+        date: dateStr,
+        taskCount: `${total} ${ar ? "مهام" : total === 1 ? "task" : "tasks"}`,
+        task1: lines[0] || "",
+        task2: lines[1] || "",
+        task3: lines[2] || "",
+        task4: lines[3] || "",
+        empty: total ? "" : emptyLabel,
+      },
+      daily_progress: {
+        title: ar ? "التقدم اليومي" : "Daily Progress",
+        date: dateStr,
+        completed: `${completed} / ${total} ${ar ? "مهام" : "tasks"}`,
+        focus: `${focusSessionsToday} ${ar ? "جلسات تركيز" : "focus sessions"}`,
+        progress,
+      },
+      focus: {
+        title: ar ? "مؤقت التركيز" : "Focus Timer",
+        status: focusStatus,
+        time: clock,
+        session: focusSessionLabel,
+      },
+      upcoming_deadlines: {
+        title: ar ? "المواعيد القادمة" : "Upcoming Deadlines",
+        deadline1: upcoming[0] || (ar ? "لا توجد مواعيد قادمة" : "No upcoming deadlines"),
+        deadline2: upcoming[1] || "",
+        deadline3: upcoming[2] || "",
+      },
+    };
+
+    Object.entries(payloads).forEach(([type, payload]) => {
+      bridge.setWidgetData(themeId, type, 0, JSON.stringify(payload));
+    });
+  }
   document.getElementById("footer-year").textContent = new Date().getFullYear();
   updateOfflineStatus();
   document.documentElement.dataset.motion = motionLevel;

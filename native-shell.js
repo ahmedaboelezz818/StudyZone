@@ -38,6 +38,9 @@
     StatusBar,
   } = plugins;
 
+  const iconPlugin = cap?.Plugins?.StudyZoneIconPlugin;
+  const widgetPlugin = cap?.Plugins?.StudyZoneWidgetPlugin;
+
   const root = document.documentElement;
   const CHANNEL_REMINDERS = "studyzone_reminders";
   const CHANNEL_FOCUS = "studyzone_focus";
@@ -633,8 +636,13 @@
   });
 
   // ---- Theme / language refresh ------------------------------------------
-  window.addEventListener("studyzone:theme-changed", async () => {
+  window.addEventListener("studyzone:theme-changed", async (event) => {
     applyStatusBar();
+    const themeId =
+      event?.detail?.theme ||
+      document.documentElement.dataset.themePreset ||
+      "original";
+    notifications.setLauncherIcon?.(themeId);
     const accent = notifications.themeAccentColor();
     await notifications.createChannels(accent);
     refreshNotifications();
@@ -673,12 +681,32 @@
     syncFocusReminder: (focus) => notifications.syncFocusReminder(focus),
     scheduleFromApp: () => notifications.scheduleFromApp(),
     registerPush: () => push.register(),
+    setLauncherIcon: (themeId) => {
+      if (iconPlugin) {
+        void iconPlugin.setLauncherIcon({ themeId }).catch(() => {});
+      }
+    },
+    setWidgetData: (themeId, widgetType, widgetId, dataJson) => {
+      if (widgetPlugin) {
+        void widgetPlugin.setWidgetData({ themeId, widgetType, widgetId: widgetId || 0, dataJson }).catch(() => {});
+      }
+    },
+    requestWidgetUpdate: () => {
+      if (widgetPlugin) {
+        void widgetPlugin.requestWidgetUpdate().catch(() => {});
+      }
+    },
     get permission() {
       return notifications.permission;
     },
   };
 
   void notifications.init();
+  window.setTimeout(() => {
+    const themeId = document.documentElement.dataset.themePreset || "original";
+    window.StudyZoneNotifications?.setLauncherIcon?.(themeId);
+    window.StudyZoneApp?.syncWidgets?.();
+  }, 600);
   if (window.StudyZoneApp?.page === "settings") {
     window.setTimeout(() => window.StudyZoneApp?.render?.(), 0);
   }

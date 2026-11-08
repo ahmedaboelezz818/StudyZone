@@ -1,0 +1,1085 @@
+/* Study Zone — Unified UI controls
+ * Custom dropdown menus, date picker, time picker and combined date-time
+ * picker. Every color comes from the design-token layer so the controls follow
+ * the selected theme (Original, Ocean, Emerald, Purple, Crimson, Midnight),
+ * light/dark mode and RTL/LTR without any hardcoded palette.
+ *
+ * Loaded after mobile.css. This file only styles the new controls; it never
+ * changes the existing layout of the app.
+ */
+
+/* ---------------------------------------------------------------------------
+   1. Shared tokens / local fallbacks
+   --------------------------------------------------------------------------- */
+.sz-pop {
+  --sz-bg: var(--color-surface-raised, var(--surface-raised, #10392F));
+  --sz-bg-soft: var(--color-surface-soft, var(--surface-soft, #0A2B24));
+  --sz-text: var(--color-text, var(--polar, #E6FBF6));
+  --sz-muted: var(--color-muted, var(--muted, #73968D));
+  --sz-primary: var(--color-primary, var(--accent, #06D6A0));
+  --sz-primary-rgb: var(--color-primary-rgb, var(--accent-rgb, 6, 214, 160));
+  --sz-on-primary: var(--color-text-on-primary, #05241D);
+  --sz-border: var(--color-border, var(--border, #20594C));
+  --sz-border-soft: var(--color-border-soft, var(--border-soft, rgba(32, 89, 76, .55)));
+  --sz-shadow: 0 26px 70px rgba(0, 0, 0, .42), 0 2px 0 rgba(255, 255, 255, .04) inset;
+  --sz-radius: 18px;
+  --sz-ease: var(--motion-easing, cubic-bezier(.2, .7, .2, 1));
+  --sz-fast: var(--motion-duration-fast, .12s);
+  --sz-normal: var(--motion-duration-normal, .18s);
+
+  position: fixed;
+  z-index: 80;
+  box-sizing: border-box;
+  min-inline-size: 208px;
+  max-inline-size: min(94vw, 372px);
+  max-block-size: min(82vh, 620px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 8px;
+  border: 1px solid var(--sz-border);
+  border-radius: var(--sz-radius);
+  background: var(--sz-bg);
+  color: var(--sz-text);
+  box-shadow: var(--sz-shadow);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  opacity: 0;
+  transform: translateY(-6px) scale(.985);
+  transition:
+    opacity var(--sz-normal) var(--sz-ease),
+    transform var(--sz-normal) var(--sz-ease);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  scrollbar-width: thin;
+}
+
+.sz-pop.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.sz-pop.is-closing {
+  opacity: 0;
+  transform: translateY(-4px) scale(.985);
+  pointer-events: none;
+}
+
+:root[data-theme="light"] .sz-pop {
+  --sz-shadow: 0 24px 60px rgba(12, 65, 55, .18), 0 1px 0 rgba(255, 255, 255, .7) inset;
+}
+
+.sz-pop *,
+.sz-pop *::before,
+.sz-pop *::after {
+  box-sizing: border-box;
+}
+
+.sz-pop button {
+  font: inherit;
+  color: inherit;
+}
+
+.sz-pop ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.sz-pop ::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--sz-border);
+  background-clip: padding-box;
+}
+
+/* ---------------------------------------------------------------------------
+   2. Backdrop (mobile sheet only)
+   --------------------------------------------------------------------------- */
+.sz-pop-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 79;
+  display: none;
+  background: rgba(3, 9, 8, .52);
+  opacity: 0;
+  transition: opacity var(--sz-normal) var(--sz-ease);
+}
+
+.sz-pop-backdrop.is-open {
+  opacity: 1;
+}
+
+/* ---------------------------------------------------------------------------
+   3. Field triggers (replace native select / date / time fields)
+   --------------------------------------------------------------------------- */
+.sz-select-trigger,
+.sz-field-trigger {
+  --sz-bg: var(--color-surface-soft, var(--surface-soft, #0A2B24));
+  --sz-text: var(--color-text, var(--polar, #E6FBF6));
+  --sz-muted: var(--color-muted, var(--muted, #73968D));
+  --sz-primary: var(--color-primary, var(--accent, #06D6A0));
+  --sz-primary-rgb: var(--color-primary-rgb, var(--accent-rgb, 6, 214, 160));
+  --sz-border: var(--color-border, var(--border, #20594C));
+  --sz-ease: var(--motion-easing, cubic-bezier(.2, .7, .2, 1));
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  inline-size: 100%;
+  min-block-size: 38px;
+  min-inline-size: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--sz-border);
+  border-radius: 11px;
+  background: var(--sz-bg);
+  color: var(--sz-text);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-align: start;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    border-color var(--sz-normal) var(--sz-ease),
+    box-shadow var(--sz-normal) var(--sz-ease),
+    background var(--sz-normal) var(--sz-ease),
+    transform var(--sz-fast) var(--sz-ease);
+}
+
+.sz-select-trigger:hover,
+.sz-field-trigger:hover {
+  border-color: rgba(var(--sz-primary-rgb), .48);
+  background: var(--color-card-hover, var(--sz-bg));
+}
+
+.sz-select-trigger:active,
+.sz-field-trigger:active {
+  transform: scale(.992);
+}
+
+.sz-select-trigger:focus-visible,
+.sz-field-trigger:focus-visible {
+  outline: 0;
+  border-color: rgba(var(--sz-primary-rgb), .72);
+  box-shadow: 0 0 0 3px rgba(var(--sz-primary-rgb), .16);
+}
+
+.sz-select-trigger[aria-expanded="true"],
+.sz-field-trigger[aria-expanded="true"] {
+  border-color: rgba(var(--sz-primary-rgb), .72);
+  box-shadow: 0 0 0 3px rgba(var(--sz-primary-rgb), .16);
+}
+
+.sz-select-trigger:disabled,
+.sz-field-trigger:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.sz-select-trigger.is-invalid,
+.sz-field-trigger.is-invalid {
+  border-color: var(--color-danger, #f87171);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, .16);
+}
+
+.sz-select-value,
+.sz-field-value {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sz-select-trigger.is-placeholder .sz-select-value,
+.sz-field-trigger.is-placeholder .sz-field-value {
+  color: var(--sz-muted);
+}
+
+.sz-select-trigger .sz-icon,
+.sz-field-trigger .sz-icon {
+  flex: 0 0 auto;
+  inline-size: 16px;
+  block-size: 16px;
+  color: var(--sz-muted);
+  transition: color var(--sz-normal) var(--sz-ease), transform var(--sz-normal) var(--sz-ease);
+}
+
+.sz-select-trigger:hover .sz-icon,
+.sz-select-trigger[aria-expanded="true"] .sz-icon,
+.sz-field-trigger:hover .sz-icon,
+.sz-field-trigger[aria-expanded="true"] .sz-icon {
+  color: var(--sz-primary);
+}
+
+.sz-select-trigger[aria-expanded="true"] .sz-icon-chevron {
+  transform: rotate(180deg);
+}
+
+/* Compact variant used by toolbar filters (matches .filter-select). */
+.sz-select-trigger.sz-compact,
+.sz-field-trigger.sz-compact {
+  inline-size: auto;
+  min-inline-size: 118px;
+  min-block-size: 36px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 10px;
+}
+
+.deadline-controls .sz-select-trigger.sz-compact {
+  min-block-size: 34px;
+}
+
+.note-editor-meta .sz-select-trigger.sz-compact {
+  min-block-size: 30px;
+  min-inline-size: 90px;
+}
+
+/* Flex-based settings rows keep their label text and give the control a
+   predictable width instead of stretching to 100%. */
+.setting-row > .sz-field-trigger,
+.setting-row > .sz-select-trigger,
+.setting-row .sz-field-trigger,
+.setting-row .sz-select-trigger {
+  inline-size: auto;
+  flex: 0 1 auto;
+  min-inline-size: 128px;
+  max-inline-size: 172px;
+}
+
+.focus-duration-fields .sz-field-trigger,
+.focus-duration-fields .sz-select-trigger {
+  inline-size: 100%;
+}
+
+/* Toolbar date navigator keeps its inline size next to the arrow buttons. */
+.task-date-nav .sz-field-trigger {
+  inline-size: auto;
+  min-inline-size: 126px;
+  min-block-size: 34px;
+  padding: 0 9px;
+  border-radius: 9px;
+  font-size: 10px;
+}
+
+.journal-date-picker .sz-field-trigger {
+  inline-size: auto;
+  min-inline-size: 132px;
+  min-block-size: 36px;
+  font-size: 11px;
+}
+
+/* Analytics filters: compact labels that wrap cleanly on small screens. */
+.analytics-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: flex-end;
+  gap: 10px;
+  max-inline-size: 100%;
+}
+
+.analytics-controls > label,
+.analytics-controls .form-row > label {
+  display: grid;
+  gap: 6px;
+  min-inline-size: 148px;
+  color: var(--color-secondary, var(--secondary));
+  font-size: 9px;
+}
+
+.analytics-controls .form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(132px, 1fr));
+  gap: 10px;
+}
+
+.analytics-controls .sz-select-trigger,
+.analytics-controls .sz-field-trigger {
+  inline-size: 100%;
+}
+
+.analytics-controls > .button {
+  align-self: end;
+}
+
+@media (max-width: 640px) {
+  .analytics-controls {
+    inline-size: 100%;
+    justify-content: stretch;
+  }
+
+  .analytics-controls > label,
+  .analytics-controls .form-row {
+    flex: 1 1 100%;
+    min-inline-size: 0;
+  }
+
+  .analytics-controls .form-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* The native element stays in the form for validation + FormData, but is
+   visually replaced by the trigger above. */
+.sz-native {
+  position: absolute !important;
+  inline-size: 1px !important;
+  block-size: 1px !important;
+  min-inline-size: 0 !important;
+  min-block-size: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+  clip-path: inset(50%) !important;
+}
+
+/* ---------------------------------------------------------------------------
+   4. Select menu
+   --------------------------------------------------------------------------- */
+.sz-pop-select {
+  padding: 6px;
+}
+
+.sz-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-block-size: min(56vh, 420px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.sz-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  inline-size: 100%;
+  min-block-size: 42px;
+  padding: 9px 11px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--sz-text);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: start;
+  cursor: pointer;
+  transition:
+    background var(--sz-fast) var(--sz-ease),
+    border-color var(--sz-fast) var(--sz-ease),
+    color var(--sz-fast) var(--sz-ease);
+}
+
+.sz-option > span {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.sz-option .sz-icon {
+  flex: 0 0 auto;
+  inline-size: 16px;
+  block-size: 16px;
+  opacity: 0;
+  color: var(--sz-primary);
+  transition: opacity var(--sz-fast) var(--sz-ease);
+}
+
+.sz-option:hover,
+.sz-option.is-active,
+.sz-option:focus-visible {
+  outline: 0;
+  border-color: var(--sz-border-soft);
+  background: rgba(var(--sz-primary-rgb), .10);
+}
+
+.sz-option[aria-selected="true"] {
+  border-color: rgba(var(--sz-primary-rgb), .34);
+  background: rgba(var(--sz-primary-rgb), .16);
+  color: var(--sz-primary);
+  font-weight: 700;
+}
+
+.sz-option[aria-selected="true"] .sz-icon {
+  opacity: 1;
+}
+
+.sz-option[disabled] {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+/* ---------------------------------------------------------------------------
+   5. Date picker shell
+   --------------------------------------------------------------------------- */
+.sz-pop-date {
+  inline-size: min(94vw, 356px);
+  padding: 10px;
+}
+
+.sz-picker-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-block-end: 8px;
+}
+
+.sz-picker-title {
+  flex: 1 1 auto;
+  min-block-size: 40px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--sz-text);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: .2px;
+  text-align: center;
+  cursor: pointer;
+  transition: background var(--sz-fast) var(--sz-ease), border-color var(--sz-fast) var(--sz-ease);
+}
+
+.sz-picker-title:hover {
+  border-color: var(--sz-border-soft);
+  background: rgba(var(--sz-primary-rgb), .08);
+}
+
+.sz-nav-btn,
+.sz-step-btn {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  inline-size: 40px;
+  block-size: 40px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--sz-muted);
+  cursor: pointer;
+  transition:
+    background var(--sz-fast) var(--sz-ease),
+    color var(--sz-fast) var(--sz-ease),
+    border-color var(--sz-fast) var(--sz-ease);
+}
+
+.sz-nav-btn:hover,
+.sz-step-btn:hover {
+  border-color: var(--sz-border-soft);
+  background: rgba(var(--sz-primary-rgb), .10);
+  color: var(--sz-primary);
+}
+
+.sz-nav-btn:focus-visible,
+.sz-step-btn:focus-visible,
+.sz-picker-title:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(var(--sz-primary-rgb), .18);
+}
+
+.sz-nav-btn .sz-icon,
+.sz-step-btn .sz-icon {
+  inline-size: 18px;
+  block-size: 18px;
+}
+
+/* Weekday row + day grid */
+.sz-cal-week,
+.sz-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.sz-cal-week {
+  margin-block-end: 3px;
+}
+
+.sz-cal-week span {
+  padding-block: 4px;
+  color: var(--sz-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.sz-cal-day {
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: 100%;
+  aspect-ratio: 1 / 1;
+  min-block-size: 38px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--sz-text);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition:
+    background var(--sz-fast) var(--sz-ease),
+    color var(--sz-fast) var(--sz-ease),
+    border-color var(--sz-fast) var(--sz-ease),
+    transform var(--sz-fast) var(--sz-ease);
+}
+
+.sz-cal-day:hover:not(:disabled) {
+  border-color: var(--sz-border-soft);
+  background: rgba(var(--sz-primary-rgb), .12);
+}
+
+.sz-cal-day:active:not(:disabled) {
+  transform: scale(.94);
+}
+
+.sz-cal-day:focus-visible {
+  outline: 0;
+  border-color: rgba(var(--sz-primary-rgb), .7);
+  box-shadow: 0 0 0 3px rgba(var(--sz-primary-rgb), .18);
+}
+
+.sz-cal-day.is-today {
+  border-color: rgba(var(--sz-primary-rgb), .45);
+  color: var(--sz-primary);
+}
+
+.sz-cal-day.is-selected,
+.sz-cal-day.is-selected:hover {
+  border-color: transparent;
+  background: var(--sz-primary);
+  color: var(--sz-on-primary);
+  box-shadow: 0 8px 20px rgba(var(--sz-primary-rgb), .28);
+}
+
+.sz-cal-day.is-outsider {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.sz-cal-day:disabled {
+  cursor: not-allowed;
+  color: var(--sz-muted);
+  opacity: .38;
+}
+
+.sz-cal-day.has-items::after {
+  position: absolute;
+  inset-block-end: 5px;
+  inset-inline-start: 50%;
+  inline-size: 4px;
+  block-size: 4px;
+  border-radius: 999px;
+  background: var(--sz-primary);
+  content: "";
+  transform: translateX(-50%);
+}
+
+.sz-cal-day.is-selected.has-items::after {
+  background: var(--sz-on-primary);
+}
+
+/* Month / year chooser */
+.sz-month-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding-block: 2px;
+}
+
+.sz-month-cell {
+  min-block-size: 48px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--sz-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--sz-fast) var(--sz-ease), color var(--sz-fast) var(--sz-ease), border-color var(--sz-fast) var(--sz-ease);
+}
+
+.sz-month-cell:hover {
+  border-color: var(--sz-border-soft);
+  background: rgba(var(--sz-primary-rgb), .10);
+}
+
+.sz-month-cell.is-selected {
+  background: var(--sz-primary);
+  color: var(--sz-on-primary);
+}
+
+.sz-month-cell:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(var(--sz-primary-rgb), .18);
+}
+
+/* Combined date + time (datetime-local) block inside the date picker. */
+.sz-datetime-block {
+  margin-block-start: 6px;
+  padding-block-start: 8px;
+  border-block-start: 1px solid var(--sz-border-soft);
+}
+
+.sz-datetime-label {
+  margin-block-end: 2px;
+  color: var(--sz-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .8px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.sz-datetime-block .sz-time {
+  gap: 8px;
+  padding: 0;
+}
+
+.sz-datetime-block .sz-time-input {
+  inline-size: 62px;
+  block-size: 50px;
+  font-size: 24px;
+}
+
+.sz-datetime-block .sz-time-presets button {
+  min-block-size: 32px;
+}
+
+/* ---------------------------------------------------------------------------
+   6. Time picker
+   --------------------------------------------------------------------------- */
+.sz-pop-time {
+  inline-size: min(94vw, 330px);
+}
+
+.sz-pop-title {
+  padding: 4px 8px 10px;
+  color: var(--sz-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .9px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.sz-time {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 6px 8px;
+}
+
+.sz-time-clock {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.sz-time-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.sz-time-input {
+  inline-size: 74px;
+  block-size: 62px;
+  padding: 0;
+  border: 1px solid var(--sz-border);
+  border-radius: 14px;
+  background: var(--sz-bg-soft);
+  color: var(--sz-text);
+  font: inherit;
+  font-size: 30px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: center;
+  -moz-appearance: textfield;
+  appearance: textfield;
+  transition: border-color var(--sz-fast) var(--sz-ease), box-shadow var(--sz-fast) var(--sz-ease);
+}
+
+.sz-time-input::-webkit-outer-spin-button,
+.sz-time-input::-webkit-inner-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
+.sz-time-input:focus {
+  outline: 0;
+  border-color: rgba(var(--sz-primary-rgb), .72);
+  box-shadow: 0 0 0 3px rgba(var(--sz-primary-rgb), .16);
+}
+
+.sz-time-sep {
+  color: var(--sz-muted);
+  font-size: 28px;
+  font-weight: 700;
+  transform: translateY(-2px);
+}
+
+.sz-ampm {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-inline-start: 4px;
+}
+
+.sz-ampm button {
+  min-inline-size: 46px;
+  min-block-size: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--sz-border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--sz-muted);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--sz-fast) var(--sz-ease), color var(--sz-fast) var(--sz-ease), border-color var(--sz-fast) var(--sz-ease);
+}
+
+.sz-ampm button.is-active {
+  border-color: transparent;
+  background: var(--sz-primary);
+  color: var(--sz-on-primary);
+}
+
+.sz-ampm button:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(var(--sz-primary-rgb), .18);
+}
+
+.sz-time-presets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.sz-time-presets button {
+  min-block-size: 36px;
+  border: 1px solid var(--sz-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--sz-muted);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background var(--sz-fast) var(--sz-ease), color var(--sz-fast) var(--sz-ease), border-color var(--sz-fast) var(--sz-ease);
+}
+
+.sz-time-presets button:hover,
+.sz-time-presets button.is-active {
+  border-color: rgba(var(--sz-primary-rgb), .45);
+  background: rgba(var(--sz-primary-rgb), .12);
+  color: var(--sz-primary);
+}
+
+.sz-time-presets button:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(var(--sz-primary-rgb), .18);
+}
+
+/* ---------------------------------------------------------------------------
+   7. Footer / summary
+   --------------------------------------------------------------------------- */
+.sz-picker-summary {
+  margin-block-start: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--sz-border-soft);
+  border-radius: 10px;
+  background: rgba(var(--sz-primary-rgb), .07);
+  color: var(--sz-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.sz-picker-summary strong {
+  color: var(--sz-primary);
+  font-weight: 700;
+}
+
+.sz-picker-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-block-start: 10px;
+  padding-block-start: 10px;
+  border-block-start: 1px solid var(--sz-border-soft);
+}
+
+.sz-foot-link {
+  min-block-size: 36px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--sz-muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--sz-fast) var(--sz-ease), color var(--sz-fast) var(--sz-ease);
+}
+
+.sz-foot-link:hover {
+  background: rgba(var(--sz-primary-rgb), .10);
+  color: var(--sz-primary);
+}
+
+.sz-foot-link:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(var(--sz-primary-rgb), .18);
+}
+
+.sz-picker-actions {
+  display: flex;
+  gap: 6px;
+  margin-inline-start: auto;
+}
+
+.sz-action {
+  min-block-size: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--sz-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--sz-text);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background var(--sz-fast) var(--sz-ease),
+    border-color var(--sz-fast) var(--sz-ease),
+    color var(--sz-fast) var(--sz-ease),
+    transform var(--sz-fast) var(--sz-ease);
+}
+
+.sz-action:hover {
+  border-color: rgba(var(--sz-primary-rgb), .5);
+  background: rgba(var(--sz-primary-rgb), .10);
+}
+
+.sz-action:active {
+  transform: scale(.97);
+}
+
+.sz-action-primary {
+  border-color: transparent;
+  background: var(--sz-primary);
+  color: var(--sz-on-primary);
+  box-shadow: 0 8px 18px rgba(var(--sz-primary-rgb), .24);
+}
+
+.sz-action-primary:hover {
+  background: var(--color-primary-hover, var(--sz-primary));
+  color: var(--sz-on-primary);
+}
+
+.sz-action:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(var(--sz-primary-rgb), .20);
+}
+
+.sz-action[disabled] {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+/* ---------------------------------------------------------------------------
+   8. Icons
+   --------------------------------------------------------------------------- */
+.sz-icon {
+  display: inline-block;
+  vertical-align: middle;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------------------------------------------------------------------------
+   9. Mobile bottom sheet
+   --------------------------------------------------------------------------- */
+.sz-sheet-handle {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  body.sz-pop-open {
+    overflow: hidden;
+  }
+
+  .sz-pop-backdrop {
+    display: block;
+  }
+
+  .sz-pop,
+  .sz-pop-date,
+  .sz-pop-time {
+    position: fixed;
+    inset-inline: 0;
+    inset-block-end: 0;
+    inset-block-start: auto;
+    inline-size: 100%;
+    max-inline-size: 100%;
+    max-block-size: 88dvh;
+    margin: 0;
+    padding: 8px 14px calc(14px + env(safe-area-inset-bottom, 0px));
+    border-width: 1px 0 0;
+    border-radius: 22px 22px 0 0;
+    transform: translateY(14px);
+    transition: opacity var(--sz-normal) var(--sz-ease), transform var(--sz-normal) var(--sz-ease);
+  }
+
+  .sz-pop.is-open {
+    transform: translateY(0);
+  }
+
+  .sz-pop.is-closing {
+    transform: translateY(12px);
+  }
+
+  .sz-pop {
+    touch-action: pan-y;
+  }
+
+  .sz-sheet-handle {
+    display: block;
+    inline-size: 42px;
+    block-size: 4px;
+    margin: 2px auto 8px;
+    border-radius: 999px;
+    background: var(--sz-border);
+  }
+
+  .sz-options {
+    max-block-size: 62dvh;
+  }
+
+  .sz-option {
+    min-block-size: 48px;
+    font-size: 14px;
+  }
+
+  .sz-cal-day {
+    min-block-size: 44px;
+    font-size: 15px;
+  }
+
+  .sz-time-input {
+    inline-size: 86px;
+    block-size: 68px;
+    font-size: 34px;
+  }
+
+  .sz-time-presets button {
+    min-block-size: 42px;
+  }
+
+  .sz-action,
+  .sz-foot-link {
+    min-block-size: 44px;
+  }
+
+  .sz-picker-actions {
+    flex: 1 1 auto;
+    justify-content: flex-end;
+  }
+}
+
+/* Very small screens: keep the calendar readable and scrollable. */
+@media (max-width: 360px) {
+  .sz-pop-date {
+    padding-inline: 8px;
+  }
+
+  .sz-cal-grid {
+    gap: 2px;
+  }
+
+  .sz-cal-day {
+    min-block-size: 38px;
+    border-radius: 10px;
+    font-size: 13px;
+  }
+
+  .sz-time-clock {
+    gap: 5px;
+  }
+
+  .sz-time-input {
+    inline-size: 68px;
+    block-size: 58px;
+    font-size: 28px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   10. RTL + motion preferences
+   --------------------------------------------------------------------------- */
+:root[dir="rtl"] .sz-select-trigger .sz-icon-chevron,
+:root[dir="rtl"] .sz-field-trigger .sz-icon-calendar,
+:root[dir="rtl"] .sz-field-trigger .sz-icon-clock {
+  transform: scaleX(-1);
+}
+
+:root[dir="rtl"] .sz-select-trigger[aria-expanded="true"] .sz-icon-chevron {
+  transform: scaleX(-1) rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sz-pop,
+  .sz-pop-backdrop,
+  .sz-select-trigger,
+  .sz-field-trigger,
+  .sz-option,
+  .sz-cal-day,
+  .sz-month-cell,
+  .sz-action,
+  .sz-step-btn,
+  .sz-nav-btn {
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+  }
+
+  .sz-pop {
+    transform: none;
+  }
+}
+
+:root[data-motion="off"] .sz-pop,
+:root[data-motion="reduced"] .sz-pop {
+  transition-duration: .01ms;
+}
+
+:root[data-motion="off"] .sz-pop.is-closing,
+:root[data-motion="reduced"] .sz-pop.is-closing {
+  display: none;
+}
+
+/* Print: never show interactive overlays. */
+@media print {
+  .sz-pop,
+  .sz-pop-backdrop {
+    display: none !important;
+  }
+}
