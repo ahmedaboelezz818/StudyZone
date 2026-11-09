@@ -8181,25 +8181,41 @@
 
   function applyThemePreset(themeId, { persist = true, announce = false } = {}) {
     const id = normalizeThemePreset(themeId);
-    if (id === "original") {
-      delete document.documentElement.dataset.themePreset;
-    } else {
+    try {
+      // Always keep an explicit attribute, including "original", so the
+      // generated preset rules can fully reset every token. If a stored value
+      // was corrupt, normalizeThemePreset already fell back to "original".
       document.documentElement.dataset.themePreset = id;
+      if (persist) localStorage.setItem("studyflow.theme.preset", id);
+      const preset = THEME_PRESETS.find((item) => item.id === id);
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta && preset?.meta) meta.content = preset.meta;
+      document.querySelectorAll("[data-theme-preset-option]").forEach((option) => {
+        const selected = option.dataset.themePresetOption === id;
+        option.classList.toggle("selected", selected);
+        option.setAttribute("aria-pressed", String(selected));
+      });
+      window.dispatchEvent(
+        new CustomEvent("studyzone:theme-changed", { detail: { theme: id } }),
+      );
+      syncWidgetData();
+      if (announce) showToast("Theme applied.");
+    } catch (error) {
+      // A theme must never be able to crash the app. Fall back to the safe
+      // default palette and keep the UI usable.
+      console.error("Theme switch failed; restoring the default theme.", error);
+      try {
+        document.documentElement.dataset.themePreset = "original";
+        localStorage.setItem("studyflow.theme.preset", "original");
+      } catch (_) {
+        /* storage unavailable — ignore */
+      }
+      showToast(
+        appLanguage === "ar"
+          ? "تعذر تطبيق الثيم. تمت الاستعادة إلى الثيم الافتراضي."
+          : "Could not apply that theme. Restored the default theme.",
+      );
     }
-    if (persist) localStorage.setItem("studyflow.theme.preset", id);
-    const preset = THEME_PRESETS.find((item) => item.id === id);
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta && preset?.meta) meta.content = preset.meta;
-    document.querySelectorAll("[data-theme-preset-option]").forEach((option) => {
-      const selected = option.dataset.themePresetOption === id;
-      option.classList.toggle("selected", selected);
-      option.setAttribute("aria-pressed", String(selected));
-    });
-    window.dispatchEvent(
-      new CustomEvent("studyzone:theme-changed", { detail: { theme: id } }),
-    );
-    syncWidgetData();
-    if (announce) showToast("Theme applied.");
   }
 
   // ---- Visual style (Modern / Pixel) --------------------------------------
@@ -8255,9 +8271,12 @@
   async function saveThemePreset(themeId) {
     const id = normalizeThemePreset(themeId);
     applyThemePreset(id, { announce: true });
-    // Switch the Android launcher icon to match the theme (native only).
-    if (window.StudyZoneNotifications?.setLauncherIcon) {
-      window.StudyZoneNotifications.setLauncherIcon(id);
+    // Keep the native layer informed without letting a bridge failure abort
+    // the in-app theme change.
+    try {
+      window.StudyZoneNotifications?.setLauncherIcon?.(id);
+    } catch (error) {
+      console.warn("Native theme hook unavailable.", error);
     }
     if (!supabase || !session) return;
     const { error } = await supabase
@@ -8417,7 +8436,7 @@
       .join("");
     const native = Boolean(window.StudyZoneNotifications?.isNative);
     const dndActive = isDoNotDisturbActive();
-    return `<section class="panel">${panelHeading(translateUiText("Notification settings"), translateUiText("Control which notifications you receive and how they are delivered."))}<div class="notification-type-grid">${rows}</div><div class="setting-row"><div><strong>${translateUiText("Notification sound")}</strong><small>${translateUiText(dndActive ? "Sound muted (do not disturb active)" : "Sound enabled for notifications")}</small></div><button class="button button-secondary button-small" type="button" data-action="notification-sound-preview">${translateUiText("Preview sound")}</button></div><div class="setting-row"><div><strong>${translateUiText("Vibration")}</strong><small>${translateUiText("Vibrate on notifications")}</small></div><label class="focus-setting-toggle"><span>${translateUiText("Enable vibration")}</span><input type="checkbox" name="vibration_enabled" ${notificationPrefs.vibration_enabled !== false ? "checked" : ""}><i aria-hidden="true"></i></label></div><div class="setting-row"><div><strong>${translateUiText("Default task reminder")}</strong><small>${translateUiText("Default reminder for new tasks")}</small></div><select name="default_task_reminder" class="filter-select"><option value="0">${translateUiText("No reminder")}</option><option value="-1">${translateUiText("At task start")}</option><option value="15">${translateUiText("15 minutes before")}</option><option value="30">${translateUiText("30 minutes before")}</option><option value="60">${translateUiText("1 hour before")}</option></select></div><div class="setting-row"><div><strong>${translateUiText("Default all-day reminder time")}</strong><small>${translateUiText("Time to remind for all-day tasks")}</small></div><input type="time" name="allday_reminder_time" value="${escapeHtml(allDayReminderTime)}" /></div><div class="setting-row"><div><strong>${translateUiText("Quiet hours")}</strong><small>${translateUiText("Suppress notifications during these hours")}</small></div><div class="form-row"><label>${translateUiText("From")}<input type="time" name="dnd_start" value="${escapeHtml(notificationPrefs.start)}" /></label><label>${translateUiText("To")}<input type="time" name="dnd_end" value="${escapeHtml(notificationPrefs.end)}" /></label></div></div><div class="setting-row"><div><strong>${translateUiText("Enable notifications")}</strong><small>${translateUiText(native ? "Native notifications" : "Notifications are not available on this device.")}</small></div><button class="button button-secondary button-small" type="button" data-action="native-notification-permission">${translateUiText("Enable notifications")}</button></div><p class="data-caption" data-notification-status role="status"></p></section>`;
+    return `<section class="panel">${panelHeading(translateUiText("Notification settings"), translateUiText("Control which notifications you receive and how they are delivered."))}<div class="notification-type-grid">${rows}</div><div class="setting-row"><div><strong>${translateUiText("Notification sound")}</strong><small>${translateUiText(dndActive ? "Sound muted (do not disturb active)" : "Sound enabled for notifications")}</small></div><button class="button button-secondary button-small" type="button" data-action="notification-sound-preview">${translateUiText("Preview sound")}</button><button class="button button-primary button-small" type="button" data-action="test-notification">${translateUiText("Test Notification Sound")}</button></div><div class="setting-row"><div><strong>${translateUiText("Vibration")}</strong><small>${translateUiText("Vibrate on notifications")}</small></div><label class="focus-setting-toggle"><span>${translateUiText("Enable vibration")}</span><input type="checkbox" name="vibration_enabled" ${notificationPrefs.vibration_enabled !== false ? "checked" : ""}><i aria-hidden="true"></i></label></div><div class="setting-row"><div><strong>${translateUiText("Default task reminder")}</strong><small>${translateUiText("Default reminder for new tasks")}</small></div><select name="default_task_reminder" class="filter-select"><option value="0">${translateUiText("No reminder")}</option><option value="-1">${translateUiText("At task start")}</option><option value="15">${translateUiText("15 minutes before")}</option><option value="30">${translateUiText("30 minutes before")}</option><option value="60">${translateUiText("1 hour before")}</option></select></div><div class="setting-row"><div><strong>${translateUiText("Default all-day reminder time")}</strong><small>${translateUiText("Time to remind for all-day tasks")}</small></div><input type="time" name="allday_reminder_time" value="${escapeHtml(allDayReminderTime)}" /></div><div class="setting-row"><div><strong>${translateUiText("Quiet hours")}</strong><small>${translateUiText("Suppress notifications during these hours")}</small></div><div class="form-row"><label>${translateUiText("From")}<input type="time" name="dnd_start" value="${escapeHtml(notificationPrefs.start)}" /></label><label>${translateUiText("To")}<input type="time" name="dnd_end" value="${escapeHtml(notificationPrefs.end)}" /></label></div></div><div class="setting-row"><div><strong>${translateUiText("Enable notifications")}</strong><small>${translateUiText(native ? "Native notifications" : "Notifications are not available on this device.")}</small></div><button class="button button-secondary button-small" type="button" data-action="native-notification-permission">${translateUiText("Enable notifications")}</button></div><p class="data-caption" data-notification-status role="status"></p></section>`;
   }
 
   function syncSettingsPanel() {
@@ -12596,16 +12615,59 @@
     };
   }
 
+  // Snapshot the timer with both the internal field names and the documented
+  // persistence contract. The internal names drive restore; the alias names
+  // (session_id, remaining_seconds, ...) make the stored payload auditable and
+  // forward-compatible without changing the restore path.
+  function focusSessionSnapshot(now = Date.now()) {
+    const status = focusSession.status || "idle";
+    const remainingSeconds = Math.round(getFocusRemainingMs(now) / 1000);
+    const elapsedSeconds = Math.round(getFocusElapsedMs(now) / 1000);
+    const selectedDuration =
+      Number(focusSession.durationMinutes) >= 1
+        ? Math.round(Number(focusSession.durationMinutes) * 60)
+        : Math.round(getFocusDurationMs(focusSession.type) / 1000);
+    return {
+      ...focusSession,
+      session_id: focusSession.id,
+      user_id: session?.user?.id || null,
+      selected_duration: selectedDuration,
+      session_type: focusSession.type,
+      paused_at:
+        status === "paused"
+          ? focusSession.pausedAt || new Date(now).toISOString()
+          : null,
+      accumulated_elapsed_seconds: elapsedSeconds,
+      remaining_seconds: remainingSeconds,
+      status,
+      completed_at:
+        status === "completed"
+          ? focusSession.completedAt || new Date(now).toISOString()
+          : null,
+    };
+  }
+
   function persistFocusState() {
     try {
       const value = {
         settings: focusSettings,
-        timer: focusSession,
+        timer: focusSessionSnapshot(),
         ...(session
           ? { pendingRecords: pendingFocusRecords }
           : { records: focusRecords }),
       };
       localStorage.setItem(focusStorageKey(), JSON.stringify(value));
+      // Keep the native completion alarm in sync immediately after start,
+      // pause, resume, finish and restore. Without this the alarm was only
+      // refreshed on the next 5s tick or lifecycle event.
+      try {
+        const focus = window.StudyZoneApp?.focus;
+        if (focus) {
+          window.StudyZoneNotifications?.syncFocusReminder?.(focus);
+        }
+      } catch (error) {
+        console.warn("Could not sync the native focus reminder.", error);
+      }
     } catch (error) {
       console.error("Could not persist focus state.", error);
       showToast(`${focusText[appLanguage].settingsError} ${error.message}`);
@@ -13548,6 +13610,64 @@
     } else if (target.matches('[data-action="notification-sound-preview"]')) {
       const soundSelect = document.getElementById("task-sound-select");
       void previewAlertSound(soundSelect?.value || "task-reminder");
+      return;
+    } else if (target.matches('[data-action="test-notification"]')) {
+      // Send a real notification through the same channel/sound the app uses
+      // in production, so the user can verify sound + vibration on the device.
+      try {
+        if (
+          window.StudyZoneNotifications?.isNative &&
+          typeof window.StudyZoneNotifications.testNotification === "function"
+        ) {
+          const sent = await window.StudyZoneNotifications.testNotification();
+          showToast(
+            sent
+              ? appLanguage === "ar"
+                ? "تم إرسال إشعار تجريبي. تحقق من الصوت والاهتزاز."
+                : "Test notification sent. Check sound and vibration."
+              : appLanguage === "ar"
+                ? "تعذر إرسال الإشعار. افتح إعدادات أندرويد للسماح بالإشعارات."
+                : "Could not send it. Allow notifications in Android settings.",
+          );
+        } else if (typeof Notification !== "undefined") {
+          let permission = Notification.permission;
+          if (permission === "default") {
+            permission = await Notification.requestPermission();
+          }
+          if (permission === "granted") {
+            new Notification("🔔 Study Zone test", {
+              body:
+                appLanguage === "ar"
+                  ? "إذا رأيت هذا الإشعار فالإشعارات تعمل."
+                  : "If you can see this notification, notifications work.",
+              tag: "studyzone-test",
+            });
+            showToast(
+              appLanguage === "ar"
+                ? "تم إرسال إشعار تجريبي من المتصفح."
+                : "Browser test notification sent.",
+            );
+          } else {
+            showToast(
+              appLanguage === "ar"
+                ? "الإشعارات محظورة. اسمح بها من إعدادات المتصفح."
+                : "Notifications are blocked. Allow them in browser settings.",
+            );
+          }
+        } else {
+          showToast(
+            appLanguage === "ar"
+              ? "اختبر صوت الإشعار من تطبيق أندرويد."
+              : "Test the notification sound in the Android app.",
+          );
+        }
+      } catch (error) {
+        showToast(
+          appLanguage === "ar"
+            ? `تعذر اختبار الإشعار: ${error.message}`
+            : `Could not test notifications: ${error.message}`,
+        );
+      }
       return;
     } else if (target.matches('[data-action="focus-sound-preview"]')) {
       void previewAlertSound(focusSettings.startSound || "focus-start");

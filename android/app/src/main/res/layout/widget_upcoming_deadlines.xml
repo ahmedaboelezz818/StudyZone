@@ -16,7 +16,7 @@
         android:textColor="@color/widget_text"
         android:text="Upcoming Deadlines" />
 
-    <View
+    <FrameLayout
         android:id="@+id/widget_divider"
         android:layout_width="match_parent"
         android:layout_height="1dp"

@@ -42,12 +42,21 @@
   const widgetPlugin = cap?.Plugins?.StudyZoneWidgetPlugin;
 
   const root = document.documentElement;
-  const CHANNEL_REMINDERS = "studyzone_reminders";
-  const CHANNEL_FOCUS = "studyzone_focus";
-  const CHANNEL_ACHIEVEMENTS = "studyzone_achievements";
+  // Channel IDs end in _v2 on purpose. Android never lets an app change the
+  // sound of an existing channel, so users who had the old (possibly silent)
+  // channels get fresh channels that actually carry the new bell. The IDs are
+  // stable from now on and must not be bumped per release.
+  const CHANNEL_REMINDERS = "studyzone_reminders_v2";
+  const CHANNEL_DEADLINES = "studyzone_deadlines_v2";
+  const CHANNEL_FOCUS = "studyzone_focus_v2";
+  const CHANNEL_GOALS = "studyzone_goals_v2";
+  const CHANNEL_ACHIEVEMENTS = "studyzone_achievements_v2";
+  const CHANNEL_GENERAL = "studyzone_general_v2";
+  const NOTIFICATION_SOUND = "beep.wav";
   const SCHEDULED_KEY = "studyzone.native.scheduled.v1";
   const PUSH_TOKEN_KEY = "studyzone.native.push-token";
   const FOCUS_NOTIFICATION_ID = 900001;
+  const TEST_NOTIFICATION_BASE = 990000;
   const MAX_SCHEDULED = 60;
 
   root.classList.add("is-native", `is-${platform}`, "native-app");
@@ -216,46 +225,67 @@
     async createChannels(accentColor) {
       if (!LocalNotifications?.createChannel) return;
       const color = accentColor || this.themeAccentColor();
+      const make = (id, nameEn, nameAr, descEn, descAr, importance) =>
+        LocalNotifications.createChannel({
+          id,
+          name: text(nameEn, nameAr),
+          description: text(descEn, descAr),
+          importance,
+          visibility: 1,
+          vibration: true,
+          lights: true,
+          lightColor: color,
+          sound: NOTIFICATION_SOUND,
+        });
       await Promise.all([
-        LocalNotifications.createChannel({
-          id: CHANNEL_REMINDERS,
-          name: text("Study reminders", "تذكيرات الدراسة"),
-          description: text(
-            "Tasks, deadlines and exams",
-            "المهام والمواعيد النهائية والاختبارات",
-          ),
-          importance: 4,
-          visibility: 1,
-          vibration: true,
-          lights: true,
-          lightColor: color,
-          sound: "beep.wav",
-        }),
-        LocalNotifications.createChannel({
-          id: CHANNEL_FOCUS,
-          name: text("Focus timer", "مؤقت التركيز"),
-          description: text(
-            "Focus and break completion",
-            "انتهاء التركيز والاستراحة",
-          ),
-          importance: 5,
-          visibility: 1,
-          vibration: true,
-          lights: true,
-          lightColor: color,
-          sound: "beep.wav",
-        }),
-        LocalNotifications.createChannel({
-          id: CHANNEL_ACHIEVEMENTS,
-          name: text("Achievements", "الإنجازات"),
-          description: text("Streaks and rewards", "السلاسل والمكافآت"),
-          importance: 3,
-          visibility: 1,
-          vibration: true,
-          lights: true,
-          lightColor: color,
-          sound: "beep.wav",
-        }),
+        make(
+          CHANNEL_REMINDERS,
+          "Task reminders",
+          "تذكيرات المهام",
+          "Tasks and study reminders",
+          "المهام وتذكيرات الدراسة",
+          5,
+        ),
+        make(
+          CHANNEL_DEADLINES,
+          "Deadline alerts",
+          "تنبيهات المواعيد",
+          "Deadlines and exams",
+          "المواعيد النهائية والاختبارات",
+          5,
+        ),
+        make(
+          CHANNEL_FOCUS,
+          "Focus & Pomodoro",
+          "التركيز وبومودورو",
+          "Focus and break completion",
+          "انتهاء التركيز والاستراحة",
+          5,
+        ),
+        make(
+          CHANNEL_GOALS,
+          "Study goals",
+          "أهداف الدراسة",
+          "Daily goals and streaks",
+          "الأهداف اليومية والسلاسل",
+          4,
+        ),
+        make(
+          CHANNEL_ACHIEVEMENTS,
+          "Achievements",
+          "الإنجازات",
+          "Streaks and rewards",
+          "السلاسل والمكافآت",
+          3,
+        ),
+        make(
+          CHANNEL_GENERAL,
+          "General notifications",
+          "إشعارات عامة",
+          "Other Study Zone updates",
+          "تحديثات Study Zone الأخرى",
+          3,
+        ),
       ]).catch(() => {});
     },
     async requestPermission() {
@@ -346,7 +376,7 @@
             channelId: CHANNEL_REMINDERS,
             smallIcon: "ic_stat_studyzone",
             iconColor: this.themeAccentColor(),
-            sound: "beep.wav",
+            sound: NOTIFICATION_SOUND,
             extra: { page: "tasks", taskId: task.id || null },
           });
         }
@@ -376,10 +406,10 @@
                 `استعد لاختبار: ${exam.title || exam.subject || "اختبار"}`,
               ),
               schedule: { at: new Date(at), allowWhileIdle: true },
-              channelId: CHANNEL_REMINDERS,
+              channelId: CHANNEL_DEADLINES,
               smallIcon: "ic_stat_studyzone",
               iconColor: this.themeAccentColor(),
-              sound: "beep.wav",
+              sound: NOTIFICATION_SOUND,
               extra: { page: "exams", examId: exam.id || null },
             });
           }
@@ -465,13 +495,60 @@
               channelId: CHANNEL_FOCUS,
               smallIcon: "ic_stat_studyzone",
               iconColor: this.themeAccentColor(),
-              sound: "beep.wav",
+              sound: NOTIFICATION_SOUND,
               extra: { page: "focus" },
             },
           ],
         });
       } catch (error) {
         console.warn("[StudyZoneNotifications] focus reminder failed", error);
+      }
+    },
+    async testNotification() {
+      if (!LocalNotifications) {
+        showNativeToast(text("Notifications need the Android app.", "الإشعارات تحتاج تطبيق أندرويد."));
+        return false;
+      }
+      try {
+        let status = await LocalNotifications.checkPermissions();
+        if (status?.display !== "granted") {
+          status = await LocalNotifications.requestPermissions();
+        }
+        this.permission = status?.display || "denied";
+        if (this.permission !== "granted") {
+          showNativeToast(
+            text(
+              "Notifications are blocked. Open Android settings to allow them.",
+              "الإشعارات محظورة. افتح إعدادات أندرويد للسماح بها.",
+            ),
+          );
+          return false;
+        }
+        await this.createChannels();
+        const id = TEST_NOTIFICATION_BASE + (Math.floor(Date.now() / 1000) % 1000);
+        await LocalNotifications.schedule({
+          notifications: [
+            {
+              id,
+              title: text("🔔 Study Zone test", "🔔 اختبار Study Zone"),
+              body: text(
+                "If you can hear this bell, notification sound works.",
+                "إذا سمعت هذا الجرس، فصوت الإشعارات يعمل.",
+              ),
+              schedule: { at: new Date(Date.now() + 700), allowWhileIdle: true },
+              channelId: CHANNEL_REMINDERS,
+              smallIcon: "ic_stat_studyzone",
+              iconColor: this.themeAccentColor(),
+              sound: NOTIFICATION_SOUND,
+              extra: { page: "settings" },
+            },
+          ],
+        });
+        return true;
+      } catch (error) {
+        console.warn("[StudyZoneNotifications] test notification failed", error);
+        showNativeToast(text("Could not send the test notification.", "تعذر إرسال إشعار الاختبار."));
+        return false;
       }
     },
   };
@@ -678,6 +755,7 @@
     syncTaskReminders: (tasks, exams) =>
       notifications.syncTaskReminders(tasks, exams),
     cancelAll: () => notifications.cancelAll(),
+    testNotification: () => notifications.testNotification(),
     syncFocusReminder: (focus) => notifications.syncFocusReminder(focus),
     scheduleFromApp: () => notifications.scheduleFromApp(),
     registerPush: () => push.register(),

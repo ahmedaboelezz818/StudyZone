@@ -18,6 +18,7 @@ const files = [
   "ui-controls.css",
   "ui-controls.js",
   "design-tokens.css",
+  "themes-presets.css",
   "supabase-config.js",
   "locales.js",
   "offline-sync.js",

@@ -21,6 +21,7 @@ const offline = read("offline-sync.js");
 const native = read("native-shell.js");
 const syncUi = read("sync-ui.js");
 const themes = read("themes.css");
+const themePresets = read("themes-presets.css");
 const mobile = read("mobile.css");
 const buildScript = read("scripts/build-web.js");
 const migration = read("supabase/migrations/003_android_offline_notifications.sql");
@@ -93,9 +94,9 @@ check("Six color themes are defined", [
   "purple",
   "crimson",
   "midnight",
-].every((id) => themes.includes(`data-theme-preset="${id}"`)));
-check("Themes include light-mode variants", themes.includes('data-theme="light"][data-theme-preset'));
-check("Themes keep the light/dark attribute separate", themes.includes("data-theme-preset"));
+].every((id) => themePresets.includes(`data-theme-preset="${id}"`)));
+check("Themes include light-mode variants", themePresets.includes('data-theme="light"][data-theme-preset'));
+check("Themes keep the light/dark attribute separate", themePresets.includes("data-theme-preset"));
 check("Mobile CSS handles safe areas", mobile.includes("safe-area-inset"));
 check("Mobile CSS handles the keyboard", mobile.includes("keyboard-open") || mobile.includes("--keyboard-height"));
 check("Mobile CSS has RTL rules", mobile.includes('dir="rtl"'));

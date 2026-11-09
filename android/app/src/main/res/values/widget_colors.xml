@@ -48,4 +48,120 @@
     <color name="widget_muted_orange">#c79b80</color>
     <color name="widget_border_orange">#6b4423</color>
     <color name="widget_primary_orange">#f97316</color>
+
+    <!-- Remaining presets. Values match the generated dark palette in
+         themes-presets.css so widgets follow the selected theme. Presets
+         without an entry fall back to the Original colors above. -->
+
+    <!-- Sky -->
+    <color name="widget_background_sky">#060910</color>
+    <color name="widget_text_sky">#ddf2fc</color>
+    <color name="widget_muted_sky">#76828b</color>
+    <color name="widget_border_sky">#0f4263</color>
+    <color name="widget_primary_sky">#0EA5E9</color>
+
+    <!-- Cyan -->
+    <color name="widget_background_cyan">#071e1c</color>
+    <color name="widget_text_cyan">#e0f9fd</color>
+    <color name="widget_muted_cyan">#789091</color>
+    <color name="widget_border_cyan">#18767b</color>
+    <color name="widget_primary_cyan">#22D3EE</color>
+
+    <!-- Turquoise -->
+    <color name="widget_background_turquoise">#061d1a</color>
+    <color name="widget_text_turquoise">#def5f3</color>
+    <color name="widget_muted_turquoise">#768d8b</color>
+    <color name="widget_border_turquoise">#116c61</color>
+    <color name="widget_primary_turquoise">#14B8A6</color>
+
+    <!-- Teal -->
+    <color name="widget_background_teal">#041715</color>
+    <color name="widget_text_teal">#ddf0ee</color>
+    <color name="widget_muted_teal">#758886</color>
+    <color name="widget_border_teal">#0c574f</color>
+    <color name="widget_primary_teal">#0D9488</color>
+
+    <!-- Mint -->
+    <color name="widget_background_mint">#021e16</color>
+    <color name="widget_text_mint">#e6faed</color>
+    <color name="widget_muted_mint">#799086</color>
+    <color name="widget_border_mint">#1a7950</color>
+    <color name="widget_primary_mint">#4ADE80</color>
+
+    <!-- Lime -->
+    <color name="widget_background_lime">#152008</color>
+    <color name="widget_text_lime">#eef8de</color>
+    <color name="widget_muted_lime">#869077</color>
+    <color name="widget_border_lime">#4d7715</color>
+    <color name="widget_primary_lime">#84CC16</color>
+
+    <!-- Violet -->
+    <color name="widget_background_violet">#160326</color>
+    <color name="widget_text_violet">#efe8fe</color>
+    <color name="widget_muted_violet">#877a96</color>
+    <color name="widget_border_violet">#532190</color>
+    <color name="widget_primary_violet">#8B5CF6</color>
+
+    <!-- Lavender -->
+    <color name="widget_background_lavender">#190a2a</color>
+    <color name="widget_text_lavender">#f3effe</color>
+    <color name="widget_muted_lavender">#8a8198</color>
+    <color name="widget_border_lavender">#613c98</color>
+    <color name="widget_primary_lavender">#A78BFA</color>
+
+    <!-- Indigo -->
+    <color name="widget_background_indigo">#131131</color>
+    <color name="widget_text_indigo">#e9eafd</color>
+    <color name="widget_muted_indigo">#82829b</color>
+    <color name="widget_border_indigo">#403fa3</color>
+    <color name="widget_primary_indigo">#6366F1</color>
+
+    <!-- Rose -->
+    <color name="widget_background_rose">#1c021e</color>
+    <color name="widget_text_rose">#fde4e8</color>
+    <color name="widget_muted_rose">#917887</color>
+    <color name="widget_border_rose">#7d1653</color>
+    <color name="widget_primary_rose">#F43F5E</color>
+
+    <!-- Pink -->
+    <color name="widget_background_pink">#23041e</color>
+    <color name="widget_text_pink">#fce5f1</color>
+    <color name="widget_muted_pink">#94798c</color>
+    <color name="widget_border_pink">#871d65</color>
+    <color name="widget_primary_pink">#EC4899</color>
+
+    <!-- Magenta -->
+    <color name="widget_background_magenta">#210b33</color>
+    <color name="widget_text_magenta">#fae5fd</color>
+    <color name="widget_muted_magenta">#927c9c</color>
+    <color name="widget_border_magenta">#7f29a6</color>
+    <color name="widget_primary_magenta">#D946EF</color>
+
+    <!-- Coral -->
+    <color name="widget_background_coral">#1e0a0c</color>
+    <color name="widget_text_coral">#feebee</color>
+    <color name="widget_muted_coral">#927f82</color>
+    <color name="widget_border_coral">#82343e</color>
+    <color name="widget_primary_coral">#FB7185</color>
+
+    <!-- Amber -->
+    <color name="widget_background_amber">#231605</color>
+    <color name="widget_text_amber">#fef1dd</color>
+    <color name="widget_muted_amber">#958875</color>
+    <color name="widget_border_amber">#89580d</color>
+    <color name="widget_primary_amber">#F59E0B</color>
+
+    <!-- Yellow -->
+    <color name="widget_background_yellow">#231e05</color>
+    <color name="widget_text_yellow">#fcf4dc</color>
+    <color name="widget_muted_yellow">#948d75</color>
+    <color name="widget_border_yellow">#876c0c</color>
+    <color name="widget_primary_yellow">#EAB308</color>
+
+    <!-- Graphite -->
+    <color name="widget_background_graphite">#0c0d0e</color>
+    <color name="widget_text_graphite">#eaebed</color>
+    <color name="widget_muted_graphite">#7f8082</color>
+    <color name="widget_border_graphite">#363a40</color>
+    <color name="widget_primary_graphite">#6B7280</color>
 </resources>

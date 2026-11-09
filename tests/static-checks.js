@@ -55,7 +55,7 @@ check("Notification preferences form exists", app.includes('id="notification-pre
 check("Team creation exists", /\.from\(\s*["']teams["']\s*\)\s*\.insert\(/.test(app));
 check("Team join RPC exists", app.includes('rpc("join_team"'));
 check("No service-role key assignment in browser files", !/service_role\s*[:=]/i.test(app + html + read("supabase-config.js")) && !/serviceRole/i.test(app + html + read("supabase-config.js")));
-check("Service worker cache was bumped", sw.includes("studyzone-shell-v21"));
+check("Service worker cache was bumped", sw.includes("studyzone-shell-v22"));
 
 check("Web app manifest keeps standalone display", /"display"\s*:\s*"standalone"/.test(manifest));
 check("Web app manifest has a start url and scope", /"start_url"\s*:/.test(manifest) && /"scope"\s*:/.test(manifest));
@@ -207,6 +207,7 @@ const offline = read("offline-sync.js");
 const nativeShell = read("native-shell.js");
 const syncUi = read("sync-ui.js");
 const themes = read("themes.css");
+const themePresets = read("themes-presets.css");
 const mobile = read("mobile.css");
 const capacitor = read("capacitor.config.json");
 const localeRuntime = read("locales.js");
@@ -221,6 +222,23 @@ check("Capacitor app id is configured", /"appId"\s*:\s*"com\.studyzone\.app"/.te
 check("Capacitor web dir is www", /"webDir"\s*:\s*"www"/.test(capacitor));
 check("Offline engine wraps fetch", offline.includes("window.fetch = function studyZoneFetch"));
 check("Offline engine uses IndexedDB", offline.includes("indexedDB.open"));
+check(
+  "Offline queue stores the documented operation fields",
+  [
+    "operation_id",
+    "user_id",
+    "entity_type",
+    "entity_id",
+    "operation_type",
+    "payload",
+    "created_at",
+    "updated_at",
+    "sync_status",
+    "retry_count",
+    "last_error",
+    "idempotency_key",
+  ].every((field) => offline.includes(field)),
+);
 check("Offline queue is idempotent", offline.includes("idempotency") || offline.includes("idempotencyKey"));
 check("Offline engine isolates accounts", offline.includes("function clearUser("));
 check("Offline engine stores conflicts", offline.includes("CONFLICT_STORE"));
@@ -232,7 +250,34 @@ check("Native shell creates notification channels", nativeShell.includes("create
 check("Native shell handles deep links", nativeShell.includes('"appUrlOpen"'));
 check("Native shell handles the keyboard", nativeShell.includes('"keyboardWillShow"'));
 check("Native shell synchronizes on resume", nativeShell.includes('"appStateChange"'));
-check("Theme stylesheet defines six presets", ["ocean", "emerald", "purple", "crimson", "midnight"].every((id) => themes.includes(`data-theme-preset="${id}"`)));
+check(
+  "Theme stylesheet defines every preset",
+  [
+    "original",
+    "ocean",
+    "emerald",
+    "purple",
+    "crimson",
+    "midnight",
+    "orange",
+    "sky",
+    "cyan",
+    "turquoise",
+    "teal",
+    "mint",
+    "lime",
+    "violet",
+    "lavender",
+    "indigo",
+    "rose",
+    "pink",
+    "magenta",
+    "coral",
+    "amber",
+    "yellow",
+    "graphite",
+  ].every((id) => themePresets.includes(`data-theme-preset="${id}"`)),
+);
 check("Mobile stylesheet handles safe areas", mobile.includes("safe-area-inset"));
 check("Locale runtime contains both languages", localeRuntime.includes("en:") && localeRuntime.includes("ar:"));
 check(

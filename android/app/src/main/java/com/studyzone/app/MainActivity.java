@@ -1,11 +1,10 @@
 package com.studyzone.app;
 
-import android.content.ComponentName;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.view.View;
 import android.webkit.WebView;
+import android.util.Log;
 
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
@@ -23,33 +22,14 @@ import org.json.JSONObject;
  * keyboard and notifications are handled by Capacitor plugins from
  * native-shell.js.
  *
- * Handles app shortcuts (page extra) and dynamic app icon switching
- * (PackageManager.setComponentEnabledSetting on activity aliases).
+ * It is deliberately the single, stable launcher activity. Earlier builds
+ * toggled `activity-alias` launcher entries at runtime to swap the app icon.
+ * That could leave the home-screen shortcut bound to a disabled component
+ * (opening Android "App info" instead of the app) and could interrupt the
+ * running task whenever the theme changed. Theme identity is now applied in the
+ * web UI and the widgets, which cannot break app startup.
  */
 public class MainActivity extends BridgeActivity {
-
-    private static final String ALIAS_ORIGINAL = "com.studyzone.app.MainActivityOriginal";
-    private static final String ALIAS_OCEAN = "com.studyzone.app.MainActivityOcean";
-    private static final String ALIAS_EMERALD = "com.studyzone.app.MainActivityEmerald";
-    private static final String ALIAS_PURPLE = "com.studyzone.app.MainActivityPurple";
-    private static final String ALIAS_CRIMSON = "com.studyzone.app.MainActivityCrimson";
-    private static final String ALIAS_MIDNIGHT = "com.studyzone.app.MainActivityMidnight";
-    private static final String ALIAS_SKY = "com.studyzone.app.MainActivitySky";
-    private static final String ALIAS_CYAN = "com.studyzone.app.MainActivityCyan";
-    private static final String ALIAS_TURQUOISE = "com.studyzone.app.MainActivityTurquoise";
-    private static final String ALIAS_TEAL = "com.studyzone.app.MainActivityTeal";
-    private static final String ALIAS_MINT = "com.studyzone.app.MainActivityMint";
-    private static final String ALIAS_LIME = "com.studyzone.app.MainActivityLime";
-    private static final String ALIAS_VIOLET = "com.studyzone.app.MainActivityViolet";
-    private static final String ALIAS_LAVENDER = "com.studyzone.app.MainActivityLavender";
-    private static final String ALIAS_INDIGO = "com.studyzone.app.MainActivityIndigo";
-    private static final String ALIAS_ROSE = "com.studyzone.app.MainActivityRose";
-    private static final String ALIAS_PINK = "com.studyzone.app.MainActivityPink";
-    private static final String ALIAS_MAGENTA = "com.studyzone.app.MainActivityMagenta";
-    private static final String ALIAS_CORAL = "com.studyzone.app.MainActivityCoral";
-    private static final String ALIAS_AMBER = "com.studyzone.app.MainActivityAmber";
-    private static final String ALIAS_YELLOW = "com.studyzone.app.MainActivityYellow";
-    private static final String ALIAS_GRAPHITE = "com.studyzone.app.MainActivityGraphite";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -107,61 +87,14 @@ public class MainActivity extends BridgeActivity {
     }
 
     /**
-     * Switches the launcher icon by enabling/disabling activity aliases.
-     * Only one alias is enabled at a time to avoid duplicate launcher icons.
+     * Kept for API compatibility with StudyZoneIconPlugin.
+     *
+     * The launcher icon is intentionally no longer swapped at runtime: the
+     * alias toggling it relied on was the cause of the "opens Android settings
+     * instead of the app" bug and of theme-change interruptions. This method is
+     * a safe no-op so existing web calls never throw.
      */
     public void setLauncherIcon(String themeId) {
-        PackageManager pm = getPackageManager();
-        if (pm == null) return;
-
-        String targetAlias;
-        switch (themeId == null ? "" : themeId) {
-            case "ocean": targetAlias = ALIAS_OCEAN; break;
-            case "emerald": targetAlias = ALIAS_EMERALD; break;
-            case "purple": targetAlias = ALIAS_PURPLE; break;
-            case "crimson": targetAlias = ALIAS_CRIMSON; break;
-            case "midnight": targetAlias = ALIAS_MIDNIGHT; break;
-            case "sky": targetAlias = ALIAS_SKY; break;
-            case "cyan": targetAlias = ALIAS_CYAN; break;
-            case "turquoise": targetAlias = ALIAS_TURQUOISE; break;
-            case "teal": targetAlias = ALIAS_TEAL; break;
-            case "mint": targetAlias = ALIAS_MINT; break;
-            case "lime": targetAlias = ALIAS_LIME; break;
-            case "violet": targetAlias = ALIAS_VIOLET; break;
-            case "lavender": targetAlias = ALIAS_LAVENDER; break;
-            case "indigo": targetAlias = ALIAS_INDIGO; break;
-            case "rose": targetAlias = ALIAS_ROSE; break;
-            case "pink": targetAlias = ALIAS_PINK; break;
-            case "magenta": targetAlias = ALIAS_MAGENTA; break;
-            case "coral": targetAlias = ALIAS_CORAL; break;
-            case "amber": targetAlias = ALIAS_AMBER; break;
-            case "yellow": targetAlias = ALIAS_YELLOW; break;
-            case "graphite": targetAlias = ALIAS_GRAPHITE; break;
-            case "original":
-            default: targetAlias = ALIAS_ORIGINAL; break;
-        }
-
-        String[] aliases = {
-                ALIAS_ORIGINAL, ALIAS_OCEAN, ALIAS_EMERALD,
-                ALIAS_PURPLE, ALIAS_CRIMSON, ALIAS_MIDNIGHT,
-                ALIAS_SKY, ALIAS_CYAN, ALIAS_TURQUOISE, ALIAS_TEAL,
-                ALIAS_MINT, ALIAS_LIME,
-                ALIAS_VIOLET, ALIAS_LAVENDER, ALIAS_INDIGO,
-                ALIAS_ROSE, ALIAS_PINK, ALIAS_MAGENTA,
-                ALIAS_CORAL, ALIAS_AMBER, ALIAS_YELLOW, ALIAS_GRAPHITE
-        };
-        for (String alias : aliases) {
-            int state = alias.equals(targetAlias)
-                    ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-                    : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
-            try {
-                pm.setComponentEnabledSetting(
-                        new ComponentName(getPackageName(), alias),
-                        state,
-                        PackageManager.DONT_KILL_APP);
-            } catch (IllegalArgumentException ignored) {
-                // Alias missing from this build: continue with the rest.
-            }
-        }
+        Log.d("StudyZoneIcon", "launcher icon is fixed; theme " + themeId + " applies in-app");
     }
 }

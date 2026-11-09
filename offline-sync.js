@@ -161,6 +161,45 @@
     });
   }
 
+  // Adds the public sync-queue field names required by the data contract while
+  // keeping the internal short names the rest of this module already uses.
+  // Canonical fields win so the aliases never go stale after a retry/status
+  // change; both names are stored, so older and newer readers agree.
+  function withQueueAliases(entry) {
+    if (!entry || typeof entry !== "object") return entry;
+    const body = entry.body;
+    const payloadRow = Array.isArray(body) ? body[0] : body;
+    let entityId =
+      (payloadRow && typeof payloadRow === "object" && payloadRow.id) || null;
+    if (!entityId) {
+      try {
+        entityId = idFromUrl(entry.url);
+      } catch {
+        entityId = null;
+      }
+    }
+    if (!entityId && entry.entity_id) entityId = entry.entity_id;
+    const createdMs = Number(entry.queuedAt || entry.created_at) || Date.now();
+    const updatedMs = Number(entry.updatedAt) || Date.now();
+    return {
+      ...entry,
+      operation_id: entry.id,
+      user_id: entry.userId || entry.user_id || "",
+      entity_type: entry.table || entry.entity_type || null,
+      entity_id: entityId,
+      operation_type: entry.kind || entry.operation_type || null,
+      payload: body === undefined ? entry.payload ?? null : body,
+      created_at: entry.created_at || new Date(createdMs).toISOString(),
+      updated_at: new Date(updatedMs).toISOString(),
+      sync_status: entry.status || entry.sync_status || "pending",
+      retry_count: Number.isFinite(Number(entry.attempts))
+        ? Number(entry.attempts)
+        : Number(entry.retry_count) || 0,
+      last_error: entry.lastError || entry.last_error || "",
+      idempotency_key: entry.idempotency_key || entry.id,
+    };
+  }
+
   const getAll = (store, indexName, value) =>
     idb(store, "readonly", (objectStore) =>
       indexName
@@ -170,7 +209,9 @@
   const getOne = (store, key) =>
     idb(store, "readonly", (objectStore) => objectStore.get(key));
   const putOne = (store, value) =>
-    idb(store, "readwrite", (objectStore) => objectStore.put(value));
+    idb(store, "readwrite", (objectStore) =>
+      objectStore.put(store === QUEUE_STORE ? withQueueAliases(value) : value),
+    );
   const deleteOne = (store, key) =>
     idb(store, "readwrite", (objectStore) => objectStore.delete(key));
 

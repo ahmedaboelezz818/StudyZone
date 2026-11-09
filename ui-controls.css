@@ -66,7 +66,7 @@
 }
 
 :root[data-theme="light"] .sz-pop {
-  --sz-shadow: 0 24px 60px rgba(12, 65, 55, .18), 0 1px 0 rgba(255, 255, 255, .7) inset;
+  --sz-shadow: 0 24px 60px rgba(0, 0, 0, .18), 0 1px 0 rgba(255, 255, 255, .7) inset;
 }
 
 .sz-pop *,
@@ -100,7 +100,7 @@
   inset: 0;
   z-index: 79;
   display: none;
-  background: rgba(3, 9, 8, .52);
+  background: rgba(0, 0, 0, .52);
   opacity: 0;
   transition: opacity var(--sz-normal) var(--sz-ease);
 }

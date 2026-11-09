@@ -97,24 +97,39 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
 
     static void updateAppWidget(Context context, AppWidgetManager manager,
                                 int appWidgetId, String type) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        String themeId = prefs.getString(KEY_THEME, "original");
-        String dataJson = prefs.getString("widget_data_json_" + type,
-                prefs.getString("widget_data_json" + appWidgetId, "{}"));
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            String themeId = prefs.getString(KEY_THEME, "original");
+            String dataJson = prefs.getString("widget_data_json_" + type,
+                    prefs.getString("widget_data_json" + appWidgetId, "{}"));
 
-        RemoteViews views = new RemoteViews(context.getPackageName(), layoutFor(type));
-        applyTheme(context, views, themeId, type);
-        populateData(views, type, dataJson);
+            RemoteViews views = new RemoteViews(context.getPackageName(), layoutFor(type));
+            try {
+                applyTheme(context, views, themeId, type);
+            } catch (RuntimeException themeError) {
+                // A theme mismatch must never stop the widget from rendering.
+                android.util.Log.w("StudyZoneWidget", "theme apply failed", themeError);
+            }
+            try {
+                populateData(views, type, dataJson);
+            } catch (RuntimeException dataError) {
+                android.util.Log.w("StudyZoneWidget", "data populate failed", dataError);
+            }
 
-        Intent launch = new Intent(context, MainActivity.class);
-        launch.setAction(Intent.ACTION_VIEW);
-        launch.putExtra("page", pageFor(type));
-        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        PendingIntent pending = PendingIntent.getActivity(context, appWidgetId, launch,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        views.setOnClickPendingIntent(R.id.widget_root, pending);
+            Intent launch = new Intent(context, MainActivity.class);
+            launch.setAction(Intent.ACTION_VIEW);
+            launch.putExtra("page", pageFor(type));
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            PendingIntent pending = PendingIntent.getActivity(context, appWidgetId, launch,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            views.setOnClickPendingIntent(R.id.widget_root, pending);
 
-        manager.updateAppWidget(appWidgetId, views);
+            manager.updateAppWidget(appWidgetId, views);
+        } catch (RuntimeException error) {
+            // Never let an exception escape into the launcher process: that is
+            // what produces the "Can't load widget" message on many launchers.
+            android.util.Log.e("StudyZoneWidget", "update failed for " + type, error);
+        }
     }
 
     private static int layoutFor(String type) {

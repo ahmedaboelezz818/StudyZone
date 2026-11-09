@@ -1,4 +1,4 @@
-const CACHE_NAME = "studyzone-shell-v21";
+const CACHE_NAME = "studyzone-shell-v22";
 
 const APP_SHELL = [
   "./",
@@ -7,6 +7,7 @@ const APP_SHELL = [
   "./themes.css",
   "./mobile.css",
   "./design-tokens.css",
+  "./themes-presets.css",
   "./ui-controls.css",
   "./ui-controls.js",
   "./app.js",

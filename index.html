@@ -28,12 +28,14 @@
     <link rel="preload" as="font" href="./fonts/font-01.woff2" type="font/woff2" crossorigin />
     <link rel="preload" as="font" href="./fonts/font-03.woff2" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="./fonts/fonts.css" />
-    <link rel="preload" as="style" href="./design-tokens.css?v=1" />
-    <link rel="stylesheet" href="./design-tokens.css?v=1" />
+    <link rel="preload" as="style" href="./design-tokens.css?v=2" />
+    <link rel="stylesheet" href="./design-tokens.css?v=2" />
+    <link rel="preload" as="style" href="./themes-presets.css?v=1" />
+    <link rel="stylesheet" href="./themes-presets.css?v=1" />
     <link rel="preload" as="style" href="./styles.css?v=focus-intelligence-2" />
     <link rel="stylesheet" href="./styles.css?v=focus-intelligence-2" />
-    <link rel="preload" as="style" href="./themes.css?v=1" />
-    <link rel="stylesheet" href="./themes.css?v=1" />
+    <link rel="preload" as="style" href="./themes.css?v=2" />
+    <link rel="stylesheet" href="./themes.css?v=2" />
     <link rel="stylesheet" href="./mobile.css?v=1" />
     <link rel="preload" as="style" href="./ui-controls.css?v=1" />
     <link rel="stylesheet" href="./ui-controls.css?v=1" />
@@ -46,9 +48,16 @@
           document.documentElement.dir = storedLanguage === "ar" ? "rtl" : "ltr";
         }
         var storedThemePreset = localStorage.getItem("studyflow.theme.preset");
-        if (storedThemePreset) {
-          document.documentElement.dataset.themePreset = storedThemePreset;
-        }
+        var validPresets = [
+          "original", "ocean", "emerald", "purple", "crimson", "midnight",
+          "orange", "sky", "cyan", "turquoise", "teal", "mint", "lime",
+          "violet", "lavender", "indigo", "rose", "pink", "magenta", "coral",
+          "amber", "yellow", "graphite"
+        ];
+        document.documentElement.dataset.themePreset =
+          validPresets.indexOf(storedThemePreset) >= 0
+            ? storedThemePreset
+            : "original";
         var storedScheme = localStorage.getItem("studyflow.theme");
         if (storedScheme === "light") {
           document.documentElement.dataset.theme = "light";

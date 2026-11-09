@@ -33,6 +33,10 @@
   --surface-rgb: var(--color-surface-rgb);
   --bg-rgb: var(--color-background-rgb);
   --polar-rgb: var(--color-text-rgb);
+  --secondary-rgb: var(--color-secondary-rgb);
+  --border-rgb: var(--color-border-rgb);
+  --warning-rgb: var(--color-warning-rgb);
+  --danger-rgb: var(--color-danger-rgb);
 
   --motion-duration-fast: 0.12s;
   --motion-duration-normal: 0.18s;
@@ -102,14 +106,17 @@
 
   /* Borders */
   --color-border: #20594C;
+  --color-border-rgb: 32, 89, 76;
   --color-border-soft: rgba(32, 89, 76, 0.55);
 
   /* Semantic */
   --color-success: #06D6A0;
   --color-success-hover: #05b88a;
   --color-warning: #E6BA6C;
+  --color-warning-rgb: 230, 186, 108;
   --color-warning-hover: #d4a35a;
   --color-danger: #D1BC8D;
+  --color-danger-rgb: 209, 188, 141;
   --color-danger-hover: #c0a676;
   --color-info: #38bdf8;
   --color-info-hover: #2ba4d6;

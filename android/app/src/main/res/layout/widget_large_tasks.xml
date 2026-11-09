@@ -24,7 +24,7 @@
         android:textColor="@color/widget_muted"
         android:text="0 tasks" />
 
-    <View
+    <FrameLayout
         android:id="@+id/widget_divider"
         android:layout_width="match_parent"
         android:layout_height="1dp"
