@@ -1,0 +1,490 @@
+/* Study Zone mobile experience.
+ * Loaded after styles.css. This file never changes the desktop identity:
+ * it only adapts spacing, touch targets, safe areas, overflow, and keyboard
+ * behaviour for phones and installed Android builds.
+ */
+
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --mobile-nav-height: 62px;
+  --touch-target: 44px;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100dvh;
+  overflow-x: hidden;
+  padding-inline: var(--safe-left) var(--safe-right);
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+/* Long user content must wrap instead of creating horizontal overflow. */
+.task-row,
+.task-title,
+.deadline-card,
+.note-card,
+.notification-card,
+.team-card,
+.message,
+.toast,
+.empty-state,
+.panel p,
+.panel small,
+.user-meta,
+.breadcrumb {
+  overflow-wrap: anywhere;
+}
+
+/* Installed Android app: the WebView owns the whole screen. */
+.native-app body {
+  min-height: 100dvh;
+  overscroll-behavior: none;
+}
+.native-app .app-shell {
+  min-height: 100dvh;
+  padding-top: var(--safe-top);
+}
+.native-app .topbar {
+  padding-top: 0;
+}
+.native-app .content {
+  padding-bottom: calc(30px + var(--safe-bottom));
+}
+.native-app .footer {
+  padding-bottom: calc(13px + var(--safe-bottom));
+}
+.native-app .modal {
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 24px);
+}
+.native-app .quick-capture-fab {
+  bottom: calc(22px + var(--safe-bottom));
+  inset-inline-end: calc(18px + var(--safe-right));
+}
+.native-app .install-button,
+.native-app #pwa-install {
+  display: none !important;
+}
+
+/* Sync / connection indicator in the topbar. */
+.sync-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(var(--surface-rgb), 0.34);
+  color: var(--secondary);
+  font-size: 9px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sync-chip i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.sync-chip[data-state="synced"] i {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.14);
+}
+.sync-chip[data-state="syncing"] i {
+  background: var(--accent);
+  animation: sync-pulse 1s ease-in-out infinite;
+}
+.sync-chip[data-state="pending"] i {
+  background: var(--warning);
+}
+.sync-chip[data-state="failed"] i {
+  background: var(--danger);
+}
+.sync-chip[data-state="offline"] i {
+  background: var(--muted);
+}
+@keyframes sync-pulse {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.7);
+  }
+}
+@media (max-width: 900px) {
+  .sync-chip span {
+    display: none;
+  }
+  .sync-chip {
+    width: 28px;
+    min-width: 28px;
+    justify-content: center;
+    padding: 0;
+  }
+}
+
+/* Sync detail panel */
+.sync-summary {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+.sync-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  font-size: 10px;
+}
+.sync-summary-row strong {
+  color: var(--accent);
+}
+.sync-conflicts {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.sync-conflict {
+  padding: 10px;
+  border: 1px solid rgba(var(--accent-rgb), 0.28);
+  border-radius: 11px;
+  background: var(--surface-soft);
+}
+.sync-conflict strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+.sync-conflict small {
+  display: block;
+  color: var(--muted);
+  font-size: 9px;
+  margin-bottom: 8px;
+}
+.sync-conflict-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+/* Notification settings */
+.notification-type-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.notification-type {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: var(--touch-target);
+  padding: 9px 11px;
+  border: 1px solid var(--border-soft);
+  border-radius: 11px;
+  background: var(--surface-soft);
+  font-size: 10px;
+}
+.notification-type input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+@media (max-width: 520px) {
+  .notification-type-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Touch-first sizing without changing the desktop layout. */
+@media (max-width: 900px) {
+  .button,
+  .text-button,
+  .panel-link,
+  .icon-button,
+  .nav-link,
+  .language-option,
+  .motion-option,
+  .theme-option,
+  .preset,
+  .deadline-filter,
+  .task-icon,
+  .task-delete {
+    min-height: var(--touch-target);
+  }
+  .icon-button {
+    width: var(--touch-target);
+    height: var(--touch-target);
+  }
+  .button-small {
+    min-height: 38px;
+  }
+  .form-stack input,
+  .form-stack select,
+  .form-stack textarea,
+  .search-box input,
+  .filter-select,
+  .admin-user-search input,
+  .note-title-input,
+  .rt-editor {
+    font-size: 16px; /* prevents Android WebView zoom-on-focus */
+  }
+  .form-row {
+    gap: 10px;
+  }
+  .modal {
+    width: min(100%, 560px);
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .modal-backdrop {
+    padding: 12px;
+    align-items: flex-end;
+  }
+  .modal-backdrop .modal {
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+  }
+  .toast-region {
+    inset-inline: 12px;
+    bottom: calc(12px + var(--safe-bottom));
+  }
+  .toast {
+    width: 100%;
+  }
+  .offline-status {
+    margin-inline: 12px;
+    font-size: 10px;
+  }
+  .admin-users-table,
+  .focus-history-table,
+  .settings-table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .chart-wrap,
+  .analytics-chart,
+  .line-chart {
+    overflow-x: auto;
+  }
+}
+
+/* Sidebar drawer polish on phones. */
+@media (max-width: 760px) {
+  .sidebar {
+    padding-top: calc(24px + var(--safe-top));
+    padding-bottom: calc(18px + var(--safe-bottom));
+  }
+  .sidebar.open {
+    box-shadow: 18px 0 60px rgba(0, 0, 0, 0.45);
+  }
+  .sidebar::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background: rgba(0, 0, 0, 0.42);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .sidebar.open::after {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .nav-link {
+    min-height: 46px;
+    font-size: 13px;
+  }
+  .topbar-actions {
+    margin-inline-start: auto;
+  }
+  .content {
+    padding-bottom: calc(30px + var(--safe-bottom));
+  }
+  .footer {
+    padding-bottom: calc(13px + var(--safe-bottom));
+  }
+  .quick-capture-fab {
+    bottom: calc(18px + var(--safe-bottom));
+  }
+  .page-heading {
+    gap: 10px;
+  }
+  .page-heading h1 {
+    font-size: clamp(22px, 6vw, 30px);
+  }
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .subject-grid,
+  .resource-grid,
+  .goal-grid,
+  .exam-grid,
+  .achievement-grid,
+  .settings-grid,
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+  .focus-side {
+    grid-template-columns: 1fr;
+  }
+  .planner-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .task-toolbar,
+  .deadline-toolbar,
+  .deadline-controls {
+    gap: 8px;
+  }
+  .task-row {
+    min-height: 58px;
+  }
+  .flip-clock {
+    max-width: 100%;
+  }
+  .timer-ring {
+    width: min(220px, 62vw);
+  }
+  .notification-card {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 430px) {
+  .topbar {
+    height: 56px;
+    flex-basis: 56px;
+    padding-inline: 10px;
+  }
+  .content {
+    padding-inline: 11px;
+  }
+  .panel {
+    padding: 13px;
+    border-radius: 14px;
+  }
+  .stat-card {
+    min-height: 100px;
+  }
+  .stats-grid {
+    gap: 7px;
+  }
+  .button {
+    padding-inline: 12px;
+  }
+  .page-heading-actions {
+    width: 100%;
+  }
+  .page-heading-actions .button {
+    flex: 1;
+  }
+  .language-switcher {
+    width: 100%;
+  }
+  .language-option {
+    flex: 1;
+  }
+  .planner-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Landscape phones and small tablets. */
+@media (max-height: 480px) and (orientation: landscape) {
+  .topbar {
+    height: 48px;
+    flex-basis: 48px;
+  }
+  .modal {
+    max-height: calc(100dvh - 10px);
+  }
+  .modal-backdrop {
+    padding: 5px;
+  }
+}
+
+/* Keyboard-safe modal: when the Android keyboard opens, keep the focused
+ * field visible instead of letting the WebView resize the whole layout. */
+.keyboard-open .modal {
+  max-height: calc(100dvh - 12px);
+  margin-bottom: 0;
+}
+.keyboard-open .modal-backdrop {
+  align-items: flex-start;
+  padding-bottom: 6px;
+}
+
+/* Respect notches and rounded display corners. */
+@supports (padding: max(0px)) {
+  .sidebar,
+  .topbar {
+    padding-inline-start: max(15px, var(--safe-left));
+    padding-inline-end: max(15px, var(--safe-right));
+  }
+}
+
+/* Arabic typography and RTL corrections. */
+:root[lang="ar"] {
+  font-family: "Cairo", "Tajawal", "Segoe UI", sans-serif;
+}
+:root[lang="ar"] body,
+:root[lang="ar"] button,
+:root[lang="ar"] input,
+:root[lang="ar"] select,
+:root[lang="ar"] textarea {
+  font-family: "Cairo", "Tajawal", "Segoe UI", sans-serif;
+}
+:root[lang="ar"] .brand strong,
+:root[lang="ar"] h1,
+:root[lang="ar"] h2,
+:root[lang="ar"] h3,
+:root[lang="ar"] .page-heading h1,
+:root[lang="ar"] .panel-heading h2 {
+  font-family: "Tajawal", "Cairo", "Segoe UI", sans-serif;
+  letter-spacing: 0;
+}
+:root[lang="ar"] #flip-clock,
+:root[lang="ar"] .flip-clock,
+:root[lang="ar"] .focus-history-duration,
+:root[lang="ar"] [data-ltr],
+:root[lang="ar"] [dir="ltr"] {
+  font-family: "Inter", "Segoe UI", sans-serif;
+  direction: ltr;
+}
+:root[dir="rtl"] .theme-check {
+  inset-inline-end: 8px;
+}
+:root[dir="rtl"] .breadcrumb .crumb-slash {
+  transform: scaleX(-1);
+}
+:root[dir="rtl"] .sync-chip i {
+  order: 2;
+}
+
+/* Reduced motion already exists in styles.css; keep new indicators calm. */
+@media (prefers-reduced-motion: reduce) {
+  .sync-chip[data-state="syncing"] i {
+    animation: none;
+  }
+}

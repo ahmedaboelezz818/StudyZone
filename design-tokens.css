@@ -1,0 +1,596 @@
+/* Study Zone — Unified Design Tokens
+ * This file is the single source of truth for all design tokens.
+ * Every component in the app must use these variables instead of hardcoded colors.
+ * Theme presets are selected via data-theme-preset on the document root.
+ * Light/dark mode is controlled via data-theme (light | dark).
+ */
+
+/* ============================================================================
+   1. Base tokens (applied to all themes)
+   ============================================================================ */
+
+/* Animation & motion */
+/* Legacy aliases — existing styles.css references --bg, --surface, --accent,
+   --polar, --secondary, --muted, --border, --warning, --danger, --shadow.
+   These map to the new standard --color-* tokens so both naming systems work. */
+:root {
+  --bg: var(--color-background);
+  --surface: var(--color-surface);
+  --surface-raised: var(--color-surface-raised);
+  --surface-soft: var(--color-surface-soft);
+  --accent: var(--color-primary);
+  --accent-dark: var(--color-surface);
+  --polar: var(--color-text);
+  --secondary: var(--color-secondary);
+  --muted: var(--color-muted);
+  --border: var(--color-border);
+  --border-soft: var(--color-border-soft);
+  --warning: var(--color-warning);
+  --danger: var(--color-danger);
+  --shadow: 0 18px 45px var(--shadow-color);
+  --shadow-color: rgba(0, 0, 0, 0.13);
+  --accent-rgb: var(--color-primary-rgb);
+  --surface-rgb: var(--color-surface-rgb);
+  --bg-rgb: var(--color-background-rgb);
+  --polar-rgb: var(--color-text-rgb);
+  --secondary-rgb: var(--color-secondary-rgb);
+  --border-rgb: var(--color-border-rgb);
+  --warning-rgb: var(--color-warning-rgb);
+  --danger-rgb: var(--color-danger-rgb);
+
+  --motion-duration-fast: 0.12s;
+  --motion-duration-normal: 0.18s;
+  --motion-duration-slow: 0.28s;
+  --motion-easing: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --motion-easing-out: cubic-bezier(0.2, 0, 0, 1);
+
+  --radius-sm: 8px;
+  --radius-md: 11px;
+  --radius-lg: 14px;
+  --radius-full: 999px;
+
+  --shadow-sm: 0 6px 18px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.10);
+  --shadow-lg: 0 18px 45px rgba(0, 0, 0, 0.13);
+  --shadow-focus: 0 0 24px rgba(var(--color-primary-rgb, 6, 214, 160), 0.13);
+  --shadow-color: rgba(0, 0, 0, 0.13);
+
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+
+  --border-width: 1px;
+  --border-style: solid;
+
+  --font-body: "Inter", "Segoe UI", sans-serif;
+  --font-arabic: "Tajawal", "Cairo", sans-serif;
+  --font-mono: "Inter", "Segoe UI", sans-serif;
+
+  --z-index-modal: 20;
+  --z-index-toast: 30;
+  --z-index-particles: 34;
+  --z-index-celebration: 35;
+  --z-index-scroll: 40;
+}
+
+/* ============================================================================
+   2. Semantic color tokens — Original (Brunswick Green / Emerald)
+   ============================================================================ */
+:root,
+:root[data-theme-preset="original"] {
+  /* Brand */
+  --color-primary: #06D6A0;
+  --color-primary-hover: #05b88a;
+  --color-primary-rgb: 6, 214, 160;
+  --color-secondary: #A5C9BF;
+  --color-secondary-rgb: 165, 201, 191;
+
+  /* Surface */
+  --color-background: #071C18;
+  --color-background-rgb: 7, 28, 24;
+  --color-surface: #0C4137;
+  --color-surface-rgb: 12, 65, 55;
+  --color-surface-raised: #10392F;
+  --color-surface-soft: #0A2B24;
+  --color-card: rgba(12, 65, 55, 0.28);
+  --color-card-hover: rgba(12, 65, 55, 0.38);
+
+  /* Text */
+  --color-text: #E6FBF6;
+  --color-text-rgb: 230, 251, 246;
+  --color-text-on-primary: #05241D;
+  --color-muted: #73968D;
+  --color-muted-rgb: 115, 150, 141;
+
+  /* Borders */
+  --color-border: #20594C;
+  --color-border-rgb: 32, 89, 76;
+  --color-border-soft: rgba(32, 89, 76, 0.55);
+
+  /* Semantic */
+  --color-success: #06D6A0;
+  --color-success-hover: #05b88a;
+  --color-warning: #E6BA6C;
+  --color-warning-rgb: 230, 186, 108;
+  --color-warning-hover: #d4a35a;
+  --color-danger: #D1BC8D;
+  --color-danger-rgb: 209, 188, 141;
+  --color-danger-hover: #c0a676;
+  --color-info: #38bdf8;
+  --color-info-hover: #2ba4d6;
+
+  /* Progress */
+  --color-progress: #06D6A0;
+  --color-progress-track: rgba(230, 251, 246, 0.09);
+
+  /* Shadow */
+  --color-shadow: rgba(0, 0, 0, 0.13);
+
+  /* Gradients */
+  --gradient-primary: linear-gradient(145deg, #0C4137, #06D6A0);
+  --gradient-surface: linear-gradient(145deg, rgba(12, 65, 55, 0.50), rgba(10, 43, 36, 0.77));
+  --gradient-card: linear-gradient(145deg, rgba(12, 65, 55, 0.70), rgba(9, 37, 31, 0.82));
+
+  /* Icons & charts */
+  --color-icon: #06D6A0;
+  --color-icon-muted: #8DB4A9;
+  --color-chart-1: #06D6A0;
+  --color-chart-2: #75CDB1;
+  --color-chart-3: #9ECDAF;
+  --color-chart-4: #C1D79D;
+
+  /* Theme preview chips */
+  --theme-preview-a: #0c4137;
+  --theme-preview-b: #06d6a0;
+}
+
+/* ============================================================================
+   3. Ocean Blue
+   ============================================================================ */
+:root[data-theme-preset="ocean"] {
+  --color-primary: #38bdf8;
+  --color-primary-hover: #2ba4d6;
+  --color-primary-rgb: 56, 189, 248;
+  --color-secondary: #a5c9d6;
+  --color-secondary-rgb: 165, 201, 214;
+
+  --color-background: #071a24;
+  --color-background-rgb: 7, 26, 36;
+  --color-surface: #0b3245;
+  --color-surface-rgb: 11, 50, 69;
+  --color-surface-raised: #0e3a4f;
+  --color-surface-soft: #082634;
+  --color-card: rgba(11, 50, 69, 0.28);
+  --color-card-hover: rgba(11, 50, 69, 0.38);
+
+  --color-text: #e6f6ff;
+  --color-text-rgb: 230, 246, 255;
+  --color-text-on-primary: #03344a;
+  --color-muted: #7396a3;
+  --color-muted-rgb: 115, 150, 163;
+
+  --color-border: #1f5670;
+  --color-border-soft: rgba(31, 86, 112, 0.55);
+
+  --color-success: #38bdf8;
+  --color-success-hover: #2ba4d6;
+  --color-warning: #fbbf24;
+  --color-warning-hover: #d97706;
+  --color-danger: #f87171;
+  --color-danger-hover: #dc2626;
+  --color-info: #38bdf8;
+  --color-info-hover: #2ba4d6;
+
+  --color-progress: #38bdf8;
+  --color-progress-track: rgba(230, 246, 255, 0.09);
+
+  --color-shadow: rgba(0, 0, 0, 0.13);
+
+  --gradient-primary: linear-gradient(145deg, #0b3245, #38bdf8);
+  --gradient-surface: linear-gradient(145deg, rgba(11, 50, 69, 0.50), rgba(8, 38, 52, 0.77));
+  --gradient-card: linear-gradient(145deg, rgba(11, 50, 69, 0.70), rgba(8, 38, 52, 0.82));
+
+  --color-icon: #38bdf8;
+  --color-icon-muted: #7ba6c2;
+  --color-chart-1: #38bdf8;
+  --color-chart-2: #7dd3fc;
+  --color-chart-3: #bae6fd;
+  --color-chart-4: #eff6ff;
+
+  --theme-preview-a: #0b3245;
+  --theme-preview-b: #38bdf8;
+}
+
+/* ============================================================================
+   4. Emerald
+   ============================================================================ */
+:root[data-theme-preset="emerald"] {
+  --color-primary: #10b981;
+  --color-primary-hover: #0d9a6e;
+  --color-primary-rgb: 16, 185, 129;
+  --color-secondary: #a6cdbc;
+  --color-secondary-rgb: 166, 205, 188;
+
+  --color-background: #061f17;
+  --color-background-rgb: 6, 31, 23;
+  --color-surface: #0a3529;
+  --color-surface-rgb: 10, 53, 41;
+  --color-surface-raised: #0d4032;
+  --color-surface-soft: #082a20;
+  --color-card: rgba(10, 53, 41, 0.28);
+  --color-card-hover: rgba(10, 53, 41, 0.38);
+
+  --color-text: #e8fbf3;
+  --color-text-rgb: 232, 251, 243;
+  --color-text-on-primary: #022c19;
+  --color-muted: #749886;
+  --color-muted-rgb: 116, 152, 134;
+
+  --color-border: #1c5947;
+  --color-border-soft: rgba(28, 89, 71, 0.55);
+
+  --color-success: #10b981;
+  --color-success-hover: #0d9a6e;
+  --color-warning: #d97706;
+  --color-warning-hover: #b45309;
+  --color-danger: #ef4444;
+  --color-danger-hover: #dc2626;
+  --color-info: #38bdf8;
+  --color-info-hover: #2ba4d6;
+
+  --color-progress: #10b981;
+  --color-progress-track: rgba(232, 251, 243, 0.09);
+
+  --color-shadow: rgba(0, 0, 0, 0.13);
+
+  --gradient-primary: linear-gradient(145deg, #0a3529, #10b981);
+  --gradient-surface: linear-gradient(145deg, rgba(10, 53, 41, 0.50), rgba(8, 42, 32, 0.77));
+  --gradient-card: linear-gradient(145deg, rgba(10, 53, 41, 0.70), rgba(8, 42, 32, 0.82));
+
+  --color-icon: #10b981;
+  --color-icon-muted: #86c4a8;
+  --color-chart-1: #10b981;
+  --color-chart-2: #34d399;
+  --color-chart-3: #6ee7b7;
+  --color-chart-4: #d1fae5;
+
+  --theme-preview-a: #0a3529;
+  --theme-preview-b: #10b981;
+}
+
+/* ============================================================================
+   5. Purple
+   ============================================================================ */
+:root[data-theme-preset="purple"] {
+  --color-primary: #a78bfa;
+  --color-primary-hover: #8b5cf6;
+  --color-primary-rgb: 167, 139, 250;
+  --color-secondary: #c3b6e6;
+  --color-secondary-rgb: 195, 182, 230;
+
+  --color-background: #130f24;
+  --color-background-rgb: 19, 15, 36;
+  --color-surface: #241a44;
+  --color-surface-rgb: 36, 26, 68;
+  --color-surface-raised: #2b2050;
+  --color-surface-soft: #1a1333;
+  --color-card: rgba(36, 26, 68, 0.28);
+  --color-card-hover: rgba(36, 26, 68, 0.38);
+
+  --color-text: #f1ecff;
+  --color-text-rgb: 241, 236, 255;
+  --color-text-on-primary: #1e1b4b;
+  --color-muted: #8f84ad;
+  --color-muted-rgb: 143, 132, 173;
+
+  --color-border: #43356b;
+  --color-border-soft: rgba(67, 53, 107, 0.55);
+
+  --color-success: #8b5cf6;
+  --color-success-hover: #7c3aed;
+  --color-warning: #eab308;
+  --color-warning-hover: #ca8a04;
+  --color-danger: #f87171;
+  --color-danger-hover: #ef4444;
+  --color-info: #a78bfa;
+  --color-info-hover: #8b5cf6;
+
+  --color-progress: #a78bfa;
+  --color-progress-track: rgba(241, 236, 255, 0.09);
+
+  --color-shadow: rgba(0, 0, 0, 0.13);
+
+  --gradient-primary: linear-gradient(145deg, #241a44, #a78bfa);
+  --gradient-surface: linear-gradient(145deg, rgba(36, 26, 68, 0.50), rgba(26, 19, 51, 0.77));
+  --gradient-card: linear-gradient(145deg, rgba(36, 26, 68, 0.70), rgba(26, 19, 51, 0.82));
+
+  --color-icon: #a78bfa;
+  --color-icon-muted: #b8a6f0;
+  --color-chart-1: #a78bfa;
+  --color-chart-2: #c4b5fd;
+  --color-chart-3: #ddd6fe;
+  --color-chart-4: #f3e8ff;
+
+  --theme-preview-a: #241a44;
+  --theme-preview-b: #a78bfa;
+}
+
+/* ============================================================================
+   6. Crimson
+   ============================================================================ */
+:root[data-theme-preset="crimson"] {
+  --color-primary: #fb7185;
+  --color-primary-hover: #f04e63;
+  --color-primary-rgb: 251, 113, 133;
+  --color-secondary: #e3b6c0;
+  --color-secondary-rgb: 227, 182, 192;
+
+  --color-background: #210b12;
+  --color-background-rgb: 33, 11, 18;
+  --color-surface: #4a1220;
+  --color-surface-rgb: 74, 18, 32;
+  --color-surface-raised: #551628;
+  --color-surface-soft: #2c0f18;
+  --color-card: rgba(74, 18, 32, 0.28);
+  --color-card-hover: rgba(74, 18, 32, 0.38);
+
+  --color-text: #ffecef;
+  --color-text-rgb: 255, 236, 239;
+  --color-text-on-primary: #490a15;
+  --color-muted: #a87a85;
+  --color-muted-rgb: 168, 122, 133;
+
+  --color-border: #6e2434;
+  --color-border-soft: rgba(110, 36, 52, 0.55);
+
+  --color-success: #10b981;
+  --color-success-hover: #0d9a6e;
+  --color-warning: #f59e0b;
+  --color-warning-hover: #d97706;
+  --color-danger: #fb7185;
+  --color-danger-hover: #f04e63;
+  --color-info: #fb7185;
+  --color-info-hover: #f04e63;
+
+  --color-progress: #fb7185;
+  --color-progress-track: rgba(255, 236, 239, 0.09);
+
+  --color-shadow: rgba(0, 0, 0, 0.13);
+
+  --gradient-primary: linear-gradient(145deg, #4a1220, #fb7185);
+  --gradient-surface: linear-gradient(145deg, rgba(74, 18, 32, 0.50), rgba(44, 15, 24, 0.77));
+  --gradient-card: linear-gradient(145deg, rgba(74, 18, 32, 0.70), rgba(44, 15, 24, 0.82));
+
+  --color-icon: #fb7185;
+  --color-icon-muted: #d8a3b0;
+  --color-chart-1: #fb7185;
+  --color-chart-2: #fda4af;
+  --color-chart-3: #fecaca;
+  --color-chart-4: #ffe4e6;
+
+  --theme-preview-a: #4a1220;
+  --theme-preview-b: #fb7185;
+}
+
+/* ============================================================================
+   7. Midnight
+   ============================================================================ */
+:root[data-theme-preset="midnight"] {
+  --color-primary: #60a5fa;
+  --color-primary-hover: #3b82f6;
+  --color-primary-rgb: 96, 165, 250;
+  --color-secondary: #a9b7d4;
+  --color-secondary-rgb: 169, 183, 212;
+
+  --color-background: #060b18;
+  --color-background-rgb: 6, 11, 24;
+  --color-surface: #101c33;
+  --color-surface-rgb: 16, 28, 51;
+  --color-surface-raised: #14233d;
+  --color-surface-soft: #0a1224;
+  --color-card: rgba(16, 28, 51, 0.28);
+  --color-card-hover: rgba(16, 28, 51, 0.38);
+
+  --color-text: #e8eefb;
+  --color-text-rgb: 232, 238, 251;
+  --color-text-on-primary: #1e3a8a;
+  --color-muted: #7585a3;
+  --color-muted-rgb: 117, 133, 163;
+
+  --color-border: #24365a;
+  --color-border-soft: rgba(36, 54, 90, 0.55);
+
+  --color-success: #34d399;
+  --color-success-hover: #22c55e;
+  --color-warning: #fbbf24;
+  --color-warning-hover: #d97706;
+  --color-danger: #f87171;
+  --color-danger-hover: #ef4444;
+  --color-info: #60a5fa;
+  --color-info-hover: #3b82f6;
+
+  --color-progress: #60a5fa;
+  --color-progress-track: rgba(232, 238, 251, 0.09);
+
+  --color-shadow: rgba(0, 0, 0, 0.13);
+
+  --gradient-primary: linear-gradient(145deg, #101c33, #60a5fa);
+  --gradient-surface: linear-gradient(145deg, rgba(16, 28, 51, 0.50), rgba(10, 18, 36, 0.77));
+  --gradient-card: linear-gradient(145deg, rgba(16, 28, 51, 0.70), rgba(10, 18, 36, 0.82));
+
+  --color-icon: #60a5fa;
+  --color-icon-muted: #93c5fd;
+  --color-chart-1: #60a5fa;
+  --color-chart-2: #93c5fd;
+  --color-chart-3: #bfdbfe;
+  --color-chart-4: #eff6ff;
+
+  --theme-preview-a: #101c33;
+  --theme-preview-b: #60a5fa;
+}
+
+/* Orange — legacy preset kept working with the token layer. */
+:root[data-theme-preset="orange"] {
+  --color-primary: #f97316;
+  --color-primary-hover: #ea580c;
+  --color-primary-rgb: 249, 115, 22;
+  --color-secondary: #f0cdb2;
+  --color-secondary-rgb: 240, 205, 178;
+
+  --color-background: #241205;
+  --color-background-rgb: 36, 18, 5;
+  --color-surface: #3a1f0e;
+  --color-surface-rgb: 58, 31, 14;
+  --color-surface-raised: #452812;
+  --color-surface-soft: #2e1a0c;
+  --color-card: rgba(58, 31, 14, 0.28);
+  --color-card-hover: rgba(58, 31, 14, 0.38);
+
+  --color-text: #fff3e8;
+  --color-text-rgb: 255, 243, 232;
+  --color-text-on-primary: #2a1206;
+  --color-muted: #c79b80;
+  --color-muted-rgb: 199, 155, 128;
+
+  --color-border: #6b4423;
+  --color-border-soft: rgba(245, 158, 88, 0.55);
+
+  --color-success: #34d399;
+  --color-success-hover: #22c55e;
+  --color-warning: #fbbf24;
+  --color-warning-hover: #d97706;
+  --color-danger: #f87171;
+  --color-danger-hover: #ef4444;
+  --color-info: #38bdf8;
+  --color-info-hover: #0ea5e9;
+
+  --color-progress: #f97316;
+  --color-progress-track: rgba(255, 243, 232, 0.09);
+
+  --color-shadow: rgba(0, 0, 0, 0.13);
+
+  --gradient-primary: linear-gradient(145deg, #3a1f0e, #f97316);
+  --gradient-surface: linear-gradient(145deg, rgba(58, 31, 14, 0.50), rgba(36, 18, 5, 0.77));
+  --gradient-card: linear-gradient(145deg, rgba(58, 31, 14, 0.70), rgba(36, 18, 5, 0.82));
+
+  --color-icon: #f97316;
+  --color-icon-muted: #fdba74;
+  --color-chart-1: #f97316;
+  --color-chart-2: #fb923c;
+  --color-chart-3: #fdba74;
+  --color-chart-4: #ffedd5;
+
+  --theme-preview-a: #3a1f0e;
+  --theme-preview-b: #f97316;
+}
+
+/* ============================================================================
+   8. Light mode overrides (applied on top of any theme preset)
+   ============================================================================ */
+:root[data-theme="light"] {
+  --color-background: #E6FBF6;
+  --color-background-rgb: 230, 251, 246;
+  --color-text: #0C4137;
+  --color-text-rgb: 12, 65, 55;
+  --color-muted: #64877D;
+  --color-border: #C5E6DC;
+  --color-border-soft: rgba(32, 89, 76, 0.18);
+  --color-shadow: rgba(12, 65, 55, 0.07);
+  --color-card: #FFFFFF;
+  --color-card-hover: #F4FCF9;
+  --color-surface: #FFFFFF;
+  --color-surface-raised: #FFFFFF;
+  --color-surface-soft: #F3FCF9;
+
+  --color-text-on-primary: #FFFFFF;
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-danger: #e11d48;
+  --color-info: #0284c7;
+}
+
+:root[data-theme="light"][data-theme-preset="ocean"] {
+  --color-primary: #0284c7;
+  --color-primary-hover: #0369a1;
+  --color-primary-rgb: 2, 132, 199;
+  --color-surface: #FFFFFF;
+  --color-surface-rgb: 255, 255, 255;
+  --color-border: #b9dceb;
+  --gradient-primary: linear-gradient(145deg, #0b3245, #0284c7);
+  --theme-preview-b: #0284c7;
+}
+
+:root[data-theme="light"][data-theme-preset="emerald"] {
+  --color-primary: #059669;
+  --color-primary-hover: #047857;
+  --color-primary-rgb: 5, 150, 105;
+  --color-surface: #FFFFFF;
+  --color-surface-rgb: 255, 255, 255;
+  --color-border: #b8e3d2;
+  --gradient-primary: linear-gradient(145deg, #0a3529, #059669);
+  --theme-preview-b: #059669;
+}
+
+:root[data-theme="light"][data-theme-preset="purple"] {
+  --color-primary: #7c3aed;
+  --color-primary-hover: #6d28d9;
+  --color-primary-rgb: 124, 58, 237;
+  --color-surface: #FFFFFF;
+  --color-surface-rgb: 255, 255, 255;
+  --color-border: #d6ccef;
+  --gradient-primary: linear-gradient(145deg, #241a44, #7c3aed);
+  --theme-preview-b: #7c3aed;
+}
+
+:root[data-theme="light"][data-theme-preset="crimson"] {
+  --color-primary: #e11d48;
+  --color-primary-hover: #dc2626;
+  --color-primary-rgb: 225, 29, 72;
+  --color-surface: #FFFFFF;
+  --color-surface-rgb: 255, 255, 255;
+  --color-border: #efc9d2;
+  --gradient-primary: linear-gradient(145deg, #4a1220, #e11d48);
+  --theme-preview-b: #e11d48;
+}
+
+:root[data-theme="light"][data-theme-preset="midnight"] {
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-rgb: 37, 99, 235;
+  --color-surface: #FFFFFF;
+  --color-surface-rgb: 255, 255, 255;
+  --color-border: #c7d5ee;
+  --gradient-primary: linear-gradient(145deg, #101c33, #2563eb);
+  --theme-preview-b: #2563eb;
+}
+
+:root[data-theme="light"][data-theme-preset="orange"] {
+  --color-primary: #ea580c;
+  --color-primary-hover: #c2410c;
+  --color-primary-rgb: 234, 88, 12;
+  --color-surface: #FFFFFF;
+  --color-surface-rgb: 255, 255, 255;
+  --color-border: #f6d9c4;
+  --gradient-primary: linear-gradient(145deg, #7c2d12, #ea580c);
+  --theme-preview-b: #ea580c;
+}
+
+/* ============================================================================
+   9. RTL adjustments for tokens
+   ============================================================================ */
+:root[dir="rtl"] {
+  /* Token values remain identical; layout is handled by CSS logical properties */
+}
+
+/* ============================================================================
+   10. Reduced motion
+   ============================================================================ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration-fast: 0.01ms;
+    --motion-duration-normal: 0.01ms;
+    --motion-duration-slow: 0.01ms;
+  }
+}
