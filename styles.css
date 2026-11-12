@@ -119,15 +119,24 @@ h1, h2, h3 { font-family: "Inter", sans-serif; }
 .analytics-chart-body svg { display: block; width: 100%; height: auto; overflow: visible; margin-bottom: 10px; }
 .analytics-chart-grid { stroke: rgba(var(--secondary-rgb),.12); stroke-dasharray: 3 6; }
 .analytics-chart-tick { fill: var(--muted); font: 9px "Inter", sans-serif; }
+<<<<<<< HEAD
 .analytics-chart-line { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; }
+=======
+.analytics-chart-line { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; }
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
 .analytics-chart-line:hover { stroke-dashoffset: 0; }
 .page-enter .analytics-chart-line { animation: chart-draw .9s .18s ease-out both; }
 .analytics-chart-area { fill: url(#analytics-chart-fill); }
 .analytics-chart-stop-top { stop-color: rgba(var(--accent-rgb), .24); }
 .analytics-chart-stop-bottom { stop-color: rgba(var(--accent-rgb), 0); }
+<<<<<<< HEAD
 .analytics-chart-dot { fill: var(--accent); stroke: var(--bg); stroke-width: 2; }
 .analytics-chart-dot:hover { fill: var(--accent); }
 .analytics-chart-dot:focus { stroke: var(--bg); }
+=======
+.analytics-chart-dot { fill: var(--accent); stroke: var(--accent-dark); stroke-width: 3; }
+.analytics-chart-dot:hover { fill: var(--accent-dark); }
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
 .analytics-chart-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid var(--border-soft); }
 .analytics-chart-head h2 { margin: 0; color: var(--polar); font-size: 14px; font-weight: 700; letter-spacing: -.2px; }
 .analytics-chart-head p { margin: 6px 0 0; color: var(--muted); font-size: 9px; line-height: 1.4; max-width: 300px; }

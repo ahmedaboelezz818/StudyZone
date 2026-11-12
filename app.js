@@ -608,6 +608,7 @@
     1,
   );
   let selectedDeadlineDate = dateKey(new Date());
+<<<<<<< HEAD
   let dashboardMonth = new Date(
     new Date().getFullYear(),
     new Date().getMonth(),
@@ -615,6 +616,8 @@
   );
   let dashboardSelectedDate = dateKey(new Date());
   let deadlineCalendarMode = "month";
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
   let editingDeadlineId = null;
   let deadlinesLoading = false;
   const statusChangesInFlight = new Set();
@@ -632,10 +635,13 @@
   let noteSearch = "";
   let noteSubjectFilter = "";
   let noteSort = "updated";
+<<<<<<< HEAD
   let noteTypeFilter = "all";
   let notesView = "main"; // "main" | "media"
   let mediaFilter = "all"; // "all" | "image" | "video"
   let mediaEditorDraft = null; // {id?, title, description, attachments:[...], mode:'image'|'video'}
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
   let noteEditorState = null;
   let noteSaveTimer = null;
   let noteSaveStatus = "idle";
@@ -659,9 +665,12 @@
   let analyticsChartMetric = "studyHours";
   let analyticsChartGeometry = null;
   let analyticsChartSeries = null;
+<<<<<<< HEAD
   let analyticsHeatmapType = "overall";
   let analyticsHeatmapYear = null;
   let analyticsHeatmapSelected = null;
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
   try {
     const savedAnalytics = JSON.parse(
       localStorage.getItem(analyticsStorageKey) || "null",
@@ -773,6 +782,7 @@
     return number(rounded);
   }
 
+<<<<<<< HEAD
   // ---- Activity contribution heatmap -----------------------------------------
   const heatmapActivityTypes = [
     { id: "studyTime", labelEn: "Study Time", labelAr: "وقت الدراسة" },
@@ -1201,6 +1211,8 @@
     }
   }
 
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
   function analyticsNiceMax(value) {
     const safe = Math.max(0, value);
     if (safe <= 0) return 1;
@@ -1270,7 +1282,11 @@
     const dots = series
       .map(
         (point, index) =>
+<<<<<<< HEAD
           `<circle class="analytics-chart-dot" cx="${point.x}" cy="${point.y}" r="4" data-index="${index}"><title>${escapeHtml(analyticsBucketLabel(point.bucket, analyticsMode).main)}: ${escapeHtml(formatAnalyticsMetricValue(metric, point.value))}</title></circle>`,
+=======
+          `<circle class="analytics-chart-dot" cx="${point.x}" cy="${point.y}" r="3.5" data-index="${index}"><title>${escapeHtml(analyticsBucketLabel(point.bucket, analyticsMode).main)}: ${escapeHtml(formatAnalyticsMetricValue(metric, point.value))}</title></circle>`,
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       )
       .join("");
     const labels = labelIndexes
@@ -2880,6 +2896,7 @@
     }
   }
 
+<<<<<<< HEAD
   // ---- Media notes storage (IndexedDB, persistent local blobs) -------------
   const mediaDbName = "studyzone-media-v1";
   const mediaStoreName = "blobs";
@@ -3040,17 +3057,27 @@
     return next;
   }
 
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
   function readLocalNotes() {
     try {
       const saved = localStorage.getItem(localNotesKey);
       if (saved) {
         const parsed = JSON.parse(saved);
+<<<<<<< HEAD
         if (Array.isArray(parsed)) return parsed.map(normalizeNoteRecord);
+=======
+        if (Array.isArray(parsed)) return parsed;
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       }
     } catch (error) {
       console.error("Could not read saved notes.", error);
     }
+<<<<<<< HEAD
     return sampleNotes.map((note, index) => normalizeNoteRecord({
+=======
+    return sampleNotes.map((note, index) => ({
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       id: `local-note-${index + 1}`,
       title: note.title,
       content: `<p>${escapeHtml(
@@ -3064,9 +3091,12 @@
       subject: note.subject,
       is_favorite: index === 0,
       color: "",
+<<<<<<< HEAD
       type: "text",
       attachments: [],
       description: "",
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       created_at: new Date(Date.now() - index * 86400000).toISOString(),
       updated_at: new Date(Date.now() - index * 86400000).toISOString(),
     }));
@@ -3548,6 +3578,7 @@
   }
 
   function dashboardPage() {
+<<<<<<< HEAD
     const tr = (english, arabic) => (appLanguage === "ar" ? arabic : english);
     const locale = appLanguage === "ar" ? "ar-EG" : "en";
     const formattedNumber = (value) =>
@@ -3562,6 +3593,8 @@
           : value >= 30
             ? "is-mid"
             : "is-low";
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     const todayKey = dateKey(new Date());
     const todayAll = tasksForDay(todayKey);
     const openTasks = tasks.filter((task) => task.status !== "completed");
@@ -3604,6 +3637,7 @@
           : hour < 18
             ? "Good afternoon"
             : "Good evening";
+<<<<<<< HEAD
     const dayLabelText = new Intl.DateTimeFormat(locale, {
       weekday: "long",
       month: "long",
@@ -3613,6 +3647,18 @@
     const focusMinutes = Math.floor(focusStats.todaySeconds / 60);
     const focusWeekHours = (focusStats.weekSeconds / 3600).toFixed(1);
     const focusTargetPercent = clampPercent((focusMinutes / 120) * 100);
+=======
+    const dayLabelText = new Intl.DateTimeFormat(
+      appLanguage === "ar" ? "ar-EG" : "en",
+      { weekday: "long", month: "long", day: "numeric" },
+    ).format(new Date());
+    const formattedNumber = (value) =>
+      new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(
+        value,
+      );
+    const focusStats = getFocusStats();
+    const focusMinutes = Math.floor(focusStats.todaySeconds / 60);
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     const nextDeadline = tasks
       .filter(
         (task) =>
@@ -3621,6 +3667,7 @@
           new Date(task.due_at) > new Date(),
       )
       .sort((a, b) => new Date(a.due_at) - new Date(b.due_at))[0];
+<<<<<<< HEAD
 
     const heroQuotes =
       appLanguage === "ar"
@@ -3869,10 +3916,30 @@
       </div>`;
     };
     const todaysList = todayTasks.slice(0, 5).map(taskRowForDashboard).join("");
+=======
+    const statGrid = `<div class="grid stats-grid">
+      ${statCard("TODAY'S TASKS", `${formattedNumber(completedToday.length)}<small>/${formattedNumber(totalToday)}</small>`, progress ? ` ${progress}% complete` : " Add your first task", "✓", progress ? "● " : "")}
+      ${statCard("OVERDUE", formattedNumber(overdueTasks.length), overdueTasks.length ? " Needs attention" : " All clear", "!", overdueTasks.length ? "" : "")}
+      ${statCard("FOCUS TODAY", `${formattedNumber(focusMinutes)}<small> min</small>`, ` ${formattedNumber(focusStats.todaySessions)} sessions`, "◷")}
+      ${statCard("STUDY STREAK", rewardSummary ? `${rewardCounterMarkup("streak", rewardSummary.current_streak)} days` : "—", rewardSummary ? ` Level ${formattedNumber(Number(rewardSummary.level) || 1)}` : " Sign in to track it", "↗")}
+    </div>`;
+    const taskRowForDashboard = (
+      task,
+    ) => `<div class="dashboard-task ${task.status === "completed" ? "completed" : ""}">
+      <button class="task-check ${task.status === "completed" ? "checked" : ""}" data-action="toggle-task" data-id="${escapeHtml(task.id)}" aria-label="${task.status === "completed" ? "Reopen" : "Complete"} ${escapeHtml(task.title)}">${task.status === "completed" ? "✓" : ""}</button>
+      <button class="dashboard-task-main" data-action="${task.routine_id ? "routine-edit" : "task-edit"}" data-id="${escapeHtml(task.routine_id || task.id)}">
+        <strong dir="auto">${escapeHtml(task.title)}${task.routine_id ? " ↻" : ""}</strong>
+        <small dir="auto">${escapeHtml(task.subject || subjectName(task.subject_id))}${task.due_at ? ` · ${escapeHtml(taskDueLabel(task))}` : ""}</small>
+      </button>
+      <span class="priority ${escapeHtml(task.priority || "medium")}">${escapeHtml(deadlineText[appLanguage][task.priority] || "medium")}</span>
+    </div>`;
+    const todaysList = todayTasks.slice(0, 6).map(taskRowForDashboard).join("");
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     const overdueList = overdueTasks
       .slice(0, 3)
       .map(taskRowForDashboard)
       .join("");
+<<<<<<< HEAD
     const tasksPanel = `<section class="sz-card">
       <div class="sz-card-head"><div><p class="sz-kicker">${tr("TODAY'S FOCUS", "تركيز اليوم")}</p><h2>${tr("Today's tasks", "مهام اليوم")}</h2><p>${todayTasks.length} ${tr("open", "مفتوحة")} · ${completedToday.length} ${tr("done", "مكتملة")}</p></div><button class="panel-link" data-navigate="tasks">${tr("All tasks →", "كل المهام ←")}</button></div>
       <div class="sz-progress" style="margin-bottom:14px"><div class="sz-progress-line"><span>${tr("Daily progress", "تقدم اليوم")}</span><strong>${progress}%</strong></div><div class="sz-track ${tickClass(progress)}"><span style="width:${progress}%"></span></div></div>
@@ -4015,11 +4082,15 @@
     </section>`;
 
     const latestNote = notes
+=======
+    const latestNotes = notes
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       .slice()
       .sort(
         (a, b) =>
           new Date(b.updated_at || b.created_at || 0) -
           new Date(a.updated_at || a.created_at || 0),
+<<<<<<< HEAD
       )[0];
     const journalCard = `<section class="sz-image-card">
       <div class="sz-image-card-media"><img src="./assets/images/journal-notebook.webp" alt="" loading="lazy" decoding="async" onerror="this.remove()" /></div>
@@ -4036,6 +4107,32 @@
       earnedAchievements
         .slice(0, 3)
         .map((item, index) => {
+=======
+      )
+      .slice(0, 3);
+    const noteRows = latestNotes
+      .map(
+        (
+          note,
+        ) => `<button class="dashboard-note" data-action="note-open" data-id="${escapeHtml(note.id)}">
+      <span class="dashboard-note-dot" style="background:${escapeHtml(noteColor(note))}"></span>
+      <span><strong dir="auto">${escapeHtml(note.title || "Untitled note")}</strong><small dir="auto">${escapeHtml(notePlainText(note).slice(0, 80) || "Empty note")}</small></span>
+      <time>${escapeHtml(new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { month: "short", day: "numeric" }).format(new Date(note.updated_at || note.created_at || Date.now())))}</time>
+    </button>`,
+      )
+      .join("");
+    const goalRows = goals
+      .slice(0, 3)
+      .map(
+        (goal) =>
+          `<div class="dashboard-goal"><div class="goal-topline"><strong>${escapeHtml(goal.title)}</strong><span>${escapeHtml(goal.due || "")}</span></div><div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, Math.max(0, goal.progress || 0))}%"></div></div><div class="goal-bottomline"><span>${escapeHtml(goal.detail || goal.details || "")}</span><span>${Math.round(goal.progress || 0)}%</span></div></div>`,
+      )
+      .join("");
+    const badges =
+      earnedAchievements
+        .slice(0, 3)
+        .map((item) => {
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
           const achievement = Array.isArray(item.achievements)
             ? item.achievements[0]
             : item.achievements;
@@ -4043,6 +4140,7 @@
             (entry) => entry.code === achievement?.code,
           );
           if (!achievement) return "";
+<<<<<<< HEAD
           return `<div class="sz-badge ${habitTones[index % habitTones.length]}"><span class="sz-badge-icon">${catalog?.symbol || "✦"}</span><div><strong>${escapeHtml(achievement.name || catalog?.name || tr("Achievement unlocked!", "تم فتح إنجاز!"))}</strong><small>${escapeHtml(achievement.description || catalog?.description || "")}</small></div></div>`;
         })
         .join("") ||
@@ -4073,6 +4171,58 @@
         ${subjectsPanel}
       </div>
       <p class="data-caption">${session ? tr("Everything above is calculated from your saved tasks, notes, habits, and verified focus sessions.", "كل ما سبق محسوب من مهامك وملاحظاتك وعاداتك وجلسات التركيز الموثقة.") : tr("Guest preview data is stored in this browser. Sign in to sync your private workspace.", "بيانات المعاينة محفوظة في هذا المتصفح. سجّل الدخول لمزامنة مساحتك الخاصة.")}</p>`;
+=======
+          return `<div class="achievement-row"><span class="achievement-icon">${catalog?.symbol || "✦"}</span><div><strong>${escapeHtml(achievement.name || catalog?.name || "Achievement unlocked!")}</strong><small>${escapeHtml(achievement.description || catalog?.description || "")}</small></div></div>`;
+        })
+        .join("") ||
+      `<div class="empty-state">${session ? "No achievements unlocked yet." : "Sign in to earn secure rewards."}</div>`;
+    const subjectRows =
+      subjects
+        .map(
+          (subject) =>
+            `<div class="subject-row"><span class="subject-row-name">${escapeHtml(subject.name)}</span><div class="progress-track"><div class="progress-fill" style="width:${subject.progress ?? 0}%"></div></div><span class="subject-row-value">${subject.progress == null ? "—" : `${subject.progress}%`}</span></div>`,
+        )
+        .join("") ||
+      `<div class="empty-state">Add a subject to start tracking course progress.</div>`;
+    return `${pageHeading(
+      dayLabelText.toUpperCase(),
+      `${greeting}, ${escapeHtml(firstName)}.`,
+      appLanguage === "ar"
+        ? "هذه مهام اليوم فقط — ابدأ بخطوة واحدة."
+        : "Here is today, and nothing else. Start with one step.",
+      `<div class="dashboard-heading-actions"><button class="button button-secondary" data-navigate="focus">◷ ${appLanguage === "ar" ? "ابدأ التركيز" : "Start focus"}</button><button class="button button-primary" data-action="new-task" data-date="${todayKey}">＋ ${appLanguage === "ar" ? "مهمة جديدة" : "New task"}</button></div>`,
+    )}
+      ${statGrid}
+      <div class="grid dashboard-grid">
+        <section class="panel">${panelHeading(appLanguage === "ar" ? "مهام اليوم" : "Today's tasks", appLanguage === "ar" ? `${todayTasks.length} مفتوحة · ${completedToday.length} مكتملة` : `${todayTasks.length} open · ${completedToday.length} done`, `<button class="panel-link" data-navigate="tasks">${appLanguage === "ar" ? "كل المهام ←" : "All tasks →"}</button>`)}
+          <div class="dashboard-progress-line"><div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div><span>${progress}%</span></div>
+          <div class="dashboard-task-list">${todaysList || `<div class="empty-state"><strong>${appLanguage === "ar" ? "لا مهام لليوم" : "Nothing due today"}</strong>${appLanguage === "ar" ? "أضف مهمة أو راجع المهام المتأخرة." : "Add a task or clear your overdue list."}</div>`}</div>
+          ${overdueList ? `<div class="dashboard-overdue"><div class="dashboard-overdue-head"><span>${appLanguage === "ar" ? "متأخرة" : "Overdue"}</span><strong>${formattedNumber(overdueTasks.length)}</strong></div>${overdueList}</div>` : ""}
+          <div class="dashboard-quick-actions">
+            <button data-action="new-task" data-date="${todayKey}">＋ ${appLanguage === "ar" ? "مهمة" : "Task"}</button>
+            <button data-action="note-add">✎ ${appLanguage === "ar" ? "ملاحظة" : "Note"}</button>
+            <button data-navigate="focus">◷ ${appLanguage === "ar" ? "تركيز" : "Focus"}</button>
+            <button data-navigate="tasks">▦ ${appLanguage === "ar" ? "التقويم" : "Calendar"}</button>
+          </div>
+        </section>
+        <aside class="grid dashboard-side">
+          <section class="panel ${focusStats.todaySeconds ? "" : "panel-quiet"}">${panelHeading(appLanguage === "ar" ? "تركيز اليوم" : "Focus today", appLanguage === "ar" ? "جلسات مكتملة فقط" : "Completed sessions only")}
+            <div class="dashboard-focus"><strong>${formattedNumber(focusMinutes)}<small> min</small></strong><span>${formattedNumber(focusStats.todaySessions)} ${appLanguage === "ar" ? "جلسات" : "sessions"}</span></div>
+            ${nextDeadline ? `<div class="dashboard-next"><span>${appLanguage === "ar" ? "أقرب موعد" : "Next deadline"}</span><strong dir="auto">${escapeHtml(nextDeadline.title)}</strong><small>${escapeHtml(taskDueLabel(nextDeadline, { includeDate: true }))}</small></div>` : ""}
+            <button class="button button-primary button-small full-button" data-navigate="focus">${appLanguage === "ar" ? "ابدأ جلسة تركيز" : "Start a focus session"}</button>
+          </section>
+          <section class="panel">${panelHeading(appLanguage === "ar" ? "آخر الملاحظات" : "Recent notes", appLanguage === "ar" ? "من دفترك" : "From your notebook", `<button class="panel-link" data-navigate="notes">${appLanguage === "ar" ? "كل الملاحظات ←" : "All notes →"}</button>`)}
+            <div class="dashboard-notes">${noteRows || `<div class="empty-state">${appLanguage === "ar" ? "لا ملاحظات بعد" : "No notes yet"}</div>`}</div>
+          </section>
+        </aside>
+      </div>
+      <div class="grid dashboard-grid bottom-grid">
+        <section class="panel">${panelHeading(appLanguage === "ar" ? "تقدم الأهداف" : "Goal progress", appLanguage === "ar" ? "خطوات صغيرة تضيف" : "Small steps add up", `<button class="panel-link" data-navigate="goals">${appLanguage === "ar" ? "الأهداف ←" : "Goals →"}</button>`)}<div class="goal-list">${goalRows || `<div class="empty-state">${appLanguage === "ar" ? "لا أهداف بعد" : "No goals yet"}</div>`}</div></section>
+        <section class="panel">${panelHeading(appLanguage === "ar" ? "آخر الإنجازات" : "Recent achievements", appLanguage === "ar" ? "واصل بناء عادتك" : "Keep building your rhythm", `<button class="panel-link" data-navigate="achievements">${appLanguage === "ar" ? "الإنجازات ←" : "Achievements →"}</button>`)}<div class="achievement-list">${badges}</div></section>
+      </div>
+      <section class="panel section-spacer">${panelHeading(appLanguage === "ar" ? "المواد" : "Subjects", appLanguage === "ar" ? "تقديرات التقدم الحالية" : "Current progress")}<div class="subject-rows">${subjectRows}</div></section>
+      <p class="data-caption">${session ? "Everything above is calculated from your saved tasks, notes, and verified focus sessions." : "Guest preview data is stored in this browser. Sign in to sync your private workspace."}</p>`;
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
   }
 
   function startOfLocalDay(value = new Date()) {
@@ -4870,6 +5020,7 @@
 
   function calendarView(deadlines) {
     const t = deadlineText[appLanguage];
+<<<<<<< HEAD
     const locale = appLanguage === "ar" ? "ar-EG" : "en";
     const mode = ["month", "week", "day"].includes(deadlineCalendarMode)
       ? deadlineCalendarMode
@@ -4978,14 +5129,25 @@
         ${mode === "week" ? selection : ""}`;
     }
 
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     const year = deadlineMonth.getFullYear();
     const month = deadlineMonth.getMonth();
     const firstDay = new Date(year, month, 1);
     const startOffset = firstDay.getDay();
+<<<<<<< HEAD
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const weekCount = Math.ceil((startOffset + daysInMonth) / 7);
     const startOfGrid = new Date(year, month, 1 - startOffset);
     const weeks = Array.from({ length: weekCount }, (_, weekIndex) => {
+=======
+    const today = dateKey(new Date());
+    const weekdayLabels = t.daysShort
+      .map((day) => `<span class="calendar-weekday">${day}</span>`)
+      .join("");
+    const startOfGrid = new Date(year, month, 1 - startOffset);
+    const weeks = Array.from({ length: 6 }, (_, weekIndex) => {
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       const weekStart = new Date(startOfGrid);
       weekStart.setDate(startOfGrid.getDate() + weekIndex * 7);
       const dayDates = Array.from({ length: 7 }, (_, dayIndex) => {
@@ -5004,7 +5166,11 @@
         return {
           date,
           key,
+<<<<<<< HEAD
           button: `<button class="${classes.join(" ")}" data-action="calendar-select" data-date="${key}" aria-label="${escapeHtml(new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(date))}" aria-pressed="${key === selectedDeadlineDate}">${new Intl.NumberFormat(locale).format(date.getDate())}</button>`,
+=======
+          button: `<button class="${classes.join(" ")}" data-action="calendar-select" data-date="${key}" aria-label="${escapeHtml(new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "full" }).format(date))}" aria-pressed="${key === selectedDeadlineDate}">${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(date.getDate())}</button>`,
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
         };
       });
 
@@ -5044,6 +5210,7 @@
         .join("");
       return `<div class="calendar-week"><div class="calendar-week-days">${dayDates.map((item) => item.button).join("")}</div><div class="calendar-week-bars" style="grid-template-rows:repeat(${Math.max(1, laneEnds.length)},18px)">${bars}</div></div>`;
     }).join("");
+<<<<<<< HEAD
     const monthLabel = new Intl.DateTimeFormat(locale, {
       month: "long",
       year: "numeric",
@@ -5051,6 +5218,26 @@
     return `<div class="calendar-header"><h2 class="calendar-month" id="calendar-month">${escapeHtml(monthLabel)}</h2><div class="calendar-nav">${modeSwitch}<button class="button button-secondary button-small" data-action="calendar-today">${t.currentMonth}</button><button class="icon-button" data-action="calendar-prev" aria-label="${t.previous}">‹</button><button class="icon-button" data-action="calendar-next" aria-label="${t.next}">›</button></div></div>
       <div class="calendar-grid" role="grid" aria-labelledby="calendar-month"><div class="calendar-weekdays">${weekdayLabels}</div>${weeks}</div>
       ${selection}`;
+=======
+    const monthLabel = new Intl.DateTimeFormat(
+      appLanguage === "ar" ? "ar-EG" : "en",
+      { month: "long", year: "numeric" },
+    ).format(deadlineMonth);
+    const selected = deadlines.filter((deadline) => {
+      const range = deadlineDateRange(deadline);
+      return (
+        selectedDeadlineDate >= range.start && selectedDeadlineDate <= range.end
+      );
+    });
+    const selectedLabel = selectedDeadlineDate
+      ? new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", {
+          dateStyle: "full",
+        }).format(new Date(`${selectedDeadlineDate}T12:00:00`))
+      : t.noDate;
+    return `<div class="calendar-header"><h2 class="calendar-month" id="calendar-month">${escapeHtml(monthLabel)}</h2><div class="calendar-nav"><button class="button button-secondary button-small" data-action="calendar-today">${t.currentMonth}</button><button class="icon-button" data-action="calendar-prev" aria-label="${t.previous}">‹</button><button class="icon-button" data-action="calendar-next" aria-label="${t.next}">›</button></div></div>
+      <div class="calendar-grid" role="grid" aria-labelledby="calendar-month"><div class="calendar-weekdays">${weekdayLabels}</div>${weeks}</div>
+      <div class="calendar-selection">${panelHeading(escapeHtml(selectedLabel), `${selected.length} ${selected.length === 1 ? t.deadline : t.deadlines}`)}<div class="deadline-list">${selected.map(deadlineCard).join("") || `<div class="empty-state">${t.noDateItems}</div>`}</div></div>`;
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
   }
 
   function deadlinesPage() {
@@ -5078,7 +5265,11 @@
       deadlineView === "list"
         ? `<div class="deadline-list-heading"><strong>${t.title}</strong><span>${t.showing} ${activeCount} ${activeCount === 1 ? t.deadline : t.deadlines}</span></div><div class="deadline-list">${list}</div>`
         : calendarView(filtered);
+<<<<<<< HEAD
     return `${pageHeading(t.eyebrow, t.title, t.subtitle, `<button class="button button-primary" data-action="deadline-add"><span class="button-icon">ï¼‹</span> ${t.add}</button>`)}
+=======
+    return `${pageHeading(t.eyebrow, t.title, t.subtitle, `<button class="button button-primary" data-action="deadline-add"><span class="button-icon">＋</span> ${t.add}</button>`)}
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       ${deadlineStats(deadlines)}
       <section class="panel"><div class="deadline-toolbar-row">${listControls}${viewControls}</div>${deadlinesLoading ? `<div class="deadline-loading"><div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div></div>` : display}</section>
       <p class="data-caption">${session ? t.reminderNote : t.sampleNote}</p>`;
@@ -5337,10 +5528,13 @@
   }
 
   function noteContentHtml(note) {
+<<<<<<< HEAD
     if (isMediaNote(note)) {
       const desc = escapeHtml(String(note?.description || "")).replace(/\n/g, "<br>");
       return desc ? `<p>${desc}</p>` : "";
     }
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     const raw = String(note?.content || "");
     if (!raw) return "";
     if (/<[a-z][\s\S]*>/i.test(raw)) return sanitizeRichText(raw);
@@ -5353,11 +5547,14 @@
   }
 
   function notePlainText(note) {
+<<<<<<< HEAD
     if (isMediaNote(note)) {
       const desc = String(note?.description || "").replace(/\s+/g, " ").trim();
       const names = noteAttachments(note).map((a) => a?.name || "").filter(Boolean).join(" ");
       return `${desc} ${names}`.trim();
     }
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     const html = noteContentHtml(note);
     if (!html) return "";
     try {
@@ -5383,11 +5580,15 @@
   }
 
   function notesPage() {
+<<<<<<< HEAD
     if (notesView === "media") return mediaNotesPage();
 
     // Main notes view: keep text notes behavior; media notes live in dedicated section.
     const textNotes = notes.filter((note) => !isMediaNote(note) && noteTypeOf(note) !== "voice");
     const filtered = textNotes
+=======
+    const filtered = notes
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       .filter((note) => {
         const text =
           `${note.title || ""} ${notePlainText(note)} ${note.subject || subjectName(note.subject_id)}`.toLowerCase();
@@ -5451,18 +5652,28 @@
       "YOUR KNOWLEDGE VAULT",
       appLanguage === "ar" ? "الملاحظات" : "Notes",
       appLanguage === "ar"
+<<<<<<< HEAD
         ? "اكتب ونسّق وثبّت ما يهمك — مع حفظ تلقائي."
         : "Write, format, and pin what matters — with autosave.",
       `<div class="notes-heading-actions"><select class="filter-select" id="note-template" aria-label="${appLanguage === "ar" ? "قالب الملاحظة" : "Note template"}">${templateOptions}</select><button class="button button-primary" data-action="note-add">${appLanguage === "ar" ? "ملاحظة جديدة" : "New note"}</button></div>`,
     )}
       <section class="panel notes-toolbar">
         <label class="search-box"><span aria-hidden="true">🔎</span><input id="note-search" type="search" dir="auto" value="${escapeHtml(noteSearch)}" placeholder="${appLanguage === "ar" ? "ابحث في الملاحظات النصية" : "Search text notes"}" aria-label="${appLanguage === "ar" ? "ابحث في الملاحظات" : "Search notes"}"></label>
+=======
+        ? "اكتب، نسّق، وثبّت ما يهمك — مع حفظ تلقائي."
+        : "Write, format, and pin what matters — with autosave.",
+      `<div class="notes-heading-actions"><select class="filter-select" id="note-template" aria-label="${appLanguage === "ar" ? "قالب الملاحظة" : "Note template"}">${templateOptions}</select><button class="button button-primary" data-action="note-add">＋ ${appLanguage === "ar" ? "ملاحظة جديدة" : "New note"}</button></div>`,
+    )}
+      <section class="panel notes-toolbar">
+        <label class="search-box"><span>⌕</span><input id="note-search" type="search" dir="auto" value="${escapeHtml(noteSearch)}" placeholder="${appLanguage === "ar" ? "ابحث في الملاحظات" : "Search notes"}" aria-label="${appLanguage === "ar" ? "ابحث في الملاحظات" : "Search notes"}"></label>
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
         <select class="filter-select" id="note-subject-filter" aria-label="${appLanguage === "ar" ? "تصفية حسب المادة" : "Filter by subject"}">${subjectOptions}</select>
         <select class="filter-select" id="note-sort" aria-label="${appLanguage === "ar" ? "ترتيب الملاحظات" : "Sort notes"}">
           <option value="updated" ${noteSort === "updated" ? "selected" : ""}>${appLanguage === "ar" ? "الأحدث تحديثًا" : "Recently updated"}</option>
           <option value="created" ${noteSort === "created" ? "selected" : ""}>${appLanguage === "ar" ? "الأحدث إنشاءً" : "Recently created"}</option>
           <option value="title" ${noteSort === "title" ? "selected" : ""}>${appLanguage === "ar" ? "الاسم" : "Title A–Z"}</option>
         </select>
+<<<<<<< HEAD
         <span class="notes-count">${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(filtered.length)} ${appLanguage === "ar" ? "ملاحظة نصية" : (filtered.length === 1 ? "text note" : "text notes")}</span>
       </section>
       ${body}
@@ -5881,6 +6092,16 @@
       console.error('Media viewer failed', e);
       showToast(ar ? 'تعذر فتح الوسائط.' : 'Could not open media.');
     }
+=======
+        <span class="notes-count">${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(filtered.length)} ${appLanguage === "ar" ? "ملاحظة" : filtered.length === 1 ? "note" : "notes"}</span>
+      </section>
+      ${body}
+      <p class="data-caption">${
+        session
+          ? "Notes are private to your account. Formatting is stored as sanitized rich text."
+          : "Notes are saved in this browser in preview mode. Sign in to sync them across devices."
+      }${notesColorSupported ? "" : " Colors become available after applying the notes migration."}</p>`;
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
   }
 
   function noteBodyForHtml(html) {
@@ -6387,6 +6608,7 @@
     )
       return;
     try {
+<<<<<<< HEAD
       if (isMediaNote(note)) {
         for (const att of noteAttachments(note)) {
           if (att?.localKey) await deleteMediaBlob(att.localKey);
@@ -6395,12 +6617,18 @@
           }
         }
       }
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       if (supabase && session && !String(id).startsWith("local-")) {
         const { error } = await supabase.from("notes").delete().eq("id", id);
         if (error) throw error;
       }
       notes = notes.filter((item) => String(item.id) !== String(id));
+<<<<<<< HEAD
       if (!supabase || !session || String(id).startsWith("local-")) saveLocalNotes();
+=======
+      if (!supabase || !session) saveLocalNotes();
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       if (closeEditor) {
         const modal = document.getElementById("note-modal");
         if (modal) closeModal(modal);
@@ -6636,10 +6864,14 @@
       fields = `${featureField("obtained_marks", "result", "number", currentResult?.obtained_marks ?? record.obtained_marks, `min="0" max="${Number(record.max_marks)}" step="0.01" required`)}${featureField("notes", "notes", "textarea", currentResult?.notes, 'rows="3" maxlength="2000"')}`;
     } else if (type === "profile") {
       const profile = record || {};
+<<<<<<< HEAD
       const currentAvatarPreview = accountProfile?.avatar_display_url
         ? `<img src="${escapeHtml(accountProfile.avatar_display_url)}" alt="" style="width:72px;height:72px;border-radius:50%;object-fit:cover;display:block;" />`
         : `<span style="width:72px;height:72px;border-radius:50%;display:grid;place-items:center;background:var(--surface-2,#2a3344);font-weight:700;">${escapeHtml(initials(profile.display_name || session.user.user_metadata?.full_name || session.user?.email || "U"))}</span>`;
       fields = `${featureField("display_name", "displayName", "text", profile.display_name || session.user.user_metadata?.full_name || "", 'required maxlength="100"')}${featureField("timezone", "timezone", "text", profile.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone, 'required maxlength="80"')}<label>${featureText("language")}<select name="language"><option value="en" ${profile.language === "en" ? "selected" : ""}>English</option><option value="ar" ${profile.language === "ar" ? "selected" : ""}>العربية</option></select></label><div style="display:flex;align-items:center;gap:12px;margin:8px 0;"><div id="profile-avatar-preview" style="width:72px;height:72px;">${currentAvatarPreview}</div><div style="display:grid;gap:6px;"><label style="margin:0;">${translateUiText("Choose a profile photo from your device")}<input type="file" name="avatar_file" id="profile-avatar-file" accept="image/png,image/jpeg,image/webp"></label><small>${translateUiText("PNG, JPEG, or WebP · up to 2 MB")}</small></div></div>`;
+=======
+      fields = `${featureField("display_name", "displayName", "text", profile.display_name || session.user.user_metadata?.full_name || "", 'required maxlength="100"')}${featureField("timezone", "timezone", "text", profile.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone, 'required maxlength="80"')}<label>${featureText("language")}<select name="language"><option value="en" ${profile.language === "en" ? "selected" : ""}>English</option><option value="ar" ${profile.language === "ar" ? "selected" : ""}>العربية</option></select></label><label>${translateUiText("Choose a profile photo from your device")}<input type="file" name="avatar_file" accept="image/png,image/jpeg,image/webp"></label><small>${translateUiText("PNG, JPEG, or WebP · up to 2 MB")}</small>`;
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     } else {
       return;
     }
@@ -6872,12 +7104,15 @@
           avatarCleanupMessage = ` Previous photo cleanup failed: ${cleanupError.message}`;
         }
       }
+<<<<<<< HEAD
       if (accountProfile) {
         accountProfile.avatar_display_url = await resolveProfileAvatarUrl(
           accountProfile.avatar_url,
           session.user.id,
         );
       }
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       await loadAccountWorkspace();
       closeModal(document.getElementById("feature-modal"));
       render();
@@ -6971,7 +7206,10 @@
       throw new Error(translateUiText("PNG, JPEG, or WebP · up to 2 MB"));
     }
     const storagePath = `${session.user.id}/avatars/${focusId()}.${extension}`;
+<<<<<<< HEAD
     try { await cacheAvatarBlob(session.user.id, storagePath, file); } catch {}
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     const { error } = await supabase.storage
       .from("studyflow-files")
       .upload(storagePath, file, {
@@ -7693,6 +7931,7 @@
       dailyData.push({ date: day, key, seconds, completed, total });
     }
 
+<<<<<<< HEAD
     // Keep long ranges readable: aggregate to weeks/months instead of wrapping
     // hundreds of daily bars into a very tall grid.
     let chartData = dailyData;
@@ -7746,6 +7985,12 @@
               ? { month: "short", day: "numeric" }
               : { month: "short" },
         ).format(d.date);
+=======
+    const maxSeconds = Math.max(3600, ...dailyData.map((d) => d.seconds));
+    const bars = dailyData
+      .map((d) => {
+        const label = new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { weekday: "short" }).format(d.date);
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
         const height = d.seconds ? Math.max(4, (d.seconds / maxSeconds) * 100) : 0;
         return `<div class="focus-chart-day" title="${escapeHtml(label)}: ${escapeHtml(formatFocusHours(d.seconds, focusText[appLanguage]))}"><div class="focus-chart-track"><span style="height:${height}%"></span></div><small>${escapeHtml(label)}</small></div>`;
       })
@@ -7816,6 +8061,7 @@
       : 0;
     const analyticsChangePct = analyticsPreviousValue > 0 ? ((analyticsValues[analyticsValues.length - 1] - analyticsPreviousValue) / analyticsPreviousValue) * 100 : 0;
 
+<<<<<<< HEAD
     // ---- GitHub-style annual activity contributions ----
     const heatmapYear = heatmapActiveYear();
     const heatmap = heatmapGridData(heatmapYear);
@@ -7911,6 +8157,9 @@
     </section>`;
 
     return `${pageHeading("YOUR STUDY PATTERNS", "Analytics", "Understand your study habits without losing sight of the bigger picture.", `<div class="analytics-controls"><label>${appLanguage === "ar" ? "النطاق الزمني" : "Time range"}<select id="analytics-range">${rangeOptions}</select></label>${weekStartUI}${customRangeUI}<label>${appLanguage === "ar" ? "المؤشر" : "Metric"}<select id="analytics-metric" data-sz-control>${analyticsMetricOptions}</select></label><label>${appLanguage === "ar" ? "نوع النشاط" : "Activity type"}<select id="analytics-activity-type">${heatmapTypeOptions}</select></label><label>${appLanguage === "ar" ? "السنة" : "Year"}<select id="analytics-heatmap-year">${heatmapYearOptions}</select></label><button class="button button-secondary button-small" data-action="analytics-export">${appLanguage === "ar" ? "تصدير" : "Export"}</button></div>`)}
+=======
+    return `${pageHeading("YOUR STUDY PATTERNS", "Analytics", "Understand your study habits without losing sight of the bigger picture.", `<div class="analytics-controls"><label>${appLanguage === "ar" ? "النطاق الزمني" : "Time range"}<select id="analytics-range">${rangeOptions}</select></label>${weekStartUI}${customRangeUI}<label>${appLanguage === "ar" ? "المؤشر" : "Metric"}<select id="analytics-metric" data-sz-control>${analyticsMetricOptions}</select></label><button class="button button-secondary button-small" data-action="analytics-export">${appLanguage === "ar" ? "تصدير" : "Export"}</button></div>`)}
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     <section class="panel section-spacer" data-analytics-chart-panel>
       <div class="analytics-chart-head">
         <div>
@@ -7922,7 +8171,11 @@
         <div class="analytics-chart-body">${analyticsChartSvg}</div>
         <div class="analytics-chart-tip" hidden></div>
       </div>
+<<<<<<< HEAD
       <div class="analytics-chart-summary">
+=======
+      <div class="analytics-chart-summary>
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
         <span>${appLanguage === "ar" ? "أعلى قيمة" : "Peak value"}: <strong>${escapeHtml(formatAnalyticsMetricValue(analyticsMetric, analyticsValues.length ? Math.max(...analyticsValues) : 0))}</strong></span>
         <span>${appLanguage === "ar" ? "أدنى قيمة" : "Lowest value"}: <strong>${escapeHtml(formatAnalyticsMetricValue(analyticsMetric, analyticsValues.length ? Math.min(...analyticsValues) : 0))}</strong></span>
         <span>${appLanguage === "ar" ? "المتوسط" : "Average"}: <strong>${escapeHtml(formatAnalyticsMetricValue(analyticsMetric, analyticsChartAvg))}</strong></span>
@@ -7936,9 +8189,14 @@
       ${statCard("TASK COMPLETION", `${taskRate}%`, ` ${completedTasks.length} of ${tasksInRange.length} tasks`, "✓")}
       ${statCard("STUDY STREAK", `${streak} ${appLanguage === "ar" ? "يوم" : "day"}${streak !== 1 ? appLanguage === "ar" ? "أيام" : "s" : ""}`, streak > 0 ? appLanguage === "ar" ? "أيام متتالية" : "consecutive days" : " No activity yet", "↗")}
     </div>
+<<<<<<< HEAD
     ${heatmapPanel}
     <div class="grid dashboard-grid">
       <section class="panel">${panelHeading(chartTitle, rangeLabel)}<div class="analytics-bars-scroll"><div class="focus-chart analytics-bars" role="img" aria-label="${escapeHtml(chartTitle)}" style="grid-template-columns:repeat(${Math.max(1, chartData.length)},minmax(16px,1fr))">${bars}</div></div></section>
+=======
+    <div class="grid dashboard-grid">
+      <section class="panel">${panelHeading(appLanguage === "ar" ? "ساعات الدراسة اليومية" : "Daily study hours", rangeLabel)}${`<div class="focus-chart" role="img" aria-label="Daily study hours">${bars}</div>`}</section>
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       <section class="panel">${panelHeading(appLanguage === "ar" ? "أكثر المواد دراسة" : "Top subject", appLanguage === "ar" ? "بناءً على وقت التركيز" : "Based on focus time")}<div class="metric-large">${escapeHtml(topSubject)}</div><p class="metric-caption">${appLanguage === "ar" ? "أكثر مادة قضيتم فيها وقتًا" : "Subject with most focus time in range"}</p></section>
     </div>
     <section class="panel section-spacer">${panelHeading(appLanguage === "ar" ? "إنجاز المهام" : "Task completion", appLanguage === "ar" ? "المهام المكتملة في النطاق" : "Completed tasks in range")}
@@ -7949,7 +8207,11 @@
   }
 
   function goalsPage() {
+<<<<<<< HEAD
     return `${pageHeading("MILESTONES THAT MATTER", "Goals", "Turn the semester into small, achievable steps.", `<button class="button button-primary" data-action="goal-add">ï¼‹ Create a goal</button>`)}<div class="grid goal-grid">${goals.map((goal) => `<article class="goal-card"><span class="eyebrow">${escapeHtml(goal.due || (goal.completed_at ? "COMPLETED" : goal.period || "GOAL"))}</span><h3>${escapeHtml(goal.title)}</h3><p>${escapeHtml(goal.detail || goal.details || `${goal.current_value || 0} / ${goal.target_value || 1} ${goal.unit || "sessions"}`)}</p><div class="metric-large">${Math.round(goal.progress ?? 0)}<small>%</small></div><div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, Math.max(0, goal.progress ?? 0))}%"></div></div>${session && goal.id ? `<div class="card-actions"><button class="text-button" data-action="goal-progress" data-id="${escapeHtml(goal.id)}">Add progress</button><button class="text-button" data-action="goal-edit" data-id="${escapeHtml(goal.id)}">Edit</button><button class="text-button" data-action="goal-delete" data-id="${escapeHtml(goal.id)}">Delete</button></div>` : ""}</article>`).join("") || `<div class="empty-state"><strong>No goals yet</strong>Create a goal to track progress toward a study milestone.</div>`}</div><p class="data-caption">${session ? "Goals and progress are saved to your private account." : "Preview goals are shown. Sign in to create and sync your own goals."}</p>`;
+=======
+    return `${pageHeading("MILESTONES THAT MATTER", "Goals", "Turn the semester into small, achievable steps.", `<button class="button button-primary" data-action="goal-add">＋ Create a goal</button>`)}<div class="grid goal-grid">${goals.map((goal) => `<article class="goal-card"><span class="eyebrow">${escapeHtml(goal.due || (goal.completed_at ? "COMPLETED" : goal.period || "GOAL"))}</span><h3>${escapeHtml(goal.title)}</h3><p>${escapeHtml(goal.detail || goal.details || `${goal.current_value || 0} / ${goal.target_value || 1} ${goal.unit || "sessions"}`)}</p><div class="metric-large">${Math.round(goal.progress ?? 0)}<small>%</small></div><div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, Math.max(0, goal.progress ?? 0))}%"></div></div>${session && goal.id ? `<div class="card-actions"><button class="text-button" data-action="goal-progress" data-id="${escapeHtml(goal.id)}">Add progress</button><button class="text-button" data-action="goal-edit" data-id="${escapeHtml(goal.id)}">Edit</button><button class="text-button" data-action="goal-delete" data-id="${escapeHtml(goal.id)}">Delete</button></div>` : ""}</article>`).join("") || `<div class="empty-state"><strong>No goals yet</strong>Create a goal to track progress toward a study milestone.</div>`}</div><p class="data-caption">${session ? "Goals and progress are saved to your private account." : "Preview goals are shown. Sign in to create and sync your own goals."}</p>`;
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
   }
 
   function examsPage() {
@@ -7983,7 +8245,11 @@
       ? examResults.filter((exam) => new Date(exam.exam_at) >= new Date())
           .length
       : 0;
+<<<<<<< HEAD
     return `${pageHeading("EXAM TRACKER", "Exams & results", "Keep upcoming assessments and your progress in one view.", `<button class="button button-primary" data-action="exam-add">ï¼‹ Add exam</button>`)}<div class="grid exam-grid">${cards || `<div class="empty-state"><strong>${session ? "No exams yet" : "No exam results to show"}</strong>${session ? "Add an exam to track its date and result." : "Sign in to add and track your own exams."}</div>`}</div><section class="panel section-spacer">${panelHeading("Upcoming assessments", `${upcoming} upcoming`)}${
+=======
+    return `${pageHeading("EXAM TRACKER", "Exams & results", "Keep upcoming assessments and your progress in one view.", `<button class="button button-primary" data-action="exam-add">＋ Add exam</button>`)}<div class="grid exam-grid">${cards || `<div class="empty-state"><strong>${session ? "No exams yet" : "No exam results to show"}</strong>${session ? "Add an exam to track its date and result." : "Sign in to add and track your own exams."}</div>`}</div><section class="panel section-spacer">${panelHeading("Upcoming assessments", `${upcoming} upcoming`)}${
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       upcoming
         ? `<div class="activity-list">${examResults
             .filter((exam) => new Date(exam.exam_at) >= new Date())
@@ -8246,7 +8512,11 @@
             <input name="due_date" type="date" aria-label="${appLanguage === "ar" ? "تاريخ الاستحقاق" : "Due date"}" />
             <input name="due_time" type="time" aria-label="${appLanguage === "ar" ? "وقت الاستحقاق" : "Due time"}" />
             <select name="priority" aria-label="${appLanguage === "ar" ? "الأولوية" : "Priority"}"><option value="medium">${appLanguage === "ar" ? "متوسطة" : "Medium"}</option><option value="low">${appLanguage === "ar" ? "منخفضة" : "Low"}</option><option value="high">${appLanguage === "ar" ? "عالية" : "High"}</option><option value="urgent">${appLanguage === "ar" ? "عاجلة" : "Urgent"}</option></select>
+<<<<<<< HEAD
             <button class="button button-primary button-small" type="submit">ï¼‹</button>
+=======
+            <button class="button button-primary button-small" type="submit">＋</button>
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
           </form>
           <div class="team-task-list">${taskList}</div>
         </section>
@@ -8688,6 +8958,7 @@
     return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
   }
 
+<<<<<<< HEAD
   function formatVoiceTime(seconds) {
     const total = Math.max(0, Math.floor(Number(seconds) || 0));
     const m = Math.floor(total / 60);
@@ -8695,6 +8966,8 @@
     return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
 
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
   async function loadVoiceNotes() {
     if (!supabase || !session || voiceNotesLoading) return;
     voiceNotesLoading = true;
@@ -8746,6 +9019,7 @@
       ? notes.find((item) => String(item.id) === String(note.note_id))
       : null;
     const url = note.signed_url || note.local_url || "";
+<<<<<<< HEAD
     const ar = appLanguage === "ar";
     const date = new Intl.DateTimeFormat(ar ? "ar-EG" : "en", {
       dateStyle: "medium",
@@ -8801,10 +9075,24 @@
           : `<p class="data-caption">${ar ? "تعذر إنشاء رابط تشغيل خاص." : "Could not create a private playback link."}</p>`
       }
       ${linked ? `<p class="voice-note-link">${ar ? "مرتبطة بـ" : "Linked to"} <button data-action="note-open" data-id="${escapeHtml(linked.id)}">${escapeHtml(linked.title || "Untitled note")}</button></p>` : ""}
+=======
+    return `<article class="voice-note-card" data-voice-id="${escapeHtml(note.id)}">
+      <div class="voice-note-head">
+        <span class="voice-note-icon">◉</span>
+        <div class="voice-note-title"><strong dir="auto">${escapeHtml(note.title || "Voice note")}</strong><small>${escapeHtml(new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(note.created_at || Date.now())))} · ${escapeHtml(formatVoiceDuration(note.duration_seconds))}${note.local ? (appLanguage === "ar" ? " · هذه الجلسة فقط" : " · this session only") : ""}</small></div>
+        <div class="voice-note-actions">
+          <button class="task-icon" data-action="voice-rename" data-id="${escapeHtml(note.id)}" aria-label="${appLanguage === "ar" ? "إعادة تسمية" : "Rename"}">✎</button>
+          <button class="task-icon danger" data-action="voice-delete" data-id="${escapeHtml(note.id)}" aria-label="${appLanguage === "ar" ? "حذف" : "Delete"}">×</button>
+        </div>
+      </div>
+      ${url ? `<audio controls preload="none" src="${escapeHtml(url)}"></audio>` : `<p class="data-caption">${appLanguage === "ar" ? "تعذر إنشاء رابط تشغيل خاص." : "Could not create a private playback link."}</p>`}
+      ${linked ? `<p class="voice-note-link">${appLanguage === "ar" ? "مرتبطة بـ" : "Linked to"} <button data-action="note-open" data-id="${escapeHtml(linked.id)}">${escapeHtml(linked.title || "Untitled note")}</button></p>` : ""}
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     </article>`;
   }
 
   function voicePage() {
+<<<<<<< HEAD
     const ar = appLanguage === "ar";
     const actions = `<button class="button button-primary" data-action="voice-open"><span class="voice-rec-dot" aria-hidden="true"></span> ${ar ? "تسجيل ملاحظة صوتية" : "Record voice note"}</button>`;
     if (!session && !voiceNotes.length) {
@@ -8833,6 +9121,35 @@
             ? "الصوت يُحفظ في حاوية خاصة. ولا يمكن الوصول إليه إلا بروابط مؤقتة موقعة."
             : "Audio is stored in a private bucket. Playback uses short-lived signed URLs; files are never public."
           : ar
+=======
+    const actions = `<button class="button button-primary" data-action="voice-open">● ${appLanguage === "ar" ? "تسجيل ملاحظة صوتية" : "Record voice note"}</button>`;
+    if (!session && !voiceNotes.length) {
+      return `${pageHeading("SPEAK IT, KEEP IT", appLanguage === "ar" ? "الملاحظات الصوتية" : "Voice notes", appLanguage === "ar" ? "سجّل أفكارك واحفظها بشكل خاص." : "Capture ideas out loud and keep them private.", actions)}
+        <section class="panel"><div class="empty-state"><strong>${appLanguage === "ar" ? "جرّب تسجيلًا لهذه الجلسة" : "Try a session-only recording"}</strong><p>${appLanguage === "ar" ? "يمكنك التسجيل الآن كمعاينة تبقى في هذا المتصفح فقط. سجّل الدخول للتخزين الخاص الدائم." : "You can record a preview now; it stays in this browser session only. Sign in to save recordings to your private storage."}</p><div class="teams-empty-actions"><button class="button button-primary button-small" data-action="voice-open">● ${appLanguage === "ar" ? "تسجيل معاينة" : "Record a preview"}</button><button class="button button-secondary button-small" id="open-auth">${appLanguage === "ar" ? "تسجيل الدخول للحفظ" : "Sign in to save"}</button></div></div></section>`;
+    }
+    if (session && voiceNotesLoading && !voiceNotesLoaded) {
+      return `${pageHeading("SPEAK IT, KEEP IT", appLanguage === "ar" ? "الملاحظات الصوتية" : "Voice notes", appLanguage === "ar" ? "سجّل أفكارك واحفظها بشكل خاص." : "Capture ideas out loud and keep them private.", actions)}<section class="panel"><div class="empty-state" role="status">${appLanguage === "ar" ? "جارٍ تحميل التسجيلات…" : "Loading recordings…"}</div></section>`;
+    }
+    const setupHint = !voiceNotesSupported
+      ? `<section class="panel"><div class="empty-state"><strong>${appLanguage === "ar" ? "التسجيلات الصوتية غير مهيأة" : "Voice note storage is not enabled yet"}</strong><p>${appLanguage === "ar" ? "طبّق ملف الترحيل 001_studyzone_enhancements.sql لإنشاء الجدول والحاوية الخاصة." : "Apply supabase/migrations/001_studyzone_enhancements.sql to create the private bucket and metadata table."}</p></div></section>`
+      : "";
+    const errorHint =
+      voiceNotesError && voiceNotesSupported
+        ? `<section class="panel"><div class="empty-state"><strong>${appLanguage === "ar" ? "تعذر تحميل التسجيلات" : "Could not load recordings"}</strong><p>${escapeHtml(voiceNotesError)}</p><button class="button button-secondary button-small" data-action="voice-retry">${appLanguage === "ar" ? "إعادة المحاولة" : "Try again"}</button></div></section>`
+        : "";
+    const list = voiceNotes.length
+      ? `<div class="voice-note-grid">${voiceNotes.map(voiceNoteCard).join("")}</div>`
+      : `<div class="empty-state"><strong>${appLanguage === "ar" ? "لا تسجيلات بعد" : "No recordings yet"}</strong>${appLanguage === "ar" ? "اضغط تسجيل وابدأ بفكرة." : "Press record and capture a thought, a lecture summary, or a reminder."}</div>`;
+    return `${pageHeading("SPEAK IT, KEEP IT", appLanguage === "ar" ? "الملاحظات الصوتية" : "Voice notes", appLanguage === "ar" ? "سجّل أفكارك واحفظها بشكل خاص." : "Capture ideas out loud and keep them private.", actions)}
+      ${setupHint}${errorHint}
+      <section class="panel">${panelHeading(appLanguage === "ar" ? "تسجيلاتك" : "Your recordings", appLanguage === "ar" ? `${voiceNotes.length} ملاحظة صوتية` : `${voiceNotes.length} voice note${voiceNotes.length === 1 ? "" : "s"}`)}${list}</section>
+      <p class="data-caption">${
+        session
+          ? appLanguage === "ar"
+            ? "الصوت يُحفظ في حاوية خاصة، ولا يمكن الوصول إليه إلا بروابط موقعة قصيرة الأجل."
+            : "Audio is stored in a private bucket. Playback uses short-lived signed URLs; files are never public."
+          : appLanguage === "ar"
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
             ? "معاينات الضيف تبقى في هذه الجلسة فقط ولا تُرفع. سجّل الدخول للحفظ الدائم."
             : "Guest previews stay in this browser session only and are never uploaded. Sign in to save permanently."
       }</p>`;
@@ -8887,6 +9204,7 @@
     const discard = document.getElementById("voice-discard");
     const save = document.getElementById("voice-save");
     const preview = document.getElementById("voice-preview");
+<<<<<<< HEAD
     const previewShell = document.getElementById("voice-preview-shell");
     const visual = document.getElementById("voice-record-visual");
     if (!timer) return;
@@ -8902,10 +9220,34 @@
     };
     if (status) status.textContent = labels[voiceState] || "";
     if (visual) visual.dataset.state = voiceState;
+=======
+    if (!timer) return;
+    timer.textContent = formatVoiceDuration(voiceElapsedMs() / 1000);
+    const labels = {
+      idle: appLanguage === "ar" ? "جاهز عندما تكون." : "Ready when you are.",
+      requesting:
+        appLanguage === "ar"
+          ? "جارٍ طلب إذن الميكروفون…"
+          : "Requesting microphone permission…",
+      recording: appLanguage === "ar" ? "جارٍ التسجيل…" : "Recording…",
+      paused:
+        appLanguage === "ar" ? "التسجيل متوقف مؤقتًا." : "Recording paused.",
+      processing:
+        appLanguage === "ar"
+          ? "جارٍ تجهيز التسجيل…"
+          : "Preparing your recording…",
+      ready:
+        appLanguage === "ar"
+          ? "استمع للمعاينة ثم احفظ."
+          : "Preview your recording, then save it.",
+    };
+    if (status) status.textContent = labels[voiceState] || "";
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     if (start) {
       start.hidden = voiceState !== "idle" && voiceState !== "ready";
       start.textContent =
         voiceState === "ready"
+<<<<<<< HEAD
           ? (ar ? "● تسجيل جديد" : "● Record again")
           : (ar ? "● بدء التسجيل" : "● Start recording");
     }
@@ -8927,6 +9269,37 @@
       }
     }
   }
+=======
+          ? appLanguage === "ar"
+            ? "● تسجيل جديد"
+            : "● Record again"
+          : appLanguage === "ar"
+            ? "● بدء التسجيل"
+            : "● Start recording";
+    }
+    if (pause) {
+      pause.hidden = voiceState !== "recording" && voiceState !== "paused";
+      pause.textContent =
+        voiceState === "paused"
+          ? appLanguage === "ar"
+            ? "استئناف"
+            : "Resume"
+          : appLanguage === "ar"
+            ? "إيقاف مؤقت"
+            : "Pause";
+    }
+    if (stop)
+      stop.hidden = voiceState !== "recording" && voiceState !== "paused";
+    if (discard)
+      discard.hidden = voiceState === "idle" || voiceState === "processing";
+    if (save) save.disabled = voiceState !== "ready" || !voiceBlob;
+    if (preview) {
+      preview.hidden = voiceState !== "ready" || !voicePreviewUrl;
+      if (voicePreviewUrl) preview.src = voicePreviewUrl;
+    }
+  }
+
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
   function openVoiceModal() {
     resetVoiceRecorder();
     document.getElementById("voice-title").value =
@@ -9198,6 +9571,7 @@
     render();
   }
 
+<<<<<<< HEAD
   function initVoiceAudioPlayers(root = document) {
     const players = root.querySelectorAll(".sz-audio-player");
     if (!players.length) return;
@@ -9312,6 +9686,8 @@
     initVoiceAudioPlayers(document.getElementById("page-content") || document);
   }
 
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
   async function deleteVoiceNote(id) {
     const note = voiceNotes.find((item) => String(item.id) === String(id));
     if (!note) return;
@@ -11359,8 +11735,11 @@
     content.innerHTML = pageRenderers[currentPage]();
     const analyticsChartHost = content.querySelector("[data-analytics-line-chart]");
     if (analyticsChartHost) attachAnalyticsLineChartHandlers(analyticsChartHost);
+<<<<<<< HEAD
     const analyticsHeatmapHost = content.querySelector("[data-heatmap-panel]");
     if (analyticsHeatmapHost) attachHeatmapHandlers(analyticsHeatmapHost);
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     if (shouldAnimate() && pageChanged) {
       void content.offsetWidth;
       content.classList.add("page-enter");
@@ -11505,7 +11884,10 @@
     animateRewardCounters();
     updateScrollProgress();
     syncFocusTicker();
+<<<<<<< HEAD
     enhanceVoiceAudioPlayers();
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
   }
 
   function navigate(page) {
@@ -11668,6 +12050,10 @@
       .select("id,name,color,credit_hours")
       .order("name");
     if (subjectError) {
+<<<<<<< HEAD
+=======
+      subjects = [];
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       showToast(`Could not load subjects: ${subjectError.message}`);
       console.error("Supabase subject read failed.", subjectError);
     } else {
@@ -11719,6 +12105,10 @@
     }
     const { data, error } = taskResult;
     if (error) {
+<<<<<<< HEAD
+=======
+      tasks = [];
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       deadlinesLoading = false;
       scheduleRender();
       showToast(`Could not load tasks: ${error.message}`);
@@ -11899,7 +12289,12 @@
       return true;
     };
 
+<<<<<<< HEAD
     if (!reportError("study schedule", scheduleResult)) {
+=======
+    if (reportError("study schedule", scheduleResult)) schedule = [];
+    else
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       schedule = (scheduleResult.data || []).map((block) => ({
         ...block,
         day: new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(
@@ -11912,27 +12307,46 @@
         length: `${Math.max(1, Math.round((new Date(block.ends_at) - new Date(block.starts_at)) / 60000))} min`,
         subject: subjectName(block.subject_id),
       }));
+<<<<<<< HEAD
     }
 
     if (!reportError("study files", fileResult)) {
+=======
+
+    if (reportError("study files", fileResult)) sampleFiles = [];
+    else
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       sampleFiles = (fileResult.data || []).map((file) => ({
         ...file,
         type: file.mime_type,
         subject: subjectName(file.subject_id),
       }));
+<<<<<<< HEAD
     }
 
     if (!reportError("notes", noteResult)) {
       notes = (noteResult.data || []).map((note) => normalizeNoteRecord({
+=======
+
+    if (reportError("notes", noteResult)) notes = [];
+    else
+      notes = (noteResult.data || []).map((note) => ({
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
         ...note,
         subject: subjectName(note.subject_id),
         updated: new Intl.DateTimeFormat(appLanguage, {
           dateStyle: "medium",
         }).format(new Date(note.updated_at)),
       }));
+<<<<<<< HEAD
     }
 
     if (!reportError("goals", goalResult)) {
+=======
+
+    if (reportError("goals", goalResult)) goals = [];
+    else
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       goals = (goalResult.data || []).map((goal) => ({
         ...goal,
         progress: Math.min(
@@ -11953,22 +12367,37 @@
           goal.details ||
           `${goal.current_value} / ${goal.target_value} ${goal.unit}`,
       }));
+<<<<<<< HEAD
     }
 
     if (!reportError("exams", examResult)) {
+=======
+
+    if (reportError("exams", examResult)) examResults = [];
+    else
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       examResults = (examResult.data || []).map((exam) => ({
         ...exam,
         subject: subjectName(exam.subject_id),
       }));
+<<<<<<< HEAD
     }
 
     if (!reportError("profile", profileResult)) {
       accountProfile = profileResult.data || accountProfile;
       if (accountProfile) {
+=======
+
+    if (reportError("profile", profileResult)) accountProfile = null;
+    else {
+      accountProfile = profileResult.data;
+      if (accountProfile)
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
         accountProfile.avatar_display_url = await resolveProfileAvatarUrl(
           accountProfile.avatar_url,
           userId,
         );
+<<<<<<< HEAD
       }
     } else if (profileResult?.data) {
       accountProfile = profileResult.data;
@@ -11976,6 +12405,8 @@
         accountProfile.avatar_url,
         userId,
       );
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     }
 
     if (reportError("daily reminder preferences", reminderResult)) {
@@ -12039,6 +12470,7 @@
     scheduleRender();
   }
 
+<<<<<<< HEAD
   const avatarBlobCacheKey = (userId, path) => `avatar:${userId}:${path}`;
 
   async function cacheAvatarBlob(userId, avatarPath, blob) {
@@ -12100,6 +12532,28 @@
       console.error("The profile photo reference is invalid.", error);
     }
     return cached;
+=======
+  async function resolveProfileAvatarUrl(avatarPath, userId) {
+    if (!avatarPath) return "";
+    if (avatarPath.startsWith(`${userId}/`)) {
+      const { data, error } = await supabase.storage
+        .from("studyflow-files")
+        .createSignedUrl(avatarPath, 86400);
+      if (error) {
+        console.error("Could not create a private profile photo URL.", error);
+        showToast(`Could not load profile photo: ${error.message}`);
+        return "";
+      }
+      return data.signedUrl;
+    }
+    try {
+      const url = new URL(avatarPath);
+      return url.protocol === "https:" ? url.href : "";
+    } catch (error) {
+      console.error("The profile photo reference is invalid.", error);
+      return "";
+    }
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
   }
 
   function resetAccountWorkspacePreview() {
@@ -14880,7 +15334,10 @@
     if (currentPage === "focus") render();
     if (record.completed && record.session_type === "focus")
       await refreshRewardSummary({ celebrate: true });
+<<<<<<< HEAD
     void window.StudyZoneApp?.syncWidgets?.();
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     return true;
   }
 
@@ -15162,6 +15619,7 @@
       });
   }
 
+<<<<<<< HEAD
   document.addEventListener("dragover", (event) => {
     if (event.target.closest && event.target.closest("#media-editor-modal .media-editor-preview, #media-editor-modal .media-editor-grid")) {
       event.preventDefault();
@@ -15193,6 +15651,8 @@
     preview._avatarPreviewUrl = url;
   });
 
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
   document.addEventListener("submit", async (event) => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement) || form.id !== "daily-reminder-form")
@@ -15429,6 +15889,7 @@
     } else if (target.matches('[data-action="voice-retry"]')) {
       voiceNotesLoaded = false;
       void loadVoiceNotes();
+<<<<<<< HEAD
     } else if (target.matches('[data-action="note-open-media"]')) {
       notesView = "media";
       render();
@@ -15484,6 +15945,8 @@
           if (errEl) errEl.textContent = e?.message || (ar ? "تعذر حفظ الملاحظة." : "Could not save note.");
         }
       }
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     } else if (target.matches('[data-action="note-add"]')) {
       const templateKey =
         document.getElementById("note-template")?.value || "blank";
@@ -15491,12 +15954,16 @@
     } else if (
       target.matches('[data-action="note-open"], [data-action="note-edit"]')
     ) {
+<<<<<<< HEAD
       const n = notes.find((x) => String(x.id) === String(target.dataset.id));
       if (n && isMediaNote(n)) {
         void openMediaNoteViewer(target.dataset.id);
       } else {
         openNoteEditor(target.dataset.id);
       }
+=======
+      openNoteEditor(target.dataset.id);
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     } else if (target.matches('[data-action="note-pin"]')) {
       await toggleNotePin(target.dataset.id);
     } else if (target.matches('[data-action="note-delete"]')) {
@@ -15685,6 +16152,7 @@
       void resetFocusSession();
     } else if (target.id === "timer-skip") {
       await skipFocusSession();
+<<<<<<< HEAD
     } else if (target.matches('[data-action="dash-cal-select"]')) {
       dashboardSelectedDate = target.dataset.date || dateKey(new Date());
       render();
@@ -15779,6 +16247,24 @@
         selectedDeadlineDate = dateKey(next);
         deadlineMonth = new Date(next.getFullYear(), next.getMonth(), 1);
       }
+=======
+    } else if (target.matches('[data-action="calendar-select"]')) {
+      selectedDeadlineDate = target.dataset.date;
+      render();
+    } else if (target.matches('[data-action="calendar-prev"]')) {
+      deadlineMonth = new Date(
+        deadlineMonth.getFullYear(),
+        deadlineMonth.getMonth() - 1,
+        1,
+      );
+      render();
+    } else if (target.matches('[data-action="calendar-next"]')) {
+      deadlineMonth = new Date(
+        deadlineMonth.getFullYear(),
+        deadlineMonth.getMonth() + 1,
+        1,
+      );
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
       render();
     } else if (target.matches('[data-action="calendar-today"]')) {
       deadlineMonth = new Date(
@@ -15790,7 +16276,10 @@
       render();
     } else if (target.matches('[data-action="toggle-task"]')) {
       await updateTaskStatus(target.dataset.id);
+<<<<<<< HEAD
       void window.StudyZoneApp?.syncWidgets?.();
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     } else if (target.matches('[data-action="delete-task"]')) {
       await deleteTask(target.dataset.id);
     } else if (target.matches('[data-action="theme-toggle"]')) {
@@ -16198,6 +16687,7 @@
       analyticsMetric = target.value;
       saveAnalyticsSettings();
       render();
+<<<<<<< HEAD
     } else if (target?.id === "analytics-activity-type") {
       analyticsHeatmapType = heatmapActivityTypes.some(
         (item) => item.id === target.value,
@@ -16211,6 +16701,8 @@
       analyticsHeatmapYear = Number.isInteger(year) ? year : null;
       analyticsHeatmapSelected = null;
       render();
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     } else if (target?.matches?.("[data-notification-type]")) {
       saveNotificationTypes({
         [target.dataset.notificationType]: target.checked,
@@ -16612,8 +17104,11 @@
         return `${deadline.title || (ar ? "موعد نهائي" : "Deadline")} · ${due}`;
       });
 
+<<<<<<< HEAD
     const contributionYear = heatmapActiveYear();
     const contributionData = heatmapGridData(contributionYear);
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     const payloads = {
       today_tasks: {
         date: dateStr,
@@ -16650,6 +17145,7 @@
         deadline2: upcoming[1] || "",
         deadline3: upcoming[2] || "",
       },
+<<<<<<< HEAD
       contributions: {
         title: ar ? "خريطة النشاط" : "Activity Map",
         year: String(contributionYear),
@@ -16661,6 +17157,8 @@
         weekLabels: contributionData.weekLabels || [],
         summary: heatmapFormattedValue(analyticsHeatmapType, contributionData.total),
       },
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     };
 
     Object.entries(payloads).forEach(([type, payload]) => {

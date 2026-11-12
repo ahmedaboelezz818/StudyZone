@@ -2,8 +2,13 @@
 
 android {
   compileOptions {
+<<<<<<< HEAD
       sourceCompatibility JavaVersion.VERSION_17
       targetCompatibility JavaVersion.VERSION_17
+=======
+      sourceCompatibility JavaVersion.VERSION_21
+      targetCompatibility JavaVersion.VERSION_21
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
   }
 }
 

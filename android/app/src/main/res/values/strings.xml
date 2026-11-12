@@ -24,10 +24,13 @@
     <string name="widget_description_daily_progress">Daily Progress - Track your daily study progress</string>
     <string name="widget_description_focus">Focus Timer - Track your focus sessions</string>
     <string name="widget_description_upcoming_deadlines">Upcoming Deadlines - View your upcoming deadlines</string>
+<<<<<<< HEAD
     <string name="widget_contributions_small">Activity Heatmap</string>
     <string name="widget_contributions_medium">Activity Heatmap</string>
     <string name="widget_contributions_large">Activity Heatmap</string>
     <string name="widget_description_contributions_small">Activity Heatmap - View your annual study activity map</string>
     <string name="widget_description_contributions_medium">Activity Heatmap - View your study activity weeks</string>
     <string name="widget_description_contributions_large">Activity Heatmap - View your full-year study activity map</string>
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
 </resources>

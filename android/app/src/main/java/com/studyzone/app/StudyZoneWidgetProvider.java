@@ -7,17 +7,23 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+<<<<<<< HEAD
 import android.graphics.Color;
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
 import android.os.Bundle;
 import android.widget.RemoteViews;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+<<<<<<< HEAD
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
 /**
  * Shared implementation for the five Study Zone home-screen widgets.
  *
@@ -85,9 +91,12 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
         updateClass(context, manager, StudyZoneDailyProgressWidget.class, "daily_progress");
         updateClass(context, manager, StudyZoneFocusWidget.class, "focus");
         updateClass(context, manager, StudyZoneUpcomingDeadlinesWidget.class, "upcoming_deadlines");
+<<<<<<< HEAD
         updateClass(context, manager, StudyZoneContributionsWidgetSmall.class, "contributions_small");
         updateClass(context, manager, StudyZoneContributionsWidgetMedium.class, "contributions_medium");
         updateClass(context, manager, StudyZoneContributionsWidgetLarge.class, "contributions_large");
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     }
 
     private static void updateClass(Context context, AppWidgetManager manager,
@@ -119,7 +128,11 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
                 android.util.Log.w("StudyZoneWidget", "theme apply failed", themeError);
             }
             try {
+<<<<<<< HEAD
                 populateData(context, views, type, dataJson, themeId);
+=======
+                populateData(views, type, dataJson);
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
             } catch (RuntimeException dataError) {
                 android.util.Log.w("StudyZoneWidget", "data populate failed", dataError);
             }
@@ -146,9 +159,12 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
             case "daily_progress": return R.layout.widget_daily_progress;
             case "focus": return R.layout.widget_focus;
             case "upcoming_deadlines": return R.layout.widget_upcoming_deadlines;
+<<<<<<< HEAD
             case "contributions_small": return R.layout.widget_contributions_small;
             case "contributions_medium": return R.layout.widget_contributions_medium;
             case "contributions_large": return R.layout.widget_contributions_large;
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
             case "today_tasks":
             default: return R.layout.widget_today_tasks;
         }
@@ -159,9 +175,12 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
             case "focus": return "focus";
             case "daily_progress": return "dashboard";
             case "upcoming_deadlines": return "deadlines";
+<<<<<<< HEAD
             case "contributions_small":
             case "contributions_medium":
             case "contributions_large": return "analytics";
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
             case "today_tasks":
             case "large_tasks":
             default: return "tasks";
@@ -222,6 +241,7 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
                 views.setTextColor(R.id.widget_deadlines_open, muted);
                 views.setInt(R.id.widget_divider, "setBackgroundColor", border);
                 break;
+<<<<<<< HEAD
             case "contributions_small":
             case "contributions_medium":
             case "contributions_large":
@@ -230,6 +250,8 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
                 views.setTextColor(R.id.widget_contrib_open, muted);
                 views.setInt(R.id.widget_contrib_divider, "setBackgroundColor", border);
                 break;
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
             default:
                 break;
         }
@@ -244,7 +266,11 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
         return context.getColor(id);
     }
 
+<<<<<<< HEAD
     private static void populateData(Context context, RemoteViews views, String type, String json, String themeId) {
+=======
+    private static void populateData(RemoteViews views, String type, String json) {
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
         switch (type) {
             case "today_tasks":
                 views.setTextViewText(R.id.widget_date, value(json, "date", "Today"));
@@ -281,6 +307,7 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
                 views.setTextViewText(R.id.widget_deadline_2, value(json, "deadline2", ""));
                 views.setTextViewText(R.id.widget_deadline_3, value(json, "deadline3", ""));
                 break;
+<<<<<<< HEAD
             case "contributions_small":
             case "contributions_medium":
             case "contributions_large":
@@ -292,11 +319,14 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
                 views.setTextViewText(R.id.widget_contrib_open, "Tap to open analytics");
                 populateContributionCells(context, views, type, json, themeId);
                 break;
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
             default:
                 break;
         }
     }
 
+<<<<<<< HEAD
     private static int contributionCellId(String type, int row, int column) {
         if ("contributions_small".equals(type)) {
             switch (column) {
@@ -506,6 +536,8 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
         }
     }
 
+=======
+>>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     private static String value(String json, String key, String fallback) {
         try {
             Matcher matcher = Pattern.compile(
