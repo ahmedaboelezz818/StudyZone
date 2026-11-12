@@ -121,6 +121,45 @@
                 android:resource="@xml/widget_info_deadlines" />
         </receiver>
 
+        <receiver
+            android:name=".StudyZoneContributionsWidgetSmall"
+            android:label="@string/widget_contributions_small"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.studyzone.app.action.UPDATE_WIDGET" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_contributions_small" />
+        </receiver>
+
+        <receiver
+            android:name=".StudyZoneContributionsWidgetMedium"
+            android:label="@string/widget_contributions_medium"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.studyzone.app.action.UPDATE_WIDGET" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_contributions_medium" />
+        </receiver>
+
+        <receiver
+            android:name=".StudyZoneContributionsWidgetLarge"
+            android:label="@string/widget_contributions_large"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.studyzone.app.action.UPDATE_WIDGET" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_contributions_large" />
+        </receiver>
+
     </application>
 
     <!-- Permissions -->

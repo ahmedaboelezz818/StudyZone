@@ -39,6 +39,11 @@
     <link rel="stylesheet" href="./mobile.css?v=1" />
     <link rel="preload" as="style" href="./ui-controls.css?v=1" />
     <link rel="stylesheet" href="./ui-controls.css?v=1" />
+    <link rel="preload" as="style" href="./premium.css?v=1" />
+    <link rel="stylesheet" href="./premium.css?v=1" />
+    <link rel="stylesheet" href="./premium-dashboard.css?v=1" />
+    <link rel="stylesheet" href="./premium-pages.css?v=1" />
+    <link rel="stylesheet" href="./premium-responsive.css?v=1" />
     <script>
       // Apply the saved language and color theme before first paint.
       try {
@@ -626,7 +631,7 @@
 
     <div class="modal-backdrop" id="voice-modal" hidden>
       <section
-        class="modal voice-modal"
+        class="modal voice-modal voice-modal-premium"
         role="dialog"
         aria-modal="true"
         aria-labelledby="voice-modal-title"
@@ -634,14 +639,19 @@
         <button class="modal-close" data-close-modal aria-label="Close">
           ×
         </button>
-        <p class="eyebrow">SPEAK IT, KEEP IT</p>
+        <p class="eyebrow" id="voice-modal-eyebrow">SPEAK IT, KEEP IT</p>
         <h2 id="voice-modal-title">Record a voice note</h2>
-        <p class="modal-subtitle">
-          Recordings stay in your private storage. Only you can play them.
+        <p class="modal-subtitle" id="voice-modal-subtitle">
+          Capture ideas out loud with a private, polished recorder.
         </p>
-        <div class="voice-recorder">
+        <div class="voice-recorder voice-recorder-premium">
+          <div class="voice-record-visual" id="voice-record-visual" data-state="idle" aria-hidden="true">
+            <span class="voice-record-pulse"></span>
+            <span class="voice-record-core"></span>
+            <span class="voice-record-wave"></span>
+          </div>
           <div
-            class="voice-timer"
+            class="voice-timer voice-timer-premium"
             id="voice-timer"
             role="timer"
             aria-live="off"
@@ -649,9 +659,9 @@
             00:00
           </div>
           <p class="voice-status" id="voice-status">Ready when you are.</p>
-          <div class="voice-controls">
+          <div class="voice-controls voice-controls-premium">
             <button
-              class="button button-primary"
+              class="button button-primary voice-cta"
               type="button"
               data-action="voice-start"
               id="voice-start"
@@ -677,7 +687,7 @@
               Stop
             </button>
             <button
-              class="button button-secondary"
+              class="button button-secondary button-quiet"
               type="button"
               data-action="voice-discard"
               id="voice-discard"
@@ -686,20 +696,24 @@
               Discard
             </button>
           </div>
-          <audio id="voice-preview" controls hidden></audio>
-          <label
+          <div class="voice-preview-shell" id="voice-preview-shell" hidden>
+            <p class="voice-preview-label" id="voice-preview-label">Preview</p>
+            <audio id="voice-preview" preload="metadata"></audio>
+            <div class="voice-preview-hint" id="voice-preview-hint">Review your recording before saving.</div>
+          </div>
+          <label class="voice-field"
             >Title<input
               id="voice-title"
               dir="auto"
               maxlength="180"
               value="Voice note"
           /></label>
-          <label>Attach to note<select id="voice-note-link"></select></label>
-          <p class="data-caption" id="voice-help">
+          <label class="voice-field">Attach to note<select id="voice-note-link"></select></label>
+          <p class="data-caption voice-help" id="voice-help">
             Maximum recording length is 10 minutes.
           </p>
           <div class="form-error" id="voice-error" role="alert"></div>
-          <div class="modal-actions">
+          <div class="modal-actions voice-modal-actions">
             <button
               class="button button-secondary"
               type="button"

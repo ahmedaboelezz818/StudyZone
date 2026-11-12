@@ -608,6 +608,13 @@
     1,
   );
   let selectedDeadlineDate = dateKey(new Date());
+  let dashboardMonth = new Date(
+    new Date().getFullYear(),
+    new Date().getMonth(),
+    1,
+  );
+  let dashboardSelectedDate = dateKey(new Date());
+  let deadlineCalendarMode = "month";
   let editingDeadlineId = null;
   let deadlinesLoading = false;
   const statusChangesInFlight = new Set();
@@ -625,6 +632,10 @@
   let noteSearch = "";
   let noteSubjectFilter = "";
   let noteSort = "updated";
+  let noteTypeFilter = "all";
+  let notesView = "main"; // "main" | "media"
+  let mediaFilter = "all"; // "all" | "image" | "video"
+  let mediaEditorDraft = null; // {id?, title, description, attachments:[...], mode:'image'|'video'}
   let noteEditorState = null;
   let noteSaveTimer = null;
   let noteSaveStatus = "idle";
@@ -648,6 +659,9 @@
   let analyticsChartMetric = "studyHours";
   let analyticsChartGeometry = null;
   let analyticsChartSeries = null;
+  let analyticsHeatmapType = "overall";
+  let analyticsHeatmapYear = null;
+  let analyticsHeatmapSelected = null;
   try {
     const savedAnalytics = JSON.parse(
       localStorage.getItem(analyticsStorageKey) || "null",
@@ -759,6 +773,434 @@
     return number(rounded);
   }
 
+  // ---- Activity contribution heatmap -----------------------------------------
+  const heatmapActivityTypes = [
+    { id: "studyTime", labelEn: "Study Time", labelAr: "وقت الدراسة" },
+    { id: "focusSessions", labelEn: "Focus Sessions", labelAr: "جلسات التركيز" },
+    { id: "completedTasks", labelEn: "Completed Tasks", labelAr: "المهام المكتملة" },
+    { id: "habits", labelEn: "Habits Completed", labelAr: "العادات المكتملة" },
+    { id: "overall", labelEn: "Overall Activity", labelAr: "النشاط الإجمالي" },
+  ];
+
+  function heatmapTypeLabel(type) {
+    const entry =
+      heatmapActivityTypes.find((item) => item.id === type) ||
+      heatmapActivityTypes[heatmapActivityTypes.length - 1];
+    return appLanguage === "ar" ? entry.labelAr : entry.labelEn;
+  }
+
+  function heatmapAvailableYears() {
+    const years = new Set();
+    const currentYear = new Date().getFullYear();
+    years.add(currentYear);
+    years.add(currentYear - 1);
+    const addYear = (value) => {
+      const date = value instanceof Date ? value : new Date(value);
+      if (Number.isNaN(date.getTime())) return;
+      const year = date.getFullYear();
+      if (year >= 2000 && year <= 2100) years.add(year);
+    };
+    focusRecords.forEach((record) => {
+      if (!record.completed || record.session_type !== "focus") return;
+      addYear(record.ended_at || record.started_at);
+    });
+    tasks.forEach((task) => {
+      if (task.status !== "completed" || task.routine_id || !task.completed_at)
+        return;
+      addYear(task.completed_at);
+    });
+    routineDays.forEach((record) => {
+      if (record.status !== "completed") return;
+      addYear(record.completed_at || record.occurrence_date);
+    });
+    return [...years].sort((a, b) => b - a);
+  }
+
+  function heatmapActiveYear() {
+    const available = heatmapAvailableYears();
+    if (
+      Number.isInteger(analyticsHeatmapYear) &&
+      available.includes(analyticsHeatmapYear)
+    )
+      return analyticsHeatmapYear;
+    const currentYear = new Date().getFullYear();
+    return available.includes(currentYear) ? currentYear : available[0];
+  }
+
+  function buildHeatmapYearData(year) {
+    const days = [];
+    const map = new Map();
+    const cursor = new Date(year, 0, 1);
+    while (cursor.getFullYear() === year) {
+      const key = dateKey(cursor);
+      const day = {
+        date: new Date(cursor),
+        key,
+        studySeconds: 0,
+        focusSessions: 0,
+        completedTasks: 0,
+        habitsCompleted: 0,
+        overall: 0,
+      };
+      map.set(key, day);
+      days.push(day);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    const focusSeen = new Set();
+    focusRecords.forEach((record) => {
+      if (!record.completed || record.session_type !== "focus") return;
+      const ended = new Date(record.ended_at || record.started_at);
+      if (Number.isNaN(ended.getTime())) return;
+      const day = map.get(dateKey(ended));
+      if (!day) return;
+      const signature =
+        record.id != null
+          ? `id:${record.id}`
+          : `${record.started_at || ""}|${record.ended_at || ""}|${record.duration_seconds || 0}`;
+      if (focusSeen.has(signature)) return;
+      focusSeen.add(signature);
+      day.focusSessions += 1;
+      day.studySeconds += Math.max(0, Number(record.duration_seconds) || 0);
+    });
+
+    const taskSeen = new Set();
+    tasks.forEach((task) => {
+      if (task.status !== "completed" || task.routine_id || !task.completed_at)
+        return;
+      const completed = new Date(task.completed_at);
+      if (Number.isNaN(completed.getTime())) return;
+      const day = map.get(dateKey(completed));
+      if (!day) return;
+      const signature =
+        task.id != null
+          ? `id:${task.id}`
+          : `${task.title || ""}|${task.completed_at}`;
+      if (taskSeen.has(signature)) return;
+      taskSeen.add(signature);
+      day.completedTasks += 1;
+    });
+
+    const habitSeen = new Set();
+    routineDays.forEach((record) => {
+      if (record.status !== "completed") return;
+      const completed = record.completed_at ? new Date(record.completed_at) : null;
+      const key =
+        completed && !Number.isNaN(completed.getTime())
+          ? dateKey(completed)
+          : record.occurrence_date;
+      const day = map.get(key);
+      if (!day) return;
+      const signature = `${record.routine_id || "routine"}:${record.occurrence_date || key}`;
+      if (habitSeen.has(signature)) return;
+      habitSeen.add(signature);
+      day.habitsCompleted += 1;
+    });
+
+    days.forEach((day) => {
+      // Focus sessions are represented by the study minutes they produced, so
+      // they are not added again here. This keeps "Overall" free of duplicates.
+      day.overall =
+        Math.ceil(day.studySeconds / 60) +
+        day.completedTasks * 10 +
+        day.habitsCompleted * 5;
+    });
+
+    return { days, map, year };
+  }
+
+  function heatmapValue(type, day) {
+    if (!day) return 0;
+    if (type === "studyTime") return day.studySeconds;
+    if (type === "focusSessions") return day.focusSessions;
+    if (type === "completedTasks") return day.completedTasks;
+    if (type === "habits") return day.habitsCompleted;
+    return day.overall;
+  }
+
+  function heatmapLevel(type, day) {
+    const value = heatmapValue(type, day);
+    if (!value) return 0;
+    const cuts =
+      type === "studyTime"
+        ? [30, 60, 120]
+        : type === "overall"
+          ? [25, 60, 120]
+          : [2, 4, 6];
+    const normalized =
+      type === "studyTime" ? value / 60 : value;
+    if (normalized >= cuts[2]) return 4;
+    if (normalized >= cuts[1]) return 3;
+    if (normalized >= cuts[0]) return 2;
+    return 1;
+  }
+
+  function heatmapStudyDuration(seconds) {
+    const text = focusText[appLanguage];
+    const totalMinutes = Math.round(Math.max(0, Number(seconds) || 0) / 60);
+    if (totalMinutes <= 0) return appLanguage === "ar" ? "لا وقت دراسة" : "No study time";
+    if (totalMinutes < 60) return `${new Intl.NumberFormat(focusLocale()).format(totalMinutes)}${text.mins}`;
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return minutes
+      ? `${new Intl.NumberFormat(focusLocale()).format(hours)}${text.hours} ${new Intl.NumberFormat(focusLocale()).format(minutes)}${text.mins}`
+      : `${new Intl.NumberFormat(focusLocale()).format(hours)}${text.hours}`;
+  }
+
+  function heatmapCountValue(type, value) {
+    const number = new Intl.NumberFormat(focusLocale(), {
+      maximumFractionDigits: 1,
+    }).format(value);
+    if (type === "focusSessions")
+      return appLanguage === "ar"
+        ? `${number} جلسة`
+        : `${number} ${value === 1 ? "session" : "sessions"}`;
+    if (type === "completedTasks")
+      return appLanguage === "ar"
+        ? `${number} مهمة`
+        : `${number} ${value === 1 ? "task" : "tasks"}`;
+    if (type === "habits")
+      return appLanguage === "ar"
+        ? `${number} عادة`
+        : `${number} ${value === 1 ? "habit" : "habits"}`;
+    return appLanguage === "ar"
+      ? `${number} نقطة`
+      : `${number} ${value === 1 ? "pt" : "pts"}`;
+  }
+
+  function heatmapFormattedValue(type, value) {
+    if (type === "studyTime") return heatmapStudyDuration(value);
+    return heatmapCountValue(type, value);
+  }
+
+  function heatmapDateLabel(date) {
+    return new Intl.DateTimeFormat(focusLocale(), {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(date);
+  }
+
+  function heatmapTooltipParts(type, day) {
+    const value = heatmapValue(type, day);
+    const parts = [heatmapDateLabel(day.date), heatmapTypeLabel(type)];
+    parts.push(
+      value
+        ? heatmapFormattedValue(type, value)
+        : appLanguage === "ar"
+          ? "لا يوجد نشاط"
+          : "No activity",
+    );
+    if (value && type === "studyTime" && day.focusSessions)
+      parts.push(heatmapCountValue("focusSessions", day.focusSessions));
+    if (value && type === "focusSessions" && day.studySeconds)
+      parts.push(heatmapStudyDuration(day.studySeconds));
+    if (value && type === "overall")
+      parts.push(
+        `${heatmapStudyDuration(day.studySeconds)} · ${heatmapCountValue("completedTasks", day.completedTasks)} · ${heatmapCountValue("habits", day.habitsCompleted)}`,
+      );
+    return parts;
+  }
+
+  function heatmapDetailMarkup(type, day) {
+    if (!day)
+      return `<div class="sz-hm-detail-empty">${appLanguage === "ar" ? "اختر يومًا لعرض تفاصيل نشاطه." : "Select a day to inspect its activity."}</div>`;
+    const value = heatmapValue(type, day);
+    const rows = [];
+    if (!value) {
+      rows.push(
+        `<span>${appLanguage === "ar" ? "لا يوجد نشاط مسجّل في هذا اليوم." : "No activity recorded for this day."}</span>`,
+      );
+    } else if (type === "studyTime") {
+      if (day.focusSessions)
+        rows.push(`<span>${appLanguage === "ar" ? "جلسات التركيز" : "Focus sessions"}: <strong>${heatmapCountValue("focusSessions", day.focusSessions)}</strong></span>`);
+    } else if (type === "focusSessions") {
+      if (day.studySeconds)
+        rows.push(`<span>${appLanguage === "ar" ? "وقت الدراسة" : "Study time"}: <strong>${heatmapStudyDuration(day.studySeconds)}</strong></span>`);
+    } else if (type === "overall") {
+      rows.push(`<span>${appLanguage === "ar" ? "وقت الدراسة" : "Study time"}: <strong>${heatmapStudyDuration(day.studySeconds)}</strong></span>`);
+      rows.push(`<span>${appLanguage === "ar" ? "المهام المكتملة" : "Completed tasks"}: <strong>${heatmapCountValue("completedTasks", day.completedTasks)}</strong></span>`);
+      rows.push(`<span>${appLanguage === "ar" ? "العادات المكتملة" : "Habits completed"}: <strong>${heatmapCountValue("habits", day.habitsCompleted)}</strong></span>`);
+    }
+    return `<div class="sz-hm-detail-head"><div><strong>${escapeHtml(heatmapDateLabel(day.date))}</strong><span>${escapeHtml(heatmapTypeLabel(type))}</span></div><b>${escapeHtml(value ? heatmapFormattedValue(type, value) : appLanguage === "ar" ? "لا يوجد نشاط" : "No activity")}</b></div><div class="sz-hm-detail-rows">${rows.join("")}</div>`;
+  }
+
+  function heatmapGridData(year) {
+    const data = buildHeatmapYearData(year);
+    const firstDay = new Date(year, 0, 1);
+    const lastDay = new Date(year, 11, 31);
+    const gridStart = new Date(firstDay);
+    gridStart.setDate(firstDay.getDate() - firstDay.getDay());
+    const gridEnd = new Date(lastDay);
+    gridEnd.setDate(lastDay.getDate() + (6 - lastDay.getDay()));
+    const cells = [];
+    const cursor = new Date(gridStart);
+    while (cursor <= gridEnd) {
+      const key = dateKey(cursor);
+      const inYear = cursor.getFullYear() === year;
+      cells.push({
+        date: new Date(cursor),
+        key,
+        inYear,
+        day: inYear ? data.map.get(key) || null : null,
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    const weekCount = Math.max(1, Math.ceil(cells.length / 7));
+    const monthLabels = [];
+    for (let month = 0; month < 12; month += 1) {
+      const monthStart = new Date(year, month, 1);
+      const weekIndex = Math.max(
+        0,
+        Math.floor(
+          Math.round((monthStart - gridStart) / 86400000) / 7,
+        ),
+      );
+      const nextMonth = month < 11 ? new Date(year, month + 1, 1) : null;
+      const nextWeekIndex = nextMonth
+        ? Math.max(
+            weekIndex + 1,
+            Math.floor(
+              Math.round((nextMonth - gridStart) / 86400000) / 7,
+            ),
+          )
+        : weekCount;
+      monthLabels.push({
+        label: new Intl.DateTimeFormat(focusLocale(), {
+          month: "short",
+        }).format(monthStart),
+        weekIndex,
+        span: Math.max(1, Math.min(weekCount - weekIndex, nextWeekIndex - weekIndex)),
+      });
+    }
+    const todayKey = dateKey(new Date());
+    const selectedKey =
+      analyticsHeatmapSelected && data.map.has(analyticsHeatmapSelected)
+        ? analyticsHeatmapSelected
+        : year === new Date().getFullYear()
+          ? todayKey
+          : null;
+    const eligible = data.days.filter(
+      (day) => year < new Date().getFullYear() || day.key <= todayKey,
+    );
+    const values = eligible.map((day) => heatmapValue(analyticsHeatmapType, day));
+    const total = values.reduce((sum, value) => sum + value, 0);
+    const activeDays = values.filter((value) => value > 0).length;
+    let longestStreak = 0;
+    let runningStreak = 0;
+    values.forEach((value) => {
+      if (value > 0) {
+        runningStreak += 1;
+        longestStreak = Math.max(longestStreak, runningStreak);
+      } else {
+        runningStreak = 0;
+      }
+    });
+    let mostActive = null;
+    eligible.forEach((day) => {
+      const value = heatmapValue(analyticsHeatmapType, day);
+      if (!value) return;
+      if (!mostActive || value > mostActive.value)
+        mostActive = { day, value };
+    });
+    const weeks = Array.from({ length: weekCount }, (_, weekIndex) => {
+      const weekStart = new Date(gridStart);
+      weekStart.setDate(gridStart.getDate() + weekIndex * 7);
+      const levels = Array.from({ length: 7 }, (_, dayIndex) => {
+        const date = new Date(weekStart);
+        date.setDate(weekStart.getDate() + dayIndex);
+        const day = date.getFullYear() === year ? data.map.get(dateKey(date)) || null : null;
+        return heatmapLevel(analyticsHeatmapType, day);
+      });
+      return levels;
+    });
+    const weekLabels = weeks.map((levels, weekIndex) => {
+      const weekStart = new Date(gridStart);
+      weekStart.setDate(gridStart.getDate() + weekIndex * 7);
+      return new Intl.DateTimeFormat(focusLocale(), { month: "short" }).format(weekStart);
+    });
+    return {
+      ...data,
+      cells,
+      weeks,
+      weekLabels,
+      weekCount,
+      monthLabels,
+      selectedKey,
+      eligible,
+      total,
+      activeDays,
+      longestStreak,
+      mostActive,
+      average: eligible.length ? total / eligible.length : 0,
+    };
+  }
+
+  function attachHeatmapHandlers(host) {
+    const grid = host.querySelector("[data-heatmap-grid]");
+    const tip = host.querySelector("[data-heatmap-tooltip]");
+    if (!grid || !tip) return;
+    let activeCell = null;
+    const hide = () => {
+      tip.hidden = true;
+      activeCell = null;
+    };
+    const show = (cell) => {
+      const parts = (cell.dataset.tip || "").split("|");
+      if (parts.length < 3) return;
+      activeCell = cell;
+      tip.innerHTML = `<strong>${escapeHtml(parts[0])}</strong><span>${escapeHtml(parts[1])}</span><b>${escapeHtml(parts[2])}</b>${parts[3] ? `<small>${escapeHtml(parts[3])}</small>` : ""}`;
+      tip.hidden = false;
+      const rect = cell.getBoundingClientRect();
+      const tooltipRect = tip.getBoundingClientRect();
+      let left = rect.left + rect.width / 2;
+      left = Math.max(
+        tooltipRect.width / 2 + 8,
+        Math.min(left, window.innerWidth - tooltipRect.width / 2 - 8),
+      );
+      let top = rect.top - 10;
+      let placement = "top";
+      if (top - tooltipRect.height < 8) {
+        top = rect.bottom + 10;
+        placement = "bottom";
+      }
+      tip.dataset.placement = placement;
+      tip.style.left = `${left}px`;
+      tip.style.top = `${top}px`;
+    };
+    grid.addEventListener("pointerover", (event) => {
+      const cell = event.target.closest("[data-heatmap-cell]");
+      if (cell && cell === event.target) show(cell);
+    });
+    grid.addEventListener("pointerout", (event) => {
+      const cell = event.target.closest("[data-heatmap-cell]");
+      if (!cell) return;
+      if (event.relatedTarget && cell.contains(event.relatedTarget)) return;
+      hide();
+    });
+    grid.addEventListener("focusin", (event) => {
+      const cell = event.target.closest("[data-heatmap-cell]");
+      if (cell) show(cell);
+    });
+    grid.addEventListener("focusout", () => hide());
+    grid.addEventListener("click", () => hide());
+    if (!window.__studyZoneHeatmapScrollBound) {
+      window.__studyZoneHeatmapScrollBound = true;
+      document.addEventListener(
+        "scroll",
+        () => {
+          document
+            .querySelectorAll("[data-heatmap-tooltip]")
+            .forEach((tooltip) => {
+              tooltip.hidden = true;
+            });
+        },
+        true,
+      );
+    }
+  }
+
   function analyticsNiceMax(value) {
     const safe = Math.max(0, value);
     if (safe <= 0) return 1;
@@ -828,7 +1270,7 @@
     const dots = series
       .map(
         (point, index) =>
-          `<circle class="analytics-chart-dot" cx="${point.x}" cy="${point.y}" r="3.5" data-index="${index}"><title>${escapeHtml(analyticsBucketLabel(point.bucket, analyticsMode).main)}: ${escapeHtml(formatAnalyticsMetricValue(metric, point.value))}</title></circle>`,
+          `<circle class="analytics-chart-dot" cx="${point.x}" cy="${point.y}" r="4" data-index="${index}"><title>${escapeHtml(analyticsBucketLabel(point.bucket, analyticsMode).main)}: ${escapeHtml(formatAnalyticsMetricValue(metric, point.value))}</title></circle>`,
       )
       .join("");
     const labels = labelIndexes
@@ -2438,17 +2880,177 @@
     }
   }
 
+  // ---- Media notes storage (IndexedDB, persistent local blobs) -------------
+  const mediaDbName = "studyzone-media-v1";
+  const mediaStoreName = "blobs";
+  let mediaDbPromise = null;
+
+  function openMediaDb() {
+    if (mediaDbPromise) return mediaDbPromise;
+    mediaDbPromise = new Promise((resolve, reject) => {
+      if (!("indexedDB" in window)) {
+        reject(new Error("IndexedDB unavailable"));
+        return;
+      }
+      const req = indexedDB.open(mediaDbName, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(mediaStoreName)) {
+          db.createObjectStore(mediaStoreName, { keyPath: "id" });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error("Could not open media database"));
+    });
+    return mediaDbPromise;
+  }
+
+  async function putMediaBlob(id, blob, meta = {}) {
+    const db = await openMediaDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(mediaStoreName, "readwrite");
+      tx.objectStore(mediaStoreName).put({ id, blob, meta, updatedAt: Date.now() });
+      tx.oncomplete = () => resolve(id);
+      tx.onerror = () => reject(tx.error || new Error("Could not save media"));
+    });
+  }
+
+  async function getMediaBlob(id) {
+    if (!id) return null;
+    try {
+      const db = await openMediaDb();
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(mediaStoreName, "readonly");
+        const req = tx.objectStore(mediaStoreName).get(id);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error || new Error("Could not read media"));
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  async function deleteMediaBlob(id) {
+    if (!id) return;
+    try {
+      const db = await openMediaDb();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(mediaStoreName, "readwrite");
+        tx.objectStore(mediaStoreName).delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error("Could not delete media"));
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const mediaObjectUrlCache = new Map();
+  async function getMediaObjectUrl(id) {
+    if (!id) return "";
+    if (mediaObjectUrlCache.has(id)) return mediaObjectUrlCache.get(id);
+    const record = await getMediaBlob(id);
+    if (!record?.blob) return "";
+    const url = URL.createObjectURL(record.blob);
+    mediaObjectUrlCache.set(id, url);
+    return url;
+  }
+
+  function revokeMediaObjectUrl(id) {
+    if (!id || !mediaObjectUrlCache.has(id)) return;
+    try { URL.revokeObjectURL(mediaObjectUrlCache.get(id)); } catch {}
+    mediaObjectUrlCache.delete(id);
+  }
+
+  const MEDIA_NOTE_PREFIX = "__SZ_MEDIA_NOTE__:";
+  const NOTE_MEDIA_BUCKET = "note-media";
+
+  function isMediaNote(note) {
+    return note?.type === "image" || note?.type === "video" || (Array.isArray(note?.attachments) && note.attachments.length > 0);
+  }
+
+  function noteAttachments(note) {
+    return Array.isArray(note?.attachments) ? note.attachments : [];
+  }
+
+  function noteTypeOf(note) {
+    if (note?.type === "voice") return "voice";
+    if (note?.type === "image" || note?.type === "video") return note.type;
+    const attachments = noteAttachments(note);
+    if (attachments.length) return attachments.some((a) => a?.kind === "video") ? "video" : "image";
+    return "text";
+  }
+
+  function serializeMediaNoteContent(note) {
+    const prefix = "__SZ_MEDIA_NOTE__:";
+    const bucket = "note-media";
+    const payload = {
+      v: 1,
+      type: noteTypeOf(note),
+      description: String(note?.description || ""),
+      attachments: noteAttachments(note).map((a) => ({
+        id: String(a?.id || a?.localKey || ""),
+        kind: a?.kind === "video" ? "video" : "image",
+        name: String(a?.name || ""),
+        mime: String(a?.mime || ""),
+        size: Number(a?.size) || 0,
+        duration: Number(a?.duration) || 0,
+        width: Number(a?.width) || 0,
+        height: Number(a?.height) || 0,
+        createdAt: a?.createdAt || null,
+        localKey: String(a?.localKey || a?.id || ""),
+        storagePath: String(a?.storagePath || ""),
+        bucket: String(a?.bucket || bucket),
+      })),
+    };
+    return prefix + JSON.stringify(payload);
+  }
+
+  function parseMediaNoteContent(content) {
+    const prefix = "__SZ_MEDIA_NOTE__:";
+    const raw = String(content || "");
+    if (!raw.startsWith(prefix)) return null;
+    try {
+      const data = JSON.parse(raw.slice(prefix.length));
+      if (!data || typeof data !== "object") return null;
+      const attachments = Array.isArray(data.attachments) ? data.attachments : [];
+      return {
+        type: data.type === "image" || data.type === "video" ? data.type : (attachments.some((a) => a?.kind === "video") ? "video" : attachments.length ? "image" : "text"),
+        description: typeof data.description === "string" ? data.description : "",
+        attachments,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function normalizeNoteRecord(note) {
+    if (!note || typeof note !== "object") return note;
+    const next = { ...note };
+    const media = parseMediaNoteContent(next.content);
+    if (media) {
+      next.type = media.type;
+      next.description = media.description;
+      next.attachments = Array.isArray(media.attachments) ? media.attachments : [];
+    } else {
+      if (!Array.isArray(next.attachments)) next.attachments = [];
+      next.type = next.type || (noteAttachments(next).length ? (noteAttachments(next).some((a) => a?.kind === "video") ? "video" : "image") : "text");
+      if (typeof next.description !== "string") next.description = "";
+    }
+    return next;
+  }
+
   function readLocalNotes() {
     try {
       const saved = localStorage.getItem(localNotesKey);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) return parsed.map(normalizeNoteRecord);
       }
     } catch (error) {
       console.error("Could not read saved notes.", error);
     }
-    return sampleNotes.map((note, index) => ({
+    return sampleNotes.map((note, index) => normalizeNoteRecord({
       id: `local-note-${index + 1}`,
       title: note.title,
       content: `<p>${escapeHtml(
@@ -2462,6 +3064,9 @@
       subject: note.subject,
       is_favorite: index === 0,
       color: "",
+      type: "text",
+      attachments: [],
+      description: "",
       created_at: new Date(Date.now() - index * 86400000).toISOString(),
       updated_at: new Date(Date.now() - index * 86400000).toISOString(),
     }));
@@ -2943,6 +3548,20 @@
   }
 
   function dashboardPage() {
+    const tr = (english, arabic) => (appLanguage === "ar" ? arabic : english);
+    const locale = appLanguage === "ar" ? "ar-EG" : "en";
+    const formattedNumber = (value) =>
+      new Intl.NumberFormat(locale).format(Number(value) || 0);
+    const clampPercent = (value) =>
+      Math.min(100, Math.max(0, Math.round(Number(value) || 0)));
+    const tickClass = (value) =>
+      value >= 100
+        ? "is-complete"
+        : value >= 60
+          ? "is-high"
+          : value >= 30
+            ? "is-mid"
+            : "is-low";
     const todayKey = dateKey(new Date());
     const todayAll = tasksForDay(todayKey);
     const openTasks = tasks.filter((task) => task.status !== "completed");
@@ -2985,16 +3604,15 @@
           : hour < 18
             ? "Good afternoon"
             : "Good evening";
-    const dayLabelText = new Intl.DateTimeFormat(
-      appLanguage === "ar" ? "ar-EG" : "en",
-      { weekday: "long", month: "long", day: "numeric" },
-    ).format(new Date());
-    const formattedNumber = (value) =>
-      new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(
-        value,
-      );
+    const dayLabelText = new Intl.DateTimeFormat(locale, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    }).format(new Date());
     const focusStats = getFocusStats();
     const focusMinutes = Math.floor(focusStats.todaySeconds / 60);
+    const focusWeekHours = (focusStats.weekSeconds / 3600).toFixed(1);
+    const focusTargetPercent = clampPercent((focusMinutes / 120) * 100);
     const nextDeadline = tasks
       .filter(
         (task) =>
@@ -3003,57 +3621,421 @@
           new Date(task.due_at) > new Date(),
       )
       .sort((a, b) => new Date(a.due_at) - new Date(b.due_at))[0];
-    const statGrid = `<div class="grid stats-grid">
-      ${statCard("TODAY'S TASKS", `${formattedNumber(completedToday.length)}<small>/${formattedNumber(totalToday)}</small>`, progress ? ` ${progress}% complete` : " Add your first task", "✓", progress ? "● " : "")}
-      ${statCard("OVERDUE", formattedNumber(overdueTasks.length), overdueTasks.length ? " Needs attention" : " All clear", "!", overdueTasks.length ? "" : "")}
-      ${statCard("FOCUS TODAY", `${formattedNumber(focusMinutes)}<small> min</small>`, ` ${formattedNumber(focusStats.todaySessions)} sessions`, "◷")}
-      ${statCard("STUDY STREAK", rewardSummary ? `${rewardCounterMarkup("streak", rewardSummary.current_streak)} days` : "—", rewardSummary ? ` Level ${formattedNumber(Number(rewardSummary.level) || 1)}` : " Sign in to track it", "↗")}
+
+    const heroQuotes =
+      appLanguage === "ar"
+        ? [
+            "خطوات صغيرة تتكرر كل يوم تصنع زخمًا حقيقيًا.",
+            "ركّز على الصفحة التالية، لا على الكتاب كله.",
+            "الخطة الهادئة أفضل من الخطة المزدحمة.",
+          ]
+        : [
+            "Small steps, repeated daily, become real momentum.",
+            "Focus on the next page, not the whole book.",
+            "A calm plan beats a crowded one.",
+          ];
+    const heroQuote = heroQuotes[new Date().getDate() % heroQuotes.length];
+    const streakValue =
+      Number(rewardSummary?.current_streak) || focusStats.streak || 0;
+
+    const statBlock = ({
+      tone,
+      icon,
+      label,
+      value,
+      note,
+      trend = "",
+      percent = null,
+    }) => `<article class="sz-stat ${tone}">
+      <div class="sz-stat-head"><span class="sz-icon-tile">${icon}</span>${trend ? `<span class="sz-stat-trend">${trend}</span>` : ""}</div>
+      <p class="sz-stat-label">${label}</p>
+      <p class="sz-stat-value">${value}</p>
+      <p class="sz-stat-note">${note}</p>
+      ${
+        percent == null
+          ? ""
+          : `<div class="sz-track ${tickClass(percent)}"><span style="width:${clampPercent(percent)}%"></span></div>`
+      }
+    </article>`;
+
+    const statGrid = `<div class="sz-stat-grid">
+      ${statBlock({
+        tone: "tone-blue",
+        icon: "✓",
+        label: tr("TODAY'S TASKS", "مهام اليوم"),
+        value: `${formattedNumber(completedToday.length)}<small>/${formattedNumber(totalToday)}</small>`,
+        note: totalToday
+          ? tr(
+              `${progress}% of today is complete`,
+              `${progress}% من اليوم مكتمل`,
+            )
+          : tr("Add your first task for today", "أضف أول مهمة لليوم"),
+        trend: `${progress}%`,
+        percent: progress,
+      })}
+      ${statBlock({
+        tone: "tone-orange",
+        icon: "!",
+        label: tr("OVERDUE", "متأخرة"),
+        value: formattedNumber(overdueTasks.length),
+        note: overdueTasks.length
+          ? tr("Needs a little attention", "تحتاج بعض الاهتمام")
+          : tr("All clear — nicely done", "كل شيء واضح — أحسنت"),
+        trend: overdueTasks.length ? tr("open", "مفتوحة") : tr("clear", "واضح"),
+      })}
+      ${statBlock({
+        tone: "tone-purple",
+        icon: "◷",
+        label: tr("FOCUS TODAY", "تركيز اليوم"),
+        value: `${formattedNumber(focusMinutes)}<small> min</small>`,
+        note: `${formattedNumber(focusStats.todaySessions)} ${tr("sessions completed", "جلسات مكتملة")}`,
+        trend: `${focusWeekHours}h ${tr("this week", "هذا الأسبوع")}`,
+        percent: focusTargetPercent,
+      })}
+      ${statBlock({
+        tone: "tone-green",
+        icon: "↗",
+        label: tr("STUDY STREAK", "سلسلة الدراسة"),
+        value: `${formattedNumber(streakValue)}<small> ${tr("days", "يوم")}</small>`,
+        note: rewardSummary
+          ? `${tr("Level", "المستوى")} ${formattedNumber(Number(rewardSummary.level) || 1)} · ${tr("Keep it alive", "حافظ عليها")}`
+          : tr("Sign in to track verified days", "سجّل الدخول لتتبع أيامك"),
+        trend: streakValue ? tr("on fire", "متواصل") : tr("start", "ابدأ"),
+      })}
     </div>`;
-    const taskRowForDashboard = (
-      task,
-    ) => `<div class="dashboard-task ${task.status === "completed" ? "completed" : ""}">
-      <button class="task-check ${task.status === "completed" ? "checked" : ""}" data-action="toggle-task" data-id="${escapeHtml(task.id)}" aria-label="${task.status === "completed" ? "Reopen" : "Complete"} ${escapeHtml(task.title)}">${task.status === "completed" ? "✓" : ""}</button>
-      <button class="dashboard-task-main" data-action="${task.routine_id ? "routine-edit" : "task-edit"}" data-id="${escapeHtml(task.routine_id || task.id)}">
-        <strong dir="auto">${escapeHtml(task.title)}${task.routine_id ? " ↻" : ""}</strong>
-        <small dir="auto">${escapeHtml(task.subject || subjectName(task.subject_id))}${task.due_at ? ` · ${escapeHtml(taskDueLabel(task))}` : ""}</small>
-      </button>
-      <span class="priority ${escapeHtml(task.priority || "medium")}">${escapeHtml(deadlineText[appLanguage][task.priority] || "medium")}</span>
-    </div>`;
-    const todaysList = todayTasks.slice(0, 6).map(taskRowForDashboard).join("");
+
+    const nextTone = nextDeadline
+      ? getDeadlineStatus(nextDeadline) === "overdue"
+        ? "tone-orange"
+        : "tone-cyan"
+      : "tone-slate";
+    const hero = `<section class="sz-hero">
+      <div class="sz-hero-media"><img src="./assets/images/hero-study-desk.webp" alt="" loading="eager" decoding="async" fetchpriority="high" onerror="this.remove()" /></div>
+      <div class="sz-hero-content">
+        <div class="sz-hero-top">
+          <span class="sz-hero-badge"><i></i>${escapeHtml(dayLabelText)}</span>
+          <span class="sz-hero-badge">✦ ${tr("Your study life, organized", "حياتك الدراسية، منظمة")}</span>
+        </div>
+        <p class="sz-hero-kicker">${tr("WELCOME BACK", "أهلًا بعودتك")}</p>
+        <h1>${escapeHtml(greeting)},<br /><span>${escapeHtml(firstName)}.</span></h1>
+        <p class="sz-hero-quote">${escapeHtml(heroQuote)}</p>
+        <div class="sz-hero-meta">
+          <span class="sz-hero-chip tone-cyan"><i></i><b>${formattedNumber(todayTasks.length)}</b> ${tr("open today", "مفتوحة اليوم")}</span>
+          <span class="sz-hero-chip tone-purple"><i></i><b>${formattedNumber(focusMinutes)}</b> ${tr("focus minutes", "دقائق تركيز")}</span>
+          <span class="sz-hero-chip ${nextTone}"><i></i><b>${nextDeadline ? escapeHtml(taskDueLabel(nextDeadline, { includeDate: true })) : tr("No deadline", "لا موعد")}</b> ${nextDeadline ? escapeHtml(nextDeadline.title) : tr("a clear runway", "طريق واضح")}</span>
+        </div>
+        <div class="sz-hero-actions">
+          <button class="button button-primary" data-action="new-task" data-date="${todayKey}">＋ ${tr("New task", "مهمة جديدة")}</button>
+          <button class="button button-secondary" data-navigate="focus">◷ ${tr("Start focus", "ابدأ التركيز")}</button>
+        </div>
+      </div>
+      <div class="sz-hero-side">
+        <div class="sz-hero-progress">
+          <div class="sz-ring" style="--sz-p:${progress}"><div class="sz-ring-inner"><strong>${progress}%</strong><small>${tr("done", "مكتمل")}</small></div></div>
+          <div class="sz-hero-progress-copy"><strong>${tr("Today's momentum", "زخم اليوم")}</strong><small>${completedToday.length} ${tr("of", "من")} ${totalToday} ${tr("tasks complete", "مهمة مكتملة")}</small></div>
+          <div class="sz-hero-progress-meta"><span>${tr("Study streak", "سلسلة الدراسة")}</span><b>${streakValue} ${tr("days", "يوم")}</b></div>
+        </div>
+      </div>
+    </section>`;
+
+    const dashMonth =
+      dashboardMonth instanceof Date && !Number.isNaN(dashboardMonth.getTime())
+        ? dashboardMonth
+        : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const dashMonthStart = new Date(
+      dashMonth.getFullYear(),
+      dashMonth.getMonth(),
+      1,
+    );
+    const eventsByKey = new Map();
+    getDeadlines().forEach((deadline) => {
+      const range = deadlineDateRange(deadline);
+      const startDate = parseLocalDateKey(range.start);
+      const endDate = parseLocalDateKey(range.end);
+      if (!startDate || !endDate) return;
+      const cursor = new Date(startDate);
+      let guard = 0;
+      while (cursor <= endDate && guard < 370) {
+        const key = dateKey(cursor);
+        const list = eventsByKey.get(key) || [];
+        if (!list.some((item) => item.id === deadline.id)) list.push(deadline);
+        eventsByKey.set(key, list);
+        cursor.setDate(cursor.getDate() + 1);
+        guard += 1;
+      }
+    });
+    const toneForDeadline = (deadline) => {
+      if (deadline.status === "completed") return "tone-done";
+      if (getDeadlineStatus(deadline) === "overdue") return "tone-overdue";
+      if (deadline.priority === "high") return "tone-red";
+      if (deadline.priority === "low") return "tone-slate";
+      return "tone-blue";
+    };
+    const startOffset = dashMonthStart.getDay();
+    const daysInDashMonth = new Date(
+      dashMonthStart.getFullYear(),
+      dashMonthStart.getMonth() + 1,
+      0,
+    ).getDate();
+    const dashCellCount =
+      Math.ceil((startOffset + daysInDashMonth) / 7) * 7;
+    const gridStart = new Date(dashMonthStart);
+    gridStart.setDate(dashMonthStart.getDate() - startOffset);
+    const calendarDays = Array.from({ length: dashCellCount }, (_, index) => {
+      const date = new Date(gridStart);
+      date.setDate(gridStart.getDate() + index);
+      const key = dateKey(date);
+      const dayEvents = eventsByKey.get(key) || [];
+      const classes = ["sz-cal-day"];
+      if (date.getMonth() !== dashMonthStart.getMonth())
+        classes.push("is-outside");
+      if (key === todayKey) classes.push("is-today");
+      if (key === dashboardSelectedDate) classes.push("is-selected");
+      if (date.getDay() === 0 || date.getDay() === 6)
+        classes.push("is-weekend");
+      const eventMarkup = dayEvents
+        .slice(0, 2)
+        .map(
+          (deadline) =>
+            `<span class="sz-cal-event ${toneForDeadline(deadline)}"><i></i>${escapeHtml(deadline.title)}</span>`,
+        )
+        .join("");
+      const dotMarkup = dayEvents
+        .slice(0, 4)
+        .map((deadline) => `<i class="${toneForDeadline(deadline)}"></i>`)
+        .join("");
+      return `<button type="button" class="${classes.join(" ")}" data-action="dash-cal-select" data-date="${key}" aria-pressed="${key === dashboardSelectedDate}" aria-label="${escapeHtml(new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(date))}"><span class="sz-cal-num">${new Intl.NumberFormat(locale).format(date.getDate())}</span><span class="sz-cal-events">${eventMarkup}${dayEvents.length > 2 ? `<span class="sz-cal-more">+${dayEvents.length - 2}</span>` : ""}</span><span class="sz-cal-dots">${dotMarkup}</span></button>`;
+    }).join("");
+    const selectedDateObject =
+      parseLocalDateKey(dashboardSelectedDate) || new Date();
+    const selectedLabel = new Intl.DateTimeFormat(locale, {
+      weekday: "long",
+      month: "short",
+      day: "numeric",
+    }).format(selectedDateObject);
+    const selectedDayTasks = tasksForDay(dashboardSelectedDate).sort(taskSort);
+    const agendaMarkup = selectedDayTasks
+      .slice(0, 4)
+      .map((task) => {
+        const done = task.status === "completed";
+        const overdue =
+          !done &&
+          taskEndKey(task) &&
+          taskEndKey(task) < dateKey(new Date());
+        const tone = done
+          ? "tone-done"
+          : overdue
+            ? "tone-overdue"
+            : task.priority === "high"
+              ? "tone-red"
+              : task.routine_id
+                ? "tone-purple"
+                : "tone-blue";
+        return `<button type="button" class="sz-agenda-item ${done ? "is-done" : ""} ${overdue ? "is-overdue" : ""}" data-action="${task.routine_id ? "routine-edit" : "task-edit"}" data-id="${escapeHtml(task.routine_id || task.id)}"><span class="sz-agenda-dot ${tone}"></span><span class="sz-agenda-copy"><strong dir="auto">${escapeHtml(task.title)}</strong><small dir="auto">${escapeHtml(task.subject || subjectName(task.subject_id) || tr("Task", "مهمة"))}${task.routine_id ? " · ↻" : ""}</small></span><time>${escapeHtml(taskDueLabel(task))}</time></button>`;
+      })
+      .join("");
+    const monthLabel = new Intl.DateTimeFormat(locale, {
+      month: "long",
+      year: "numeric",
+    }).format(dashMonthStart);
+    const weekdayLabels = deadlineText[appLanguage].daysShort
+      .map((day) => `<span>${day}</span>`)
+      .join("");
+    const calendarPanel = `<section class="sz-card sz-dash-calendar">
+      <div class="sz-cal-head">
+        <div class="sz-cal-title"><p class="sz-kicker">${tr("PLAN THE MONTH", "خطّط للشهر")}</p><h2 id="dashboard-calendar-month">${escapeHtml(monthLabel)}</h2><p>${tr("Select a day to see its agenda", "اختر يومًا لعرض أجندته")}</p></div>
+        <div class="sz-cal-nav"><button type="button" class="sz-today" data-action="dash-cal-today">${tr("Today", "اليوم")}</button><button type="button" class="icon-button" data-action="dash-cal-prev" aria-label="${tr("Previous month", "الشهر السابق")}">‹</button><button type="button" class="icon-button" data-action="dash-cal-next" aria-label="${tr("Next month", "الشهر التالي")}">›</button></div>
+      </div>
+      <div class="sz-cal-weekdays">${weekdayLabels}</div>
+      <div class="sz-cal-grid">${calendarDays}</div>
+      <div class="sz-cal-legend"><span class="tone-red"><i></i>${tr("High", "عالية")}</span><span class="tone-blue"><i></i>${tr("Medium", "متوسطة")}</span><span class="tone-slate"><i></i>${tr("Low", "منخفضة")}</span><span class="tone-done"><i></i>${tr("Completed", "مكتملة")}</span></div>
+      <div class="sz-cal-agenda">
+        <div class="sz-cal-agenda-head"><strong>${escapeHtml(selectedLabel)}</strong><small>${formattedNumber(selectedDayTasks.length)} ${tr(selectedDayTasks.length === 1 ? "item" : "items", "عنصر")}</small></div>
+        <div class="sz-agenda-list">${agendaMarkup || `<div class="sz-empty" style="padding:18px"><strong>${tr("Nothing scheduled", "لا يوجد شيء مجدول")}</strong><p>${tr("A quiet day is still a good day.", "اليوم الهادئ يوم جيد أيضًا.")}</p></div>`}</div>
+      </div>
+    </section>`;
+
+    const taskRowForDashboard = (task) => {
+      const done = task.status === "completed";
+      const overdue = overdueIds.has(task.id);
+      const subject = task.subject || subjectName(task.subject_id);
+      return `<div class="sz-task ${done ? "is-done" : ""} ${overdue ? "is-overdue" : ""}">
+        <button type="button" class="sz-task-check ${done ? "is-checked" : ""}" data-action="toggle-task" data-id="${escapeHtml(task.id)}" aria-label="${done ? tr("Reopen", "إعادة فتح") : tr("Complete", "إكمال")} ${escapeHtml(task.title)}">${done ? "✓" : ""}</button>
+        <button type="button" class="sz-task-main" data-action="${task.routine_id ? "routine-edit" : "task-edit"}" data-id="${escapeHtml(task.routine_id || task.id)}">
+          <strong dir="auto">${escapeHtml(task.title)}${task.routine_id ? " ↻" : ""}</strong>
+          <small dir="auto">${escapeHtml(subject || tr("Task", "مهمة"))} · ${escapeHtml(taskDueLabel(task))}</small>
+        </button>
+        <div class="sz-task-badges"><span class="priority ${escapeHtml(task.priority || "medium")}">${escapeHtml(deadlineText[appLanguage][task.priority] || task.priority || "medium")}</span></div>
+      </div>`;
+    };
+    const todaysList = todayTasks.slice(0, 5).map(taskRowForDashboard).join("");
     const overdueList = overdueTasks
       .slice(0, 3)
       .map(taskRowForDashboard)
       .join("");
-    const latestNotes = notes
+    const tasksPanel = `<section class="sz-card">
+      <div class="sz-card-head"><div><p class="sz-kicker">${tr("TODAY'S FOCUS", "تركيز اليوم")}</p><h2>${tr("Today's tasks", "مهام اليوم")}</h2><p>${todayTasks.length} ${tr("open", "مفتوحة")} · ${completedToday.length} ${tr("done", "مكتملة")}</p></div><button class="panel-link" data-navigate="tasks">${tr("All tasks →", "كل المهام ←")}</button></div>
+      <div class="sz-progress" style="margin-bottom:14px"><div class="sz-progress-line"><span>${tr("Daily progress", "تقدم اليوم")}</span><strong>${progress}%</strong></div><div class="sz-track ${tickClass(progress)}"><span style="width:${progress}%"></span></div></div>
+      <div class="sz-task-list">${todaysList || `<div class="sz-empty"><span class="sz-empty-icon">✓</span><strong>${tr("Nothing due today", "لا مهام لليوم")}</strong><p>${tr("Add a task or clear your overdue list.", "أضف مهمة أو راجع المهام المتأخرة.")}</p></div>`}</div>
+      ${overdueList ? `<div class="sz-task-group-label">${tr("Overdue", "متأخرة")} · ${formattedNumber(overdueTasks.length)}</div><div class="sz-task-list">${overdueList}</div>` : ""}
+      <div class="sz-quick-actions">
+        <button type="button" class="sz-quick-action tone-blue" data-action="new-task" data-date="${todayKey}"><i>＋</i>${tr("Task", "مهمة")}</button>
+        <button type="button" class="sz-quick-action tone-amber" data-action="note-add"><i>✎</i>${tr("Note", "ملاحظة")}</button>
+        <button type="button" class="sz-quick-action tone-purple" data-navigate="focus"><i>◷</i>${tr("Focus", "تركيز")}</button>
+        <button type="button" class="sz-quick-action tone-cyan" data-navigate="tasks"><i>▦</i>${tr("Calendar", "التقويم")}</button>
+      </div>
+    </section>`;
+
+    const focusMax = Math.max(
+      1,
+      ...focusStats.days.map((day) => Number(day.seconds) || 0),
+    );
+    const focusBars = focusStats.days
+      .map((day) => {
+        const height = Math.max(
+          3,
+          Math.round(((Number(day.seconds) || 0) / focusMax) * 100),
+        );
+        return `<div title="${escapeHtml(new Intl.DateTimeFormat(locale, { weekday: "short" }).format(day.date))}: ${Math.round(Number(day.seconds || 0) / 60)} min"><span style="height:${height}%"></span></div>`;
+      })
+      .join("");
+    const focusCard = `<section class="sz-card sz-focus-card">
+      <div class="sz-focus-top"><div><p class="sz-kicker">${tr("DEEP WORK", "عمل عميق")}</p><h2>${tr("Focus today", "تركيز اليوم")}</h2></div><span class="sz-pill tone-purple"><i></i>${focusStats.streak} ${tr("day streak", "يوم متتالي")}</span></div>
+      <div class="sz-focus-main">
+        <div class="sz-ring sz-ring-sm" style="--sz-p:${focusTargetPercent}"><div class="sz-ring-inner"><strong>${focusMinutes}</strong><small>min</small></div></div>
+        <div class="sz-focus-copy"><strong>${formattedNumber(focusStats.todaySessions)}<small> ${tr("sessions", "جلسات")}</small></strong><span>${tr("A 120-minute daily target", "هدف يومي 120 دقيقة")}</span></div>
+      </div>
+      <div class="sz-focus-bars">${focusBars}</div>
+      <div class="sz-focus-stats"><div><strong>${focusWeekHours}h</strong><small>${tr("This week", "هذا الأسبوع")}</small></div><div><strong>${formattedNumber(focusStats.totalCycles)}</strong><small>${tr("All sessions", "كل الجلسات")}</small></div></div>
+      ${
+        nextDeadline
+          ? `<div class="sz-cal-agenda-head" style="margin-bottom:7px"><strong>${tr("Next deadline", "أقرب موعد")}</strong><small>${escapeHtml(taskDueLabel(nextDeadline, { includeDate: true }))}</small></div><button type="button" class="sz-agenda-item" data-action="task-edit" data-id="${escapeHtml(nextDeadline.id)}"><span class="sz-agenda-dot ${nextTone}"></span><span class="sz-agenda-copy"><strong dir="auto">${escapeHtml(nextDeadline.title)}</strong><small>${escapeHtml(nextDeadline.subject || subjectName(nextDeadline.subject_id) || tr("Task", "مهمة"))}</small></span><time>${escapeHtml(formatPriority(nextDeadline.priority || "medium"))}</time></button>`
+          : ""
+      }
+      <button class="button button-primary button-small full-button" data-navigate="focus" style="margin-top:14px">${tr("Start a focus session", "ابدأ جلسة تركيز")}</button>
+    </section>`;
+
+    const habitWindow = Array.from({ length: 7 }, (_, index) =>
+      dateKey(addLocalDays(startOfLocalDay(new Date()), index - 6)),
+    );
+    const activeRoutines = routines
+      .filter((routine) =>
+        habitWindow.some((key) => routineOccursOnKey(routine, key)),
+      )
+      .slice(0, 6);
+    const todayRoutines = routines.filter((routine) =>
+      routineOccursOnKey(routine, todayKey),
+    );
+    const doneToday = todayRoutines.filter(
+      (routine) => routineDayFor(routine.id, todayKey)?.status === "completed",
+    ).length;
+    const habitPercent = todayRoutines.length
+      ? Math.round((doneToday / todayRoutines.length) * 100)
+      : 0;
+    const habitTones = [
+      "tone-green",
+      "tone-cyan",
+      "tone-purple",
+      "tone-blue",
+      "tone-amber",
+      "tone-pink",
+    ];
+    const habitHead = `<div class="sz-habit-row sz-habit-head"><span>${tr("Habit", "العادة")}</span>${habitWindow
+      .map((key) => {
+        const date = parseLocalDateKey(key);
+        return `<span>${new Intl.DateTimeFormat(locale, { weekday: "narrow" }).format(date)} ${new Intl.NumberFormat(locale).format(date.getDate())}</span>`;
+      })
+      .join("")}</div>`;
+    const habitRows = activeRoutines
+      .map((routine, index) => {
+        const tone = habitTones[index % habitTones.length];
+        const cells = habitWindow
+          .map((key) => {
+            if (!routineOccursOnKey(routine, key)) {
+              return `<span class="sz-habit-day is-empty" aria-hidden="true">·</span>`;
+            }
+            const done =
+              routineDayFor(routine.id, key)?.status === "completed";
+            const future = key > todayKey;
+            const date = parseLocalDateKey(key);
+            const dayNumber = new Intl.NumberFormat(locale).format(
+              date.getDate(),
+            );
+            return `<button type="button" class="sz-habit-day ${done ? "is-done" : ""} ${key === todayKey ? "is-today" : ""} ${future ? "is-future" : ""}" data-action="habit-toggle" data-id="${escapeHtml(routine.id)}" data-date="${key}" aria-pressed="${done}" ${future ? "disabled" : ""} aria-label="${escapeHtml(routine.title)} · ${escapeHtml(new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(date))}">${done ? "✓" : dayNumber}</button>`;
+          })
+          .join("");
+        const cadence =
+          routine.routine_type === "weekdays" || routine.routine_type === "custom"
+            ? tr("Selected days", "أيام محددة")
+            : routine.routine_type === "interval"
+              ? `${routine.interval_days || 1} ${tr("day rhythm", "يوم متتالي")}`
+              : tr("Every day", "كل يوم");
+        return `<div class="sz-habit-row"><div class="sz-habit-name"><span class="sz-habit-icon ${tone}">↻</span><div><strong dir="auto">${escapeHtml(routine.title)}</strong><small>${escapeHtml(cadence)}</small></div></div>${cells}</div>`;
+      })
+      .join("");
+    const habitsPanel = `<section class="sz-card sz-habits">
+      <div class="sz-card-head"><div><p class="sz-kicker">${tr("CONSISTENCY", "الاستمرارية")}</p><h2>${tr("Habit tracker", "متتبع العادات")}</h2><p>${tr("Small actions, seven days at a time", "خطوات صغيرة، سبعة أيام في كل مرة")}</p></div><span class="sz-pill ${habitPercent >= 60 ? "tone-green" : "tone-orange"}"><i></i>${habitPercent}%</span></div>
+      ${
+        activeRoutines.length
+          ? `<div class="sz-habit-scroll"><div class="sz-habit-table">${habitHead}${habitRows}</div></div>`
+          : `<div class="sz-empty"><span class="sz-empty-icon">↻</span><strong>${tr("Build your first habit", "ابدأ عادتك الأولى")}</strong><p>${tr("Create a recurring task and check it off each day.", "أنشئ مهمة متكررة وأنجزها كل يوم.")}</p><button class="button button-secondary button-small" data-action="new-task">${tr("New recurring task", "مهمة متكررة جديدة")}</button></div>`
+      }
+      <div class="sz-habit-foot"><div class="sz-progress"><div class="sz-progress-line"><span>${tr("Today", "اليوم")}</span><strong>${doneToday}/${todayRoutines.length}</strong></div><div class="sz-track ${tickClass(habitPercent)}"><span style="width:${habitPercent}%"></span></div></div><span class="sz-pill ${habitPercent >= 60 ? "tone-green" : "tone-orange"}"><i></i>${tr("daily rhythm", "إيقاع يومي")}</span></div>
+    </section>`;
+
+    const goalRows = goals
+      .slice(0, 4)
+      .map((goal, index) => {
+        const percent = clampPercent(goal.progress);
+        const complete = percent >= 100;
+        const goalValue = goal.target_value
+          ? `${formattedNumber(goal.current_value || 0)}/${formattedNumber(goal.target_value)}${escapeHtml(goal.unit || "")}`
+          : `${percent}%`;
+        return `<div class="sz-goal"><div class="sz-ring sz-ring-xs ${complete ? "tone-green" : index % 2 ? "tone-purple" : "tone-blue"}" style="--sz-p:${percent}"><div class="sz-ring-inner"><strong>${percent}%</strong></div></div><div class="sz-goal-copy"><strong dir="auto">${escapeHtml(goal.title)}</strong><small dir="auto">${escapeHtml(goal.detail || goal.details || goal.due || tr("Keep moving", "واصل التقدم"))}</small><div class="sz-track ${tickClass(percent)}"><span style="width:${percent}%"></span></div></div><span class="sz-goal-value ${complete ? "is-complete" : ""}">${goalValue}</span></div>`;
+      })
+      .join("");
+    const goalsPanel = `<section class="sz-card">
+      <div class="sz-card-head"><div><p class="sz-kicker">${tr("MILESTONES", "المحطات")}</p><h2>${tr("Goal progress", "تقدم الأهداف")}</h2><p>${tr("Small steps add up", "خطوات صغيرة تضيف")}</p></div><button class="panel-link" data-navigate="goals">${tr("Goals →", "الأهداف ←")}</button></div>
+      <div class="sz-goal-list">${goalRows || `<div class="sz-empty"><span class="sz-empty-icon">◎</span><strong>${tr("No goals yet", "لا أهداف بعد")}</strong><p>${tr("Turn a wish into a measurable milestone.", "حوّل أمنية إلى محطة قابلة للقياس.")}</p></div>`}</div>
+    </section>`;
+
+    const focusSpark = focusStats.days
+      .map((day) => {
+        const height = Math.max(
+          4,
+          Math.round(((Number(day.seconds) || 0) / focusMax) * 100),
+        );
+        return `<div title="${escapeHtml(new Intl.DateTimeFormat(locale, { weekday: "short" }).format(day.date))}"><span style="height:${height}%"></span></div>`;
+      })
+      .join("");
+    const analyticsPanel = `<section class="sz-card">
+      <div class="sz-card-head"><div><p class="sz-kicker">${tr("AT A GLANCE", "لمحة سريعة")}</p><h2>${tr("Mini analytics", "تحليلات مصغرة")}</h2><p>${tr("How today is shaping up", "كيف يسير يومك")}</p></div><button class="panel-link" data-navigate="analytics">${tr("Analytics →", "التحليلات ←")}</button></div>
+      <div class="sz-mini-analytics"><div class="sz-donut" style="--sz-p:${progress}"><div class="sz-donut-inner"><strong>${progress}%</strong><small>${tr("today", "اليوم")}</small></div></div><div class="sz-legend"><div class="sz-legend-row tone-green"><i></i>${tr("Completed", "مكتملة")}<b>${formattedNumber(completedToday.length)}</b></div><div class="sz-legend-row tone-blue"><i></i>${tr("Open", "مفتوحة")}<b>${formattedNumber(todayTasks.length)}</b></div><div class="sz-legend-row tone-orange"><i></i>${tr("Overdue", "متأخرة")}<b>${formattedNumber(overdueTasks.length)}</b></div></div></div>
+      <div class="sz-mini-spark">${focusSpark}</div>
+    </section>`;
+
+    const latestNote = notes
       .slice()
       .sort(
         (a, b) =>
           new Date(b.updated_at || b.created_at || 0) -
           new Date(a.updated_at || a.created_at || 0),
-      )
-      .slice(0, 3);
-    const noteRows = latestNotes
-      .map(
-        (
-          note,
-        ) => `<button class="dashboard-note" data-action="note-open" data-id="${escapeHtml(note.id)}">
-      <span class="dashboard-note-dot" style="background:${escapeHtml(noteColor(note))}"></span>
-      <span><strong dir="auto">${escapeHtml(note.title || "Untitled note")}</strong><small dir="auto">${escapeHtml(notePlainText(note).slice(0, 80) || "Empty note")}</small></span>
-      <time>${escapeHtml(new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { month: "short", day: "numeric" }).format(new Date(note.updated_at || note.created_at || Date.now())))}</time>
-    </button>`,
-      )
-      .join("");
-    const goalRows = goals
-      .slice(0, 3)
-      .map(
-        (goal) =>
-          `<div class="dashboard-goal"><div class="goal-topline"><strong>${escapeHtml(goal.title)}</strong><span>${escapeHtml(goal.due || "")}</span></div><div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, Math.max(0, goal.progress || 0))}%"></div></div><div class="goal-bottomline"><span>${escapeHtml(goal.detail || goal.details || "")}</span><span>${Math.round(goal.progress || 0)}%</span></div></div>`,
-      )
-      .join("");
+      )[0];
+    const journalCard = `<section class="sz-image-card">
+      <div class="sz-image-card-media"><img src="./assets/images/journal-notebook.webp" alt="" loading="lazy" decoding="async" onerror="this.remove()" /></div>
+      <div class="sz-image-card-body"><p class="sz-kicker">${tr("STUDY JOURNAL", "مفكرة الدراسة")}</p><h3>${tr("Reflect, then grow.", "تأمل، ثم انمُ.")}</h3><p>${latestNote ? escapeHtml(latestNote.title || tr("Your latest note is waiting.", "ملاحظتك الأخيرة بانتظارك.")) : tr("A few honest lines can reset your whole week.", "بضعة أسطر صادقة تعيد ضبط أسبوعك.")}</p><button class="button button-secondary button-small" data-navigate="journal">${tr("Open journal", "افتح المفكرة")}</button></div>
+    </section>`;
+
+    const motivationQuote =
+      appLanguage === "ar"
+        ? "لا تحتاج أن تكون مبالغًا، فقط منتظمًا."
+        : "You do not have to be extreme, just consistent.";
+    const quoteCard = `<section class="sz-card sz-quote-card"><span class="sz-quote-mark">“</span><p class="sz-quote-text">${escapeHtml(motivationQuote)}</p><p class="sz-quote-author">${tr("A note to future you", "ملاحظة لك في المستقبل")} · Study Zone</p><div class="sz-hero-meta" style="margin-top:16px"><span class="sz-hero-chip tone-amber" style="background:rgba(var(--sz-amber-rgb),.08);border-color:rgba(var(--sz-amber-rgb),.2);color:var(--color-text)"><i></i>${tr("One page at a time", "صفحة واحدة في كل مرة")}</span></div><button class="button button-secondary button-small" data-navigate="notes" style="margin-top:14px">${tr("Write a note", "اكتب ملاحظة")}</button></section>`;
+
     const badges =
       earnedAchievements
         .slice(0, 3)
-        .map((item) => {
+        .map((item, index) => {
           const achievement = Array.isArray(item.achievements)
             ? item.achievements[0]
             : item.achievements;
@@ -3061,56 +4043,36 @@
             (entry) => entry.code === achievement?.code,
           );
           if (!achievement) return "";
-          return `<div class="achievement-row"><span class="achievement-icon">${catalog?.symbol || "✦"}</span><div><strong>${escapeHtml(achievement.name || catalog?.name || "Achievement unlocked!")}</strong><small>${escapeHtml(achievement.description || catalog?.description || "")}</small></div></div>`;
+          return `<div class="sz-badge ${habitTones[index % habitTones.length]}"><span class="sz-badge-icon">${catalog?.symbol || "✦"}</span><div><strong>${escapeHtml(achievement.name || catalog?.name || tr("Achievement unlocked!", "تم فتح إنجاز!"))}</strong><small>${escapeHtml(achievement.description || catalog?.description || "")}</small></div></div>`;
         })
         .join("") ||
-      `<div class="empty-state">${session ? "No achievements unlocked yet." : "Sign in to earn secure rewards."}</div>`;
-    const subjectRows =
-      subjects
-        .map(
-          (subject) =>
-            `<div class="subject-row"><span class="subject-row-name">${escapeHtml(subject.name)}</span><div class="progress-track"><div class="progress-fill" style="width:${subject.progress ?? 0}%"></div></div><span class="subject-row-value">${subject.progress == null ? "—" : `${subject.progress}%`}</span></div>`,
-        )
-        .join("") ||
-      `<div class="empty-state">Add a subject to start tracking course progress.</div>`;
-    return `${pageHeading(
-      dayLabelText.toUpperCase(),
-      `${greeting}, ${escapeHtml(firstName)}.`,
-      appLanguage === "ar"
-        ? "هذه مهام اليوم فقط — ابدأ بخطوة واحدة."
-        : "Here is today, and nothing else. Start with one step.",
-      `<div class="dashboard-heading-actions"><button class="button button-secondary" data-navigate="focus">◷ ${appLanguage === "ar" ? "ابدأ التركيز" : "Start focus"}</button><button class="button button-primary" data-action="new-task" data-date="${todayKey}">＋ ${appLanguage === "ar" ? "مهمة جديدة" : "New task"}</button></div>`,
-    )}
+      `<div class="sz-empty" style="padding:20px"><span class="sz-empty-icon">✦</span><strong>${session ? tr("No achievements yet", "لا إنجازات بعد") : tr("Sign in to earn rewards", "سجّل الدخول لتكسب المكافآت")}</strong><p>${session ? tr("Keep showing up — the first badge is close.", "استمر بالحضور — أول شارة قريبة.") : tr("Secure rewards follow verified study sessions.", "المكافآت الآمنة تتبع جلسات الدراسة الموثقة.")}</p></div>`;
+    const achievementsPanel = `<section class="sz-card"><div class="sz-card-head"><div><p class="sz-kicker">${tr("MOMENTUM", "الزخم")}</p><h2>${tr("Recent achievements", "آخر الإنجازات")}</h2><p>${tr("Keep building your rhythm", "واصل بناء إيقاعك")}</p></div><button class="panel-link" data-navigate="achievements">${tr("All →", "الكل ←")}</button></div><div class="sz-badge-list">${badges}</div></section>`;
+
+    const subjectsPanel = `<section class="sz-card">
+      <div class="sz-card-head"><div><p class="sz-kicker">${tr("YOUR COURSES", "موادك")}</p><h2>${tr("Subject progress", "تقدم المواد")}</h2><p>${tr("Current learning progress", "تقدم التعلم الحالي")}</p></div><button class="panel-link" data-navigate="subjects">${tr("Subjects →", "المواد ←")}</button></div>
+      <div class="sz-subject-grid">${subjects
+        .slice(0, 6)
+        .map((subject) => {
+          const percent =
+            subject.progress == null ? null : clampPercent(subject.progress);
+          return `<div class="sz-subject-item"><div class="sz-subject-head"><span class="sz-subject-dot" style="background:${escapeHtml(subject.color || "var(--sz-teal)")}"></span><strong dir="auto">${escapeHtml(subject.name)}</strong><span>${percent == null ? "—" : `${percent}%`}</span></div><div class="sz-track ${percent == null ? "" : tickClass(percent)}"><span style="width:${percent == null ? 0 : percent}%"></span></div></div>`;
+        })
+        .join("") || `<div class="sz-empty" style="grid-column:1/-1;padding:20px"><strong>${tr("No subjects yet", "لا مواد بعد")}</strong><p>${tr("Add a course to connect tasks, notes and focus sessions.", "أضف مادة لربط المهام والملاحظات وجلسات التركيز.")}</p></div>`}</div>
+    </section>`;
+
+    return `${hero}
       ${statGrid}
-      <div class="grid dashboard-grid">
-        <section class="panel">${panelHeading(appLanguage === "ar" ? "مهام اليوم" : "Today's tasks", appLanguage === "ar" ? `${todayTasks.length} مفتوحة · ${completedToday.length} مكتملة` : `${todayTasks.length} open · ${completedToday.length} done`, `<button class="panel-link" data-navigate="tasks">${appLanguage === "ar" ? "كل المهام ←" : "All tasks →"}</button>`)}
-          <div class="dashboard-progress-line"><div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div><span>${progress}%</span></div>
-          <div class="dashboard-task-list">${todaysList || `<div class="empty-state"><strong>${appLanguage === "ar" ? "لا مهام لليوم" : "Nothing due today"}</strong>${appLanguage === "ar" ? "أضف مهمة أو راجع المهام المتأخرة." : "Add a task or clear your overdue list."}</div>`}</div>
-          ${overdueList ? `<div class="dashboard-overdue"><div class="dashboard-overdue-head"><span>${appLanguage === "ar" ? "متأخرة" : "Overdue"}</span><strong>${formattedNumber(overdueTasks.length)}</strong></div>${overdueList}</div>` : ""}
-          <div class="dashboard-quick-actions">
-            <button data-action="new-task" data-date="${todayKey}">＋ ${appLanguage === "ar" ? "مهمة" : "Task"}</button>
-            <button data-action="note-add">✎ ${appLanguage === "ar" ? "ملاحظة" : "Note"}</button>
-            <button data-navigate="focus">◷ ${appLanguage === "ar" ? "تركيز" : "Focus"}</button>
-            <button data-navigate="tasks">▦ ${appLanguage === "ar" ? "التقويم" : "Calendar"}</button>
-          </div>
-        </section>
-        <aside class="grid dashboard-side">
-          <section class="panel ${focusStats.todaySeconds ? "" : "panel-quiet"}">${panelHeading(appLanguage === "ar" ? "تركيز اليوم" : "Focus today", appLanguage === "ar" ? "جلسات مكتملة فقط" : "Completed sessions only")}
-            <div class="dashboard-focus"><strong>${formattedNumber(focusMinutes)}<small> min</small></strong><span>${formattedNumber(focusStats.todaySessions)} ${appLanguage === "ar" ? "جلسات" : "sessions"}</span></div>
-            ${nextDeadline ? `<div class="dashboard-next"><span>${appLanguage === "ar" ? "أقرب موعد" : "Next deadline"}</span><strong dir="auto">${escapeHtml(nextDeadline.title)}</strong><small>${escapeHtml(taskDueLabel(nextDeadline, { includeDate: true }))}</small></div>` : ""}
-            <button class="button button-primary button-small full-button" data-navigate="focus">${appLanguage === "ar" ? "ابدأ جلسة تركيز" : "Start a focus session"}</button>
-          </section>
-          <section class="panel">${panelHeading(appLanguage === "ar" ? "آخر الملاحظات" : "Recent notes", appLanguage === "ar" ? "من دفترك" : "From your notebook", `<button class="panel-link" data-navigate="notes">${appLanguage === "ar" ? "كل الملاحظات ←" : "All notes →"}</button>`)}
-            <div class="dashboard-notes">${noteRows || `<div class="empty-state">${appLanguage === "ar" ? "لا ملاحظات بعد" : "No notes yet"}</div>`}</div>
-          </section>
-        </aside>
+      <div class="sz-dash">
+        <div class="sz-dash-main">
+          <div class="sz-dash-main-left">${calendarPanel}${tasksPanel}</div>
+          <div class="sz-dash-main-right">${focusCard}</div>
+        </div>
+        <div class="sz-dash-lower">${habitsPanel}${goalsPanel}${analyticsPanel}</div>
+        <div class="sz-dash-bottom">${journalCard}${quoteCard}${achievementsPanel}</div>
+        ${subjectsPanel}
       </div>
-      <div class="grid dashboard-grid bottom-grid">
-        <section class="panel">${panelHeading(appLanguage === "ar" ? "تقدم الأهداف" : "Goal progress", appLanguage === "ar" ? "خطوات صغيرة تضيف" : "Small steps add up", `<button class="panel-link" data-navigate="goals">${appLanguage === "ar" ? "الأهداف ←" : "Goals →"}</button>`)}<div class="goal-list">${goalRows || `<div class="empty-state">${appLanguage === "ar" ? "لا أهداف بعد" : "No goals yet"}</div>`}</div></section>
-        <section class="panel">${panelHeading(appLanguage === "ar" ? "آخر الإنجازات" : "Recent achievements", appLanguage === "ar" ? "واصل بناء عادتك" : "Keep building your rhythm", `<button class="panel-link" data-navigate="achievements">${appLanguage === "ar" ? "الإنجازات ←" : "Achievements →"}</button>`)}<div class="achievement-list">${badges}</div></section>
-      </div>
-      <section class="panel section-spacer">${panelHeading(appLanguage === "ar" ? "المواد" : "Subjects", appLanguage === "ar" ? "تقديرات التقدم الحالية" : "Current progress")}<div class="subject-rows">${subjectRows}</div></section>
-      <p class="data-caption">${session ? "Everything above is calculated from your saved tasks, notes, and verified focus sessions." : "Guest preview data is stored in this browser. Sign in to sync your private workspace."}</p>`;
+      <p class="data-caption">${session ? tr("Everything above is calculated from your saved tasks, notes, habits, and verified focus sessions.", "كل ما سبق محسوب من مهامك وملاحظاتك وعاداتك وجلسات التركيز الموثقة.") : tr("Guest preview data is stored in this browser. Sign in to sync your private workspace.", "بيانات المعاينة محفوظة في هذا المتصفح. سجّل الدخول لمزامنة مساحتك الخاصة.")}</p>`;
   }
 
   function startOfLocalDay(value = new Date()) {
@@ -3908,16 +4870,122 @@
 
   function calendarView(deadlines) {
     const t = deadlineText[appLanguage];
-    const year = deadlineMonth.getFullYear();
-    const month = deadlineMonth.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const startOffset = firstDay.getDay();
+    const locale = appLanguage === "ar" ? "ar-EG" : "en";
+    const mode = ["month", "week", "day"].includes(deadlineCalendarMode)
+      ? deadlineCalendarMode
+      : "month";
     const today = dateKey(new Date());
     const weekdayLabels = t.daysShort
       .map((day) => `<span class="calendar-weekday">${day}</span>`)
       .join("");
+    const modeSwitch = `<div class="sz-fullcal-mode" role="group" aria-label="${t.calendar}">${[
+      ["month", appLanguage === "ar" ? "شهر" : "Month"],
+      ["week", appLanguage === "ar" ? "أسبوع" : "Week"],
+      ["day", appLanguage === "ar" ? "يوم" : "Day"],
+    ]
+      .map(
+        ([value, label]) =>
+          `<button type="button" class="${mode === value ? "is-active" : ""}" data-action="deadline-calendar-mode" data-mode="${value}" aria-pressed="${mode === value}">${label}</button>`,
+      )
+      .join("")}</div>`;
+    const eventTone = (deadline) => {
+      const status = getDeadlineStatus(deadline);
+      if (status === "completed") return "tone-done";
+      if (status === "overdue") return "tone-overdue";
+      if (deadline.priority === "high") return "tone-red";
+      if (deadline.priority === "low") return "tone-slate";
+      return "tone-blue";
+    };
+    const timeLabel = (deadline) => {
+      const due = new Date(deadline.due_at);
+      if (Number.isNaN(due.getTime())) return "";
+      if (due.getHours() === 23 && due.getMinutes() === 59)
+        return appLanguage === "ar" ? "طوال اليوم" : "All day";
+      return new Intl.DateTimeFormat(locale, {
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(due);
+    };
+    const selected = deadlines.filter((deadline) => {
+      const range = deadlineDateRange(deadline);
+      return (
+        selectedDeadlineDate >= range.start && selectedDeadlineDate <= range.end
+      );
+    });
+    const selectedLabel = selectedDeadlineDate
+      ? new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(
+          new Date(`${selectedDeadlineDate}T12:00:00`),
+        )
+      : t.noDate;
+    const selection = `<div class="calendar-selection">${panelHeading(escapeHtml(selectedLabel), `${selected.length} ${selected.length === 1 ? t.deadline : t.deadlines}`)}<div class="deadline-list">${selected.map(deadlineCard).join("") || `<div class="empty-state">${t.noDateItems}</div>`}</div></div>`;
+
+    if (mode === "week" || mode === "day") {
+      const anchor =
+        parseLocalDateKey(selectedDeadlineDate) ||
+        new Date(deadlineMonth.getFullYear(), deadlineMonth.getMonth(), 1);
+      const dayStart =
+        mode === "week" ? new Date(anchor) : new Date(anchor);
+      if (mode === "week") dayStart.setDate(anchor.getDate() - anchor.getDay());
+      const periodDays =
+        mode === "week"
+          ? Array.from({ length: 7 }, (_, index) => {
+              const date = new Date(dayStart);
+              date.setDate(dayStart.getDate() + index);
+              return date;
+            })
+          : [dayStart];
+      const periodLabel =
+        mode === "week"
+          ? `${new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(periodDays[0])} – ${new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", year: "numeric" }).format(periodDays[6])}`
+          : new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(
+              periodDays[0],
+            );
+      const weekGrid = `<div class="sz-week-grid">${periodDays
+        .map((date) => {
+          const key = dateKey(date);
+          const dayEvents = deadlines.filter((deadline) => {
+            const range = deadlineDateRange(deadline);
+            return key >= range.start && key <= range.end;
+          });
+          return `<div class="sz-week-col ${key === today ? "is-today" : ""}"><header><button type="button" data-action="calendar-select" data-date="${key}" aria-label="${escapeHtml(new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(date))}"><strong>${new Intl.DateTimeFormat(locale, { weekday: "short" }).format(date)}</strong><span>${new Intl.NumberFormat(locale).format(date.getDate())}</span></button></header>${dayEvents
+            .map(
+              (deadline) =>
+                `<button type="button" class="sz-week-event ${eventTone(deadline)} ${getDeadlineStatus(deadline) === "completed" ? "is-done" : ""}" data-action="deadline-edit" data-id="${escapeHtml(deadline.id)}"><strong dir="auto">${escapeHtml(deadline.title)}</strong><small>${escapeHtml(timeLabel(deadline))}</small></button>`,
+            )
+            .join("")}</div>`;
+        })
+        .join("")}</div>`;
+      const dayLabel = new Intl.DateTimeFormat(locale, {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+      }).format(periodDays[0]);
+      const dayEvents = deadlines.filter((deadline) => {
+        const range = deadlineDateRange(deadline);
+        return (
+          selectedDeadlineDate >= range.start &&
+          selectedDeadlineDate <= range.end
+        );
+      });
+      const dayAgenda = `<div class="sz-day-agenda">${dayEvents
+        .map((deadline) => {
+          const status = getDeadlineStatus(deadline);
+          return `<div class="sz-day-row ${eventTone(deadline)} ${status === "completed" ? "is-done" : ""} ${status === "overdue" ? "is-overdue" : ""}"><time>${escapeHtml(timeLabel(deadline))}</time><div><strong dir="auto">${escapeHtml(deadline.title)}</strong><small dir="auto">${escapeHtml(deadline.subject || subjectName(deadline.subject_id) || "")} · ${escapeHtml(status === "completed" ? t.statusCompleted : status === "overdue" ? t.statusOverdue : t.pending)}</small></div><button type="button" class="icon-button" data-action="deadline-edit" data-id="${escapeHtml(deadline.id)}" aria-label="${escapeHtml(t.edit)}">✎</button></div>`;
+        })
+        .join("") || `<div class="empty-state"><strong>${t.noDateItems}</strong></div>`}</div>`;
+      return `<div class="calendar-header"><div><h2 class="calendar-month" id="calendar-month">${escapeHtml(periodLabel)}</h2><p class="calendar-subtitle">${mode === "week" ? (appLanguage === "ar" ? "خطة الأسبوع" : "Week at a glance") : escapeHtml(dayLabel)}</p></div><div class="calendar-nav">${modeSwitch}<button class="button button-secondary button-small" data-action="calendar-today">${appLanguage === "ar" ? "اليوم" : "Today"}</button><button class="icon-button" data-action="calendar-prev" aria-label="${appLanguage === "ar" ? "السابق" : "Previous"}">‹</button><button class="icon-button" data-action="calendar-next" aria-label="${appLanguage === "ar" ? "التالي" : "Next"}">›</button></div></div>
+        ${mode === "week" ? weekGrid : dayAgenda}
+        ${mode === "week" ? selection : ""}`;
+    }
+
+    const year = deadlineMonth.getFullYear();
+    const month = deadlineMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const startOffset = firstDay.getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const weekCount = Math.ceil((startOffset + daysInMonth) / 7);
     const startOfGrid = new Date(year, month, 1 - startOffset);
-    const weeks = Array.from({ length: 6 }, (_, weekIndex) => {
+    const weeks = Array.from({ length: weekCount }, (_, weekIndex) => {
       const weekStart = new Date(startOfGrid);
       weekStart.setDate(startOfGrid.getDate() + weekIndex * 7);
       const dayDates = Array.from({ length: 7 }, (_, dayIndex) => {
@@ -3936,7 +5004,7 @@
         return {
           date,
           key,
-          button: `<button class="${classes.join(" ")}" data-action="calendar-select" data-date="${key}" aria-label="${escapeHtml(new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "full" }).format(date))}" aria-pressed="${key === selectedDeadlineDate}">${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(date.getDate())}</button>`,
+          button: `<button class="${classes.join(" ")}" data-action="calendar-select" data-date="${key}" aria-label="${escapeHtml(new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(date))}" aria-pressed="${key === selectedDeadlineDate}">${new Intl.NumberFormat(locale).format(date.getDate())}</button>`,
         };
       });
 
@@ -3976,24 +5044,13 @@
         .join("");
       return `<div class="calendar-week"><div class="calendar-week-days">${dayDates.map((item) => item.button).join("")}</div><div class="calendar-week-bars" style="grid-template-rows:repeat(${Math.max(1, laneEnds.length)},18px)">${bars}</div></div>`;
     }).join("");
-    const monthLabel = new Intl.DateTimeFormat(
-      appLanguage === "ar" ? "ar-EG" : "en",
-      { month: "long", year: "numeric" },
-    ).format(deadlineMonth);
-    const selected = deadlines.filter((deadline) => {
-      const range = deadlineDateRange(deadline);
-      return (
-        selectedDeadlineDate >= range.start && selectedDeadlineDate <= range.end
-      );
-    });
-    const selectedLabel = selectedDeadlineDate
-      ? new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", {
-          dateStyle: "full",
-        }).format(new Date(`${selectedDeadlineDate}T12:00:00`))
-      : t.noDate;
-    return `<div class="calendar-header"><h2 class="calendar-month" id="calendar-month">${escapeHtml(monthLabel)}</h2><div class="calendar-nav"><button class="button button-secondary button-small" data-action="calendar-today">${t.currentMonth}</button><button class="icon-button" data-action="calendar-prev" aria-label="${t.previous}">‹</button><button class="icon-button" data-action="calendar-next" aria-label="${t.next}">›</button></div></div>
+    const monthLabel = new Intl.DateTimeFormat(locale, {
+      month: "long",
+      year: "numeric",
+    }).format(deadlineMonth);
+    return `<div class="calendar-header"><h2 class="calendar-month" id="calendar-month">${escapeHtml(monthLabel)}</h2><div class="calendar-nav">${modeSwitch}<button class="button button-secondary button-small" data-action="calendar-today">${t.currentMonth}</button><button class="icon-button" data-action="calendar-prev" aria-label="${t.previous}">‹</button><button class="icon-button" data-action="calendar-next" aria-label="${t.next}">›</button></div></div>
       <div class="calendar-grid" role="grid" aria-labelledby="calendar-month"><div class="calendar-weekdays">${weekdayLabels}</div>${weeks}</div>
-      <div class="calendar-selection">${panelHeading(escapeHtml(selectedLabel), `${selected.length} ${selected.length === 1 ? t.deadline : t.deadlines}`)}<div class="deadline-list">${selected.map(deadlineCard).join("") || `<div class="empty-state">${t.noDateItems}</div>`}</div></div>`;
+      ${selection}`;
   }
 
   function deadlinesPage() {
@@ -4021,7 +5078,7 @@
       deadlineView === "list"
         ? `<div class="deadline-list-heading"><strong>${t.title}</strong><span>${t.showing} ${activeCount} ${activeCount === 1 ? t.deadline : t.deadlines}</span></div><div class="deadline-list">${list}</div>`
         : calendarView(filtered);
-    return `${pageHeading(t.eyebrow, t.title, t.subtitle, `<button class="button button-primary" data-action="deadline-add"><span class="button-icon">＋</span> ${t.add}</button>`)}
+    return `${pageHeading(t.eyebrow, t.title, t.subtitle, `<button class="button button-primary" data-action="deadline-add"><span class="button-icon">ï¼‹</span> ${t.add}</button>`)}
       ${deadlineStats(deadlines)}
       <section class="panel"><div class="deadline-toolbar-row">${listControls}${viewControls}</div>${deadlinesLoading ? `<div class="deadline-loading"><div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div></div>` : display}</section>
       <p class="data-caption">${session ? t.reminderNote : t.sampleNote}</p>`;
@@ -4280,6 +5337,10 @@
   }
 
   function noteContentHtml(note) {
+    if (isMediaNote(note)) {
+      const desc = escapeHtml(String(note?.description || "")).replace(/\n/g, "<br>");
+      return desc ? `<p>${desc}</p>` : "";
+    }
     const raw = String(note?.content || "");
     if (!raw) return "";
     if (/<[a-z][\s\S]*>/i.test(raw)) return sanitizeRichText(raw);
@@ -4292,6 +5353,11 @@
   }
 
   function notePlainText(note) {
+    if (isMediaNote(note)) {
+      const desc = String(note?.description || "").replace(/\s+/g, " ").trim();
+      const names = noteAttachments(note).map((a) => a?.name || "").filter(Boolean).join(" ");
+      return `${desc} ${names}`.trim();
+    }
     const html = noteContentHtml(note);
     if (!html) return "";
     try {
@@ -4317,7 +5383,11 @@
   }
 
   function notesPage() {
-    const filtered = notes
+    if (notesView === "media") return mediaNotesPage();
+
+    // Main notes view: keep text notes behavior; media notes live in dedicated section.
+    const textNotes = notes.filter((note) => !isMediaNote(note) && noteTypeOf(note) !== "voice");
+    const filtered = textNotes
       .filter((note) => {
         const text =
           `${note.title || ""} ${notePlainText(note)} ${note.subject || subjectName(note.subject_id)}`.toLowerCase();
@@ -4381,26 +5451,436 @@
       "YOUR KNOWLEDGE VAULT",
       appLanguage === "ar" ? "الملاحظات" : "Notes",
       appLanguage === "ar"
-        ? "اكتب، نسّق، وثبّت ما يهمك — مع حفظ تلقائي."
+        ? "اكتب ونسّق وثبّت ما يهمك — مع حفظ تلقائي."
         : "Write, format, and pin what matters — with autosave.",
-      `<div class="notes-heading-actions"><select class="filter-select" id="note-template" aria-label="${appLanguage === "ar" ? "قالب الملاحظة" : "Note template"}">${templateOptions}</select><button class="button button-primary" data-action="note-add">＋ ${appLanguage === "ar" ? "ملاحظة جديدة" : "New note"}</button></div>`,
+      `<div class="notes-heading-actions"><select class="filter-select" id="note-template" aria-label="${appLanguage === "ar" ? "قالب الملاحظة" : "Note template"}">${templateOptions}</select><button class="button button-primary" data-action="note-add">${appLanguage === "ar" ? "ملاحظة جديدة" : "New note"}</button></div>`,
     )}
       <section class="panel notes-toolbar">
-        <label class="search-box"><span>⌕</span><input id="note-search" type="search" dir="auto" value="${escapeHtml(noteSearch)}" placeholder="${appLanguage === "ar" ? "ابحث في الملاحظات" : "Search notes"}" aria-label="${appLanguage === "ar" ? "ابحث في الملاحظات" : "Search notes"}"></label>
+        <label class="search-box"><span aria-hidden="true">🔎</span><input id="note-search" type="search" dir="auto" value="${escapeHtml(noteSearch)}" placeholder="${appLanguage === "ar" ? "ابحث في الملاحظات النصية" : "Search text notes"}" aria-label="${appLanguage === "ar" ? "ابحث في الملاحظات" : "Search notes"}"></label>
         <select class="filter-select" id="note-subject-filter" aria-label="${appLanguage === "ar" ? "تصفية حسب المادة" : "Filter by subject"}">${subjectOptions}</select>
         <select class="filter-select" id="note-sort" aria-label="${appLanguage === "ar" ? "ترتيب الملاحظات" : "Sort notes"}">
           <option value="updated" ${noteSort === "updated" ? "selected" : ""}>${appLanguage === "ar" ? "الأحدث تحديثًا" : "Recently updated"}</option>
           <option value="created" ${noteSort === "created" ? "selected" : ""}>${appLanguage === "ar" ? "الأحدث إنشاءً" : "Recently created"}</option>
           <option value="title" ${noteSort === "title" ? "selected" : ""}>${appLanguage === "ar" ? "الاسم" : "Title A–Z"}</option>
         </select>
-        <span class="notes-count">${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(filtered.length)} ${appLanguage === "ar" ? "ملاحظة" : filtered.length === 1 ? "note" : "notes"}</span>
+        <span class="notes-count">${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(filtered.length)} ${appLanguage === "ar" ? "ملاحظة نصية" : (filtered.length === 1 ? "text note" : "text notes")}</span>
       </section>
       ${body}
-      <p class="data-caption">${
-        session
-          ? "Notes are private to your account. Formatting is stored as sanitized rich text."
-          : "Notes are saved in this browser in preview mode. Sign in to sync them across devices."
-      }${notesColorSupported ? "" : " Colors become available after applying the notes migration."}</p>`;
+      <p class="data-caption">${session
+        ? (appLanguage === "ar" ? "الملاحظات النصية خاصة بحسابك. ملاحظات الوسائط في قسمها المستقل." : "Text notes are private to your account. Media notes live in their dedicated section.")
+        : (appLanguage === "ar" ? "الملاحظات محفوظة محليًا في وضع المعاينة. سجّل الدخول للمزامنة." : "Notes are saved locally in preview mode. Sign in to sync across devices.")}</p>`;
+  }
+
+  function mediaTypeLabel(kind) {
+    const ar = appLanguage === "ar";
+    if (kind === "video") return ar ? "فيديو" : "Video";
+    return ar ? "صورة" : "Image";
+  }
+
+  function formatBytesShort(bytes) {
+    const n = Number(bytes) || 0;
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  async function readFileAsAttachment(file, kind) {
+    const id = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `media-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+    const blob = file.slice(0, file.size, file.type || (kind === "video" ? "video/mp4" : "image/jpeg"));
+    await saveMediaBlob(id, blob, { name: file.name || "", type: file.type || blob.type || "", size: file.size || blob.size || 0, kind });
+    const att = {
+      id,
+      kind,
+      name: String(file.name || `${kind}-${id}`),
+      mime: String(file.type || blob.type || ""),
+      size: Number(file.size || blob.size || 0),
+      duration: 0,
+      width: 0,
+      height: 0,
+      createdAt: new Date().toISOString(),
+      localKey: id,
+      storagePath: "",
+      bucket: "note-media",
+    };
+    if (kind === "video") {
+      try {
+        att.duration = await getVideoDuration(blob);
+      } catch {}
+    }
+    return att;
+  }
+
+  function getVideoDuration(blob) {
+    return new Promise((resolve) => {
+      try {
+        const url = URL.createObjectURL(blob);
+        const video = document.createElement("video");
+        video.preload = "metadata";
+        video.onloadedmetadata = () => {
+          const d = Number(video.duration) || 0;
+          try { URL.revokeObjectURL(url); } catch {}
+          resolve(Number.isFinite(d) ? d : 0);
+        };
+        video.onerror = () => { try { URL.revokeObjectURL(url); } catch {}; resolve(0); };
+        video.src = url;
+      } catch { resolve(0); }
+    });
+  }
+
+  function formatDurationShort(sec) {
+    const s = Math.max(0, Math.floor(Number(sec) || 0));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
+  }
+
+  function mediaAttachmentThumbMarkup(att) {
+    const ar = appLanguage === "ar";
+    if (att.kind === "video") {
+      return `<div class="media-thumb media-thumb-video" data-media-key="${escapeHtml(att.localKey || att.id)}">
+        <div class="media-thumb-placeholder">🎬</div>
+        <span class="media-thumb-badge">${escapeHtml(formatDurationShort(att.duration))}</span>
+      </div>`;
+    }
+    return `<div class="media-thumb media-thumb-image" data-media-key="${escapeHtml(att.localKey || att.id)}">
+      <div class="media-thumb-placeholder">🖼️</div>
+    </div>`;
+  }
+
+  async function hydrateMediaThumbs(root = document) {
+    const els = root.querySelectorAll('.media-thumb[data-media-key]');
+    for (const el of els) {
+      const key = el.getAttribute('data-media-key');
+      if (!key || el.dataset.hydrated === '1') continue;
+      try {
+        const rec = await getMediaBlob(key);
+        if (!rec?.blob) continue;
+        const url = await getMediaObjectUrl(key);
+        if (!url) continue;
+        if (el.classList.contains('media-thumb-image')) {
+          el.innerHTML = `<img src="${url}" alt="" loading="lazy" />`;
+        } else if (el.classList.contains('media-thumb-video')) {
+          // use video element for thumbnail frame
+          el.innerHTML = `<video muted playsinline preload="metadata" src="${url}#t=0.1"></video><span class="media-thumb-badge">${escapeHtml(el.querySelector('.media-thumb-badge')?.textContent || '')}</span>`;
+        }
+        el.dataset.hydrated = '1';
+      } catch {
+        /* keep placeholder */
+      }
+    }
+  }
+
+  function mediaNotesPage() {
+    const ar = appLanguage === "ar";
+    const mediaNotes = notes.filter((n) => isMediaNote(n));
+    const filtered = mediaNotes.filter((n) => {
+      const type = noteTypeOf(n);
+      if (mediaFilter === "image" && type !== "image") return false;
+      if (mediaFilter === "video" && type !== "video") return false;
+      if (noteSearch) {
+        const text = `${n.title || ""} ${n.description || ""} ${noteAttachments(n).map(a=>a.name||"").join(" ")}`.toLowerCase();
+        if (!text.includes(noteSearch.toLowerCase())) return false;
+      }
+      return true;
+    }).sort((a,b)=> new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0));
+
+    const tabs = `
+      <div class="notes-media-tabs" role="tablist" aria-label="${ar ? "تصفية الوسائط" : "Media filters"}">
+        <button type="button" class="notes-media-tab ${mediaFilter==='all'?'active':''}" data-action="note-media-filter" data-filter="all">${ar?"الكل":"All"}</button>
+        <button type="button" class="notes-media-tab ${mediaFilter==='image'?'active':''}" data-action="note-media-filter" data-filter="image">${ar?"صور":"Images"}</button>
+        <button type="button" class="notes-media-tab ${mediaFilter==='video'?'active':''}" data-action="note-media-filter" data-filter="video">${ar?"فيديو":"Videos"}</button>
+      </div>`;
+
+    const cards = filtered.map((note) => {
+      const atts = noteAttachments(note);
+      const first = atts[0];
+      const kind = noteTypeOf(note);
+      const thumb = first ? mediaAttachmentThumbMarkup(first) : `<div class="media-thumb"><div class="media-thumb-placeholder">${kind==='video'?'🎬':'🖼️'}</div></div>`;
+      const count = atts.length;
+      const meta = `${count} ${ar ? (count===1?'ملف':'ملفات') : (count===1?'file':'files')}${first?.kind==='video' && first.duration ? ` · ${formatDurationShort(first.duration)}` : ''}`;
+      const updated = note.updated_at ? new Intl.DateTimeFormat(ar ? 'ar-EG':'en', {dateStyle:'medium'}).format(new Date(note.updated_at)) : '';
+      return `<article class="note-card media-note-card" data-note-id="${escapeHtml(note.id)}">
+        <button class="note-card-main" data-action="note-open" data-id="${escapeHtml(note.id)}" aria-label="${escapeHtml(ar?`فتح ${note.title||'ملاحظة وسائط'}`:`Open ${note.title||'media note'}`)}">
+          ${thumb}
+          <span class="note-card-subject">${escapeHtml(mediaTypeLabel(kind))}</span>
+          <h3 dir="auto">${escapeHtml(note.title || (ar ? 'ملاحظة وسائط' : 'Media note'))}</h3>
+          <p class="note-card-preview" dir="auto">${escapeHtml(String(note.description||'').slice(0,120) || meta)}</p>
+          <span class="note-card-date">${escapeHtml(updated || meta)}</span>
+        </button>
+        <div class="note-card-actions">
+          <button class="task-icon" data-action="note-edit" data-id="${escapeHtml(note.id)}" aria-label="${ar?'تعديل':'Edit'}">✎</button>
+          <button class="task-icon danger" data-action="note-delete" data-id="${escapeHtml(note.id)}" aria-label="${ar?'حذف':'Delete'}">✕</button>
+        </div>
+      </article>`;
+    }).join('');
+
+    const body = filtered.length
+      ? `<div class="grid notes-grid media-notes-grid" id="media-notes-grid">${cards}</div>`
+      : `<div class="empty-state notes-empty"><strong>${ar?'لا توجد ملاحظات وسائط':'No media notes yet'}</strong><span>${ar?'أضف صورًا أو فيديوهات من جهازك واحفظها كملاحظة.':'Add photos or videos from your device and save them as a note.'}</span><button class="button button-primary button-small" data-action="note-media-add">${ar?'إضافة وسائط':'Add media'}</button></div>`;
+
+    const html = `${pageHeading(
+      "MEDIA NOTES",
+      ar ? "ملاحظات الوسائط" : "Media Notes",
+      ar ? "احفظ ونظّم صورك وفيديوهاتك في قسم مستقل." : "Save and organize your photos and videos in a dedicated section.",
+      `<div class="notes-heading-actions"><button class="button button-secondary" data-action="note-media-back">${ar?"رجوع":"Back"}</button><button class="button button-primary" data-action="note-media-add">${ar?"إضافة وسائط":"Add media"}</button></div>`
+    )}
+      <section class="panel notes-toolbar notes-media-toolbar">
+        ${tabs}
+        <label class="search-box"><span aria-hidden="true">🔎</span><input id="note-search" type="search" dir="auto" value="${escapeHtml(noteSearch)}" placeholder="${ar ? "ابحث في الوسائط" : "Search media"}" aria-label="${ar ? "ابحث في الوسائط" : "Search media"}"></label>
+        <span class="notes-count">${new Intl.NumberFormat(ar?'ar-EG':'en').format(filtered.length)} ${ar ? 'عنصر' : (filtered.length===1?'item':'items')}</span>
+      </section>
+      ${body}
+      <div id="media-note-modal-host"></div>`;
+
+    // hydrate thumbnails after paint
+    setTimeout(()=>{ void hydrateMediaThumbs(document.getElementById('media-notes-grid') || document); }, 0);
+    return html;
+  }
+
+﻿  function ensureMediaEditorDraft(kind = "image") {
+    if (!mediaEditorDraft) {
+      mediaEditorDraft = { id: null, title: "", description: "", attachments: [], mode: kind === "video" ? "video" : "image" };
+    }
+    return mediaEditorDraft;
+  }
+
+  function renderMediaEditorModal() {
+    const host = document.getElementById("media-note-modal-host") || (() => {
+      const h = document.createElement("div");
+      h.id = "media-note-modal-host";
+      document.body.appendChild(h);
+      return h;
+    })();
+    const d = ensureMediaEditorDraft("image");
+    const ar = appLanguage === "ar";
+    const previewItems = (d.attachments || []).map((att, idx) => {
+      const isVideo = att.kind === "video";
+      const key = att.localKey || att.id || "";
+      const url = att.previewUrl || "";
+      const thumb = url
+        ? (isVideo ? `<video muted playsinline preload="metadata" src="${url}#t=0.1"></video>` : `<img src="${url}" alt="" />`)
+        : `<div class="media-thumb-placeholder">${isVideo ? "🎬" : "🖼️"}</div>`;
+      const meta = `${escapeHtml(att.name || mediaTypeLabel(att.kind))}${att.size ? ` · ${escapeHtml(formatBytesShort(att.size))}` : ""}${isVideo && att.duration ? ` · ${escapeHtml(formatDurationShort(att.duration))}` : ""}`;
+      return `<div class="media-editor-item" data-idx="${idx}">
+        <div class="media-editor-thumb ${isVideo ? "is-video":"is-image"}" data-media-key="${escapeHtml(key)}">${thumb}</div>
+        <div class="media-editor-item-meta" dir="auto">${meta}</div>
+        <div class="media-editor-item-actions">
+          <button type="button" class="button button-small" data-action="media-editor-replace" data-idx="${idx}">${ar?"استبدال":"Replace"}</button>
+          <button type="button" class="button button-small button-secondary" data-action="media-editor-remove" data-idx="${idx}">${ar?"إزالة":"Remove"}</button>
+        </div>
+      </div>`;
+    }).join("");
+
+    host.innerHTML = `<div class="modal-backdrop media-editor-backdrop" id="media-editor-modal">
+      <section class="modal media-editor-modal" role="dialog" aria-modal="true" aria-labelledby="media-editor-title">
+        <header class="note-editor-head">
+          <div class="note-editor-title-wrap">
+            <p class="eyebrow">${ar ? "ملاحظة وسائط" : "MEDIA NOTE"}</p>
+            <h2 id="media-editor-title">${ar ? "إضافة وسائط" : "Add media"}</h2>
+          </div>
+          <button class="modal-close" type="button" data-action="media-editor-close" aria-label="${ar ? "إغلاق" : "Close"}">×</button>
+        </header>
+        <div class="media-editor-body">
+          <div class="media-editor-type-row">
+            <button type="button" class="button ${d.mode==='image'?'button-primary':'button-secondary'}" data-action="media-editor-pick-images">${ar ? "إضافة صور من المعرض" : "Add Images from Gallery"}</button>
+            <button type="button" class="button ${d.mode==='video'?'button-primary':'button-secondary'}" data-action="media-editor-pick-videos">${ar ? "إضافة فيديو من المعرض" : "Add Videos from Gallery"}</button>
+          </div>
+          <label class="field"><span>${ar ? "العنوان" : "Title"}</span><input id="media-editor-title-input" type="text" dir="auto" maxlength="180" value="${escapeHtml(d.title || "")}" placeholder="${ar ? "عنوان الملاحظة" : "Note title"}" /></label>
+          <label class="field"><span>${ar ? "الوصف (اختياري)" : "Description (optional)"}</span><textarea id="media-editor-desc-input" dir="auto" rows="3" placeholder="${ar ? "أضف وصفًا..." : "Add a description..."}">${escapeHtml(d.description || "")}</textarea></label>
+          <div class="media-editor-preview">
+            <div class="media-editor-preview-head"><strong>${ar ? "المعاينة قبل الحفظ" : "Preview before saving"}</strong><span class="muted">${(d.attachments||[]).length} ${ar?"ملف":"file(s)"}</span></div>
+            <div class="media-editor-grid">${previewItems || `<p class="muted">${ar ? "لم يتم اختيار وسائط بعد. اختر صورًا أو فيديو من المعرض." : "No media selected yet. Choose images or videos from your gallery."}</p>`}</div>
+          </div>
+          <p id="media-editor-error" class="auth-error" aria-live="polite"></p>
+          <p id="media-editor-status" class="muted" aria-live="polite"></p>
+        </div>
+        <footer class="modal-actions">
+          <button type="button" class="button button-secondary" data-action="media-editor-close">${ar ? "إلغاء" : "Cancel"}</button>
+          <button type="button" class="button button-primary" data-action="media-editor-save">${ar ? "حفظ الملاحظة" : "Save note"}</button>
+        </footer>
+      </section>
+    </div>`;
+  }
+
+  function syncMediaDraftFromInputs() {
+    if (!mediaEditorDraft) return;
+    mediaEditorDraft.title = document.getElementById("media-editor-title-input")?.value || mediaEditorDraft.title || "";
+    mediaEditorDraft.description = document.getElementById("media-editor-desc-input")?.value || mediaEditorDraft.description || "";
+  }
+
+  function closeMediaEditor() {
+    if (mediaEditorDraft?.attachments) {
+      for (const att of mediaEditorDraft.attachments) {
+        if (att.previewUrl) { try { URL.revokeObjectURL(att.previewUrl); } catch {} }
+      }
+    }
+    mediaEditorDraft = null;
+    const host = document.getElementById("media-note-modal-host");
+    if (host) host.innerHTML = "";
+  }
+
+  async function openMediaNotePicker() {
+    ensureMediaEditorDraft("image");
+    renderMediaEditorModal();
+  }
+
+  function validateMediaFile(file, kind) {
+    const ar = appLanguage === "ar";
+    const type = String(file?.type || "");
+    if (kind === "image" && !type.startsWith("image/")) return ar ? "يرجى اختيار ملفات صور فقط." : "Please select image files only.";
+    if (kind === "video" && !type.startsWith("video/")) return ar ? "يرجى اختيار ملفات فيديو فقط." : "Please select video files only.";
+    const max = kind === "video" ? 200 * 1024 * 1024 : 25 * 1024 * 1024;
+    if ((file.size || 0) > max) {
+      return ar
+        ? `الملف كبير جدًا (${formatBytesShort(file.size)}). الحد التقريبي ${kind === "video" ? "200MB" : "25MB"}.`
+        : `File is too large (${formatBytesShort(file.size)}). Approximate limit is ${kind === "video" ? "200MB" : "25MB"}.`;
+    }
+    return "";
+  }
+
+  async function addFilesToMediaDraft(files, kind, replaceIdx = null) {
+    const d = ensureMediaEditorDraft(kind);
+    d.mode = kind;
+    syncMediaDraftFromInputs();
+    const list = Array.from(files || []);
+    if (!list.length) return;
+    const errors = [];
+    for (const file of list) {
+      const err = validateMediaFile(file, kind);
+      if (err) { errors.push(`${file.name || "file"}: ${err}`); continue; }
+      const att = await readFileAsAttachment(file, kind);
+      try { att.previewUrl = URL.createObjectURL(file); } catch { att.previewUrl = ""; }
+      if (replaceIdx != null && d.attachments[replaceIdx]) {
+        const old = d.attachments[replaceIdx];
+        if (old.previewUrl) try { URL.revokeObjectURL(old.previewUrl); } catch {}
+        if (old.localKey && old.localKey !== att.localKey) { try { await deleteMediaBlob(old.localKey); } catch {} }
+        d.attachments[replaceIdx] = att;
+        replaceIdx = null;
+      } else {
+        d.attachments.push(att);
+      }
+    }
+    renderMediaEditorModal();
+    const errEl = document.getElementById("media-editor-error");
+    if (errEl) errEl.textContent = errors.join(" ");
+  }
+
+  function triggerMediaFilePicker(kind, replaceIdx = null) {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = kind === "video" ? "video/*" : "image/*";
+    input.multiple = replaceIdx == null;
+    input.style.display = "none";
+    document.body.appendChild(input);
+    input.addEventListener("change", async () => {
+      try { await addFilesToMediaDraft(input.files || [], kind, replaceIdx); }
+      finally { input.remove(); }
+    }, { once: true });
+    input.click();
+  }
+
+  async function saveMediaNoteRecord({ id = null, title, description = "", attachments = [], type = "image", existingCreatedAt = null }) {
+    const now = new Date().toISOString();
+    const noteId = id || `local-note-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
+    const safeAttachments = (Array.isArray(attachments) ? attachments : []).map((a) => {
+      const copy = { ...a };
+      delete copy.previewUrl;
+      return copy;
+    });
+    const note = normalizeNoteRecord({
+      id: noteId,
+      title: String(title || (appLanguage === "ar" ? "ملاحظة وسائط" : "Media note")).trim(),
+      description: String(description || ""),
+      type: type === "video" ? "video" : "image",
+      attachments: safeAttachments,
+      subject_id: null,
+      subject: "",
+      is_favorite: false,
+      color: "",
+      created_at: existingCreatedAt || now,
+      updated_at: now,
+    });
+    note.content = serializeMediaNoteContent(note);
+
+    if (supabase && session) {
+      try {
+        const syncedAttachments = [];
+        for (let i = 0; i < note.attachments.length; i++) {
+          const att = note.attachments[i];
+          let storagePath = att.storagePath || "";
+          if (!storagePath && att.localKey) {
+            const rec = await getMediaBlob(att.localKey);
+            if (rec?.blob) {
+              const safeName = String(att.name || att.localKey).replace(/[^a-zA-Z0-9._-]+/g, "_");
+              storagePath = `${session.user.id}/${note.id}/${att.localKey}-${safeName}`;
+              const statusEl = document.getElementById("media-editor-status");
+              if (statusEl) statusEl.textContent = appLanguage === "ar" ? `جارٍ رفع الملف ${i + 1} من ${note.attachments.length}...` : `Uploading ${i + 1} of ${note.attachments.length}...`;
+              const up = await supabase.storage.from("note-media").upload(storagePath, rec.blob, {
+                upsert: true,
+                contentType: att.mime || rec.type || undefined,
+              });
+              if (up.error) throw up.error;
+            }
+          }
+          syncedAttachments.push({ ...att, storagePath, bucket: "note-media" });
+        }
+        note.attachments = syncedAttachments;
+        note.content = serializeMediaNoteContent(note);
+        const payload = { title: note.title, content: note.content, subject_id: null, is_favorite: false };
+        const isLocal = String(note.id).startsWith("local-");
+        let result;
+        if (!isLocal) {
+          result = await supabase.from("notes").update(payload).eq("id", note.id).select("id,title,content,subject_id,is_favorite,created_at,updated_at").single();
+        } else {
+          result = await supabase.from("notes").insert(payload).select("id,title,content,subject_id,is_favorite,created_at,updated_at").single();
+        }
+        if (result.error) throw result.error;
+        const saved = normalizeNoteRecord({ ...result.data, subject: "" });
+        const idx = notes.findIndex((n) => String(n.id) === String(saved.id) || String(n.id) === String(note.id));
+        if (idx >= 0) notes[idx] = saved; else notes.unshift(saved);
+        render();
+        return;
+      } catch (e) {
+        console.warn("Media note remote sync failed, saving locally.", e);
+      }
+    }
+
+    const idx = notes.findIndex((n) => String(n.id) === String(note.id));
+    if (idx >= 0) notes[idx] = note; else notes.unshift(note);
+    saveLocalNotes();
+    render();
+  }
+
+  async function openMediaNoteViewer(noteId) {
+    const note = notes.find((n) => String(n.id) === String(noteId));
+    if (!note) return;
+    const ar = appLanguage === 'ar';
+    const atts = noteAttachments(note);
+    if (!atts.length) { showToast(ar ? 'لا توجد وسائط.' : 'No media.'); return; }
+    const att = atts[0];
+    try {
+      let url = '';
+      if (att.localKey) url = await getMediaObjectUrl(att.localKey);
+      if (!url && supabase && att.storagePath) {
+        const signed = await supabase.storage.from(att.bucket || 'note-media').createSignedUrl(att.storagePath, 3600);
+        if (!signed.error) url = signed.data?.signedUrl || '';
+      }
+      if (!url) { showToast(ar ? 'تعذر فتح الوسائط (غير متاحة محليًا/أونلاين).' : 'Could not open media (not available locally/online).'); return; }
+      const modal = document.createElement('div');
+      modal.className = 'modal-backdrop media-viewer-backdrop';
+      modal.innerHTML = `<div class="modal media-viewer-modal" role="dialog" aria-modal="true">
+        <div class="media-viewer-head"><h3 dir="auto">${escapeHtml(note.title || (ar?'ملاحظة وسائط':'Media note'))}</h3><button type="button" class="modal-close" data-action="close-media-viewer" aria-label="${ar?'إغلاق':'Close'}">×</button></div>
+        <div class="media-viewer-body">${att.kind === 'video' ? `<video controls playsinline src="${url}" class="media-viewer-video"></video>` : `<img src="${url}" alt="" class="media-viewer-image" />`}</div>
+        ${note.description ? `<p class="media-viewer-desc" dir="auto">${escapeHtml(note.description)}</p>` : ''}
+      </div>`;
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal || e.target.closest('[data-action="close-media-viewer"]')) modal.remove();
+      });
+      document.body.appendChild(modal);
+    } catch (e) {
+      console.error('Media viewer failed', e);
+      showToast(ar ? 'تعذر فتح الوسائط.' : 'Could not open media.');
+    }
   }
 
   function noteBodyForHtml(html) {
@@ -4907,12 +6387,20 @@
     )
       return;
     try {
+      if (isMediaNote(note)) {
+        for (const att of noteAttachments(note)) {
+          if (att?.localKey) await deleteMediaBlob(att.localKey);
+          if (supabase && session && att?.storagePath) {
+            try { await supabase.storage.from(att.bucket || 'note-media').remove([att.storagePath]); } catch {}
+          }
+        }
+      }
       if (supabase && session && !String(id).startsWith("local-")) {
         const { error } = await supabase.from("notes").delete().eq("id", id);
         if (error) throw error;
       }
       notes = notes.filter((item) => String(item.id) !== String(id));
-      if (!supabase || !session) saveLocalNotes();
+      if (!supabase || !session || String(id).startsWith("local-")) saveLocalNotes();
       if (closeEditor) {
         const modal = document.getElementById("note-modal");
         if (modal) closeModal(modal);
@@ -5148,7 +6636,10 @@
       fields = `${featureField("obtained_marks", "result", "number", currentResult?.obtained_marks ?? record.obtained_marks, `min="0" max="${Number(record.max_marks)}" step="0.01" required`)}${featureField("notes", "notes", "textarea", currentResult?.notes, 'rows="3" maxlength="2000"')}`;
     } else if (type === "profile") {
       const profile = record || {};
-      fields = `${featureField("display_name", "displayName", "text", profile.display_name || session.user.user_metadata?.full_name || "", 'required maxlength="100"')}${featureField("timezone", "timezone", "text", profile.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone, 'required maxlength="80"')}<label>${featureText("language")}<select name="language"><option value="en" ${profile.language === "en" ? "selected" : ""}>English</option><option value="ar" ${profile.language === "ar" ? "selected" : ""}>العربية</option></select></label><label>${translateUiText("Choose a profile photo from your device")}<input type="file" name="avatar_file" accept="image/png,image/jpeg,image/webp"></label><small>${translateUiText("PNG, JPEG, or WebP · up to 2 MB")}</small>`;
+      const currentAvatarPreview = accountProfile?.avatar_display_url
+        ? `<img src="${escapeHtml(accountProfile.avatar_display_url)}" alt="" style="width:72px;height:72px;border-radius:50%;object-fit:cover;display:block;" />`
+        : `<span style="width:72px;height:72px;border-radius:50%;display:grid;place-items:center;background:var(--surface-2,#2a3344);font-weight:700;">${escapeHtml(initials(profile.display_name || session.user.user_metadata?.full_name || session.user?.email || "U"))}</span>`;
+      fields = `${featureField("display_name", "displayName", "text", profile.display_name || session.user.user_metadata?.full_name || "", 'required maxlength="100"')}${featureField("timezone", "timezone", "text", profile.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone, 'required maxlength="80"')}<label>${featureText("language")}<select name="language"><option value="en" ${profile.language === "en" ? "selected" : ""}>English</option><option value="ar" ${profile.language === "ar" ? "selected" : ""}>العربية</option></select></label><div style="display:flex;align-items:center;gap:12px;margin:8px 0;"><div id="profile-avatar-preview" style="width:72px;height:72px;">${currentAvatarPreview}</div><div style="display:grid;gap:6px;"><label style="margin:0;">${translateUiText("Choose a profile photo from your device")}<input type="file" name="avatar_file" id="profile-avatar-file" accept="image/png,image/jpeg,image/webp"></label><small>${translateUiText("PNG, JPEG, or WebP · up to 2 MB")}</small></div></div>`;
     } else {
       return;
     }
@@ -5381,6 +6872,12 @@
           avatarCleanupMessage = ` Previous photo cleanup failed: ${cleanupError.message}`;
         }
       }
+      if (accountProfile) {
+        accountProfile.avatar_display_url = await resolveProfileAvatarUrl(
+          accountProfile.avatar_url,
+          session.user.id,
+        );
+      }
       await loadAccountWorkspace();
       closeModal(document.getElementById("feature-modal"));
       render();
@@ -5474,6 +6971,7 @@
       throw new Error(translateUiText("PNG, JPEG, or WebP · up to 2 MB"));
     }
     const storagePath = `${session.user.id}/avatars/${focusId()}.${extension}`;
+    try { await cacheAvatarBlob(session.user.id, storagePath, file); } catch {}
     const { error } = await supabase.storage
       .from("studyflow-files")
       .upload(storagePath, file, {
@@ -6195,10 +7693,59 @@
       dailyData.push({ date: day, key, seconds, completed, total });
     }
 
-    const maxSeconds = Math.max(3600, ...dailyData.map((d) => d.seconds));
-    const bars = dailyData
+    // Keep long ranges readable: aggregate to weeks/months instead of wrapping
+    // hundreds of daily bars into a very tall grid.
+    let chartData = dailyData;
+    let chartTitle = appLanguage === "ar" ? "ساعات الدراسة اليومية" : "Daily study hours";
+    let chartLabelMode = "day";
+    if (dayCount > 120) {
+      const byMonth = new Map();
+      dailyData.forEach((item) => {
+        const monthKey = `${item.date.getFullYear()}-${item.date.getMonth()}`;
+        const bucket =
+          byMonth.get(monthKey) ||
+          {
+            date: new Date(item.date.getFullYear(), item.date.getMonth(), 1),
+            key: monthKey,
+            seconds: 0,
+            completed: 0,
+            total: 0,
+          };
+        bucket.seconds += item.seconds;
+        bucket.completed += item.completed;
+        bucket.total += item.total;
+        byMonth.set(monthKey, bucket);
+      });
+      chartData = [...byMonth.values()];
+      chartTitle = appLanguage === "ar" ? "ساعات الدراسة الشهرية" : "Monthly study hours";
+      chartLabelMode = "month";
+    } else if (dayCount > 31) {
+      chartData = [];
+      for (let index = 0; index < dailyData.length; index += 7) {
+        const slice = dailyData.slice(index, index + 7);
+        if (!slice.length) continue;
+        chartData.push({
+          date: slice[0].date,
+          key: slice[0].key,
+          seconds: slice.reduce((sum, item) => sum + item.seconds, 0),
+          completed: slice.reduce((sum, item) => sum + item.completed, 0),
+          total: slice.reduce((sum, item) => sum + item.total, 0),
+        });
+      }
+      chartTitle = appLanguage === "ar" ? "ساعات الدراسة الأسبوعية" : "Weekly study hours";
+      chartLabelMode = "week";
+    }
+    const maxSeconds = Math.max(3600, ...chartData.map((d) => d.seconds));
+    const bars = chartData
       .map((d) => {
-        const label = new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { weekday: "short" }).format(d.date);
+        const label = new Intl.DateTimeFormat(
+          appLanguage === "ar" ? "ar-EG" : "en",
+          chartLabelMode === "day"
+            ? { weekday: "short" }
+            : chartLabelMode === "week"
+              ? { month: "short", day: "numeric" }
+              : { month: "short" },
+        ).format(d.date);
         const height = d.seconds ? Math.max(4, (d.seconds / maxSeconds) * 100) : 0;
         return `<div class="focus-chart-day" title="${escapeHtml(label)}: ${escapeHtml(formatFocusHours(d.seconds, focusText[appLanguage]))}"><div class="focus-chart-track"><span style="height:${height}%"></span></div><small>${escapeHtml(label)}</small></div>`;
       })
@@ -6269,7 +7816,101 @@
       : 0;
     const analyticsChangePct = analyticsPreviousValue > 0 ? ((analyticsValues[analyticsValues.length - 1] - analyticsPreviousValue) / analyticsPreviousValue) * 100 : 0;
 
-    return `${pageHeading("YOUR STUDY PATTERNS", "Analytics", "Understand your study habits without losing sight of the bigger picture.", `<div class="analytics-controls"><label>${appLanguage === "ar" ? "النطاق الزمني" : "Time range"}<select id="analytics-range">${rangeOptions}</select></label>${weekStartUI}${customRangeUI}<label>${appLanguage === "ar" ? "المؤشر" : "Metric"}<select id="analytics-metric" data-sz-control>${analyticsMetricOptions}</select></label><button class="button button-secondary button-small" data-action="analytics-export">${appLanguage === "ar" ? "تصدير" : "Export"}</button></div>`)}
+    // ---- GitHub-style annual activity contributions ----
+    const heatmapYear = heatmapActiveYear();
+    const heatmap = heatmapGridData(heatmapYear);
+    const heatmapTypeOptions = heatmapActivityTypes
+      .map(
+        (item) =>
+          `<option value="${item.id}" ${analyticsHeatmapType === item.id ? "selected" : ""}>${escapeHtml(appLanguage === "ar" ? item.labelAr : item.labelEn)}</option>`,
+      )
+      .join("");
+    const heatmapYearOptions = heatmapAvailableYears()
+      .map((year) => {
+        const currentYear = new Date().getFullYear();
+        const suffix =
+          year === currentYear
+            ? appLanguage === "ar"
+              ? " (الحالي)"
+              : " (current)"
+            : year === currentYear - 1
+              ? appLanguage === "ar"
+                ? " (السابق)"
+                : " (previous)"
+              : "";
+        return `<option value="${year}" ${heatmapYear === year ? "selected" : ""}>${year}${suffix}</option>`;
+      })
+      .join("");
+    const heatmapTodayKey = dateKey(new Date());
+    const heatmapCells = heatmap.cells
+      .map((cell) => {
+        if (!cell.inYear)
+          return `<span class="sz-hm-cell is-outside" aria-hidden="true"></span>`;
+        const level = heatmapLevel(analyticsHeatmapType, cell.day);
+        const selected = heatmap.selectedKey === cell.key;
+        const future = cell.key > heatmapTodayKey;
+        const tip = heatmapTooltipParts(analyticsHeatmapType, cell.day).join("|");
+        return `<button type="button" class="sz-hm-cell level-${level} ${selected ? "is-selected" : ""} ${future ? "is-future" : ""}" data-heatmap-cell data-action="heatmap-day" data-date="${cell.key}" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(`${heatmapDateLabel(cell.date)}: ${heatmapTypeLabel(analyticsHeatmapType)}, ${heatmapValue(analyticsHeatmapType, cell.day) ? heatmapFormattedValue(analyticsHeatmapType, heatmapValue(analyticsHeatmapType, cell.day)) : appLanguage === "ar" ? "لا يوجد نشاط" : "No activity"}`)}" aria-pressed="${selected}" ${future ? `disabled aria-disabled="true"` : ""}></button>`;
+      })
+      .join("");
+    const heatmapMonthLabels = heatmap.monthLabels
+      .map(
+        (month) =>
+          `<span style="grid-column:${month.weekIndex + 1} / span ${month.span}">${escapeHtml(month.label)}</span>`,
+      )
+      .join("");
+    const heatmapWeekdays = deadlineText[appLanguage].daysShort
+      .map((day) => `<span>${escapeHtml(day)}</span>`)
+      .join("");
+    const heatmapTotalText = heatmapFormattedValue(
+      analyticsHeatmapType,
+      heatmap.total,
+    );
+    const heatmapAverageText = heatmapFormattedValue(
+      analyticsHeatmapType,
+      analyticsHeatmapType === "studyTime"
+        ? heatmap.average
+        : Math.round(heatmap.average * 10) / 10,
+    );
+    const heatmapMostActiveText = heatmap.mostActive
+      ? `${new Intl.DateTimeFormat(focusLocale(), { month: "short", day: "numeric" }).format(heatmap.mostActive.day.date)} · ${heatmapFormattedValue(analyticsHeatmapType, heatmap.mostActive.value)}`
+      : "—";
+    const heatmapSelectedDay = heatmap.selectedKey
+      ? heatmap.map.get(heatmap.selectedKey)
+      : null;
+    const heatmapPanel = `<section class="panel section-spacer sz-heatmap-panel" data-heatmap-panel>
+      <div class="sz-hm-head">
+        <div>
+          <p class="eyebrow">${appLanguage === "ar" ? "سجل النشاط" : "ACTIVITY LOG"}</p>
+          <h2>${appLanguage === "ar" ? "مساهمات النشاط" : "Activity Contributions"}</h2>
+          <p>${appLanguage === "ar" ? "كل يوم من أيام السنة يحكي قصة. مرّر أو اضغط على أي مربع لعرض التفاصيل." : "Every day of the year tells a story. Hover or tap any square for details."}</p>
+        </div>
+        <span class="sz-hm-year">${heatmapYear}</span>
+      </div>
+      <div class="sz-hm-summary">
+        <div><span>${appLanguage === "ar" ? "إجمالي النشاط" : "Total activity"}</span><strong>${escapeHtml(heatmapTotalText)}</strong></div>
+        <div><span>${appLanguage === "ar" ? "المتوسط اليومي" : "Daily average"}</span><strong>${escapeHtml(heatmapAverageText)}</strong></div>
+        <div><span>${appLanguage === "ar" ? "أكثر يوم نشاطًا" : "Most active day"}</span><strong>${escapeHtml(heatmapMostActiveText)}</strong></div>
+        <div><span>${appLanguage === "ar" ? "أيام نشطة" : "Active days"}</span><strong>${new Intl.NumberFormat(focusLocale()).format(heatmap.activeDays)}</strong></div>
+        <div><span>${appLanguage === "ar" ? "أطول سلسلة" : "Longest streak"}</span><strong>${new Intl.NumberFormat(focusLocale()).format(heatmap.longestStreak)} ${appLanguage === "ar" ? "يوم" : "days"}</strong></div>
+      </div>
+      <div class="sz-hm-scroll">
+        <div class="sz-hm-canvas" style="--hm-weeks:${heatmap.weekCount}">
+          <span class="sz-hm-corner" aria-hidden="true"></span>
+          <div class="sz-hm-months">${heatmapMonthLabels}</div>
+          <div class="sz-hm-weekdays">${heatmapWeekdays}</div>
+          <div class="sz-hm-grid" data-heatmap-grid>${heatmapCells}</div>
+        </div>
+      </div>
+      <div class="sz-hm-foot">
+        <div class="sz-hm-legend"><span>${appLanguage === "ar" ? "أقل" : "Less"}</span>${[0, 1, 2, 3, 4].map((level) => `<i class="level-${level}" aria-hidden="true"></i>`).join("")}<span>${appLanguage === "ar" ? "أكثر" : "More"}</span></div>
+        <div class="sz-hm-detail" data-heatmap-detail>${heatmapDetailMarkup(analyticsHeatmapType, heatmapSelectedDay)}</div>
+      </div>
+      <p class="sz-hm-note">${appLanguage === "ar" ? "وقت الدراسة من جلسات التركيز المكتملة، والمهام من تاريخ إكمالها الفعلي، والعادات من سجلات إنجازها. النشاط الإجمالي يجمع دقائق الدراسة + المهام × ١٠ + العادات × ٥، دون احتساب جلسات التركيز مرتين." : "Study time comes from completed focus sessions, tasks use their real completion date, and habits use their completion records. Overall adds study minutes + tasks × 10 + habits × 5, without counting focus sessions twice."}</p>
+      <div class="sz-hm-tooltip" data-heatmap-tooltip hidden></div>
+    </section>`;
+
+    return `${pageHeading("YOUR STUDY PATTERNS", "Analytics", "Understand your study habits without losing sight of the bigger picture.", `<div class="analytics-controls"><label>${appLanguage === "ar" ? "النطاق الزمني" : "Time range"}<select id="analytics-range">${rangeOptions}</select></label>${weekStartUI}${customRangeUI}<label>${appLanguage === "ar" ? "المؤشر" : "Metric"}<select id="analytics-metric" data-sz-control>${analyticsMetricOptions}</select></label><label>${appLanguage === "ar" ? "نوع النشاط" : "Activity type"}<select id="analytics-activity-type">${heatmapTypeOptions}</select></label><label>${appLanguage === "ar" ? "السنة" : "Year"}<select id="analytics-heatmap-year">${heatmapYearOptions}</select></label><button class="button button-secondary button-small" data-action="analytics-export">${appLanguage === "ar" ? "تصدير" : "Export"}</button></div>`)}
     <section class="panel section-spacer" data-analytics-chart-panel>
       <div class="analytics-chart-head">
         <div>
@@ -6281,7 +7922,7 @@
         <div class="analytics-chart-body">${analyticsChartSvg}</div>
         <div class="analytics-chart-tip" hidden></div>
       </div>
-      <div class="analytics-chart-summary>
+      <div class="analytics-chart-summary">
         <span>${appLanguage === "ar" ? "أعلى قيمة" : "Peak value"}: <strong>${escapeHtml(formatAnalyticsMetricValue(analyticsMetric, analyticsValues.length ? Math.max(...analyticsValues) : 0))}</strong></span>
         <span>${appLanguage === "ar" ? "أدنى قيمة" : "Lowest value"}: <strong>${escapeHtml(formatAnalyticsMetricValue(analyticsMetric, analyticsValues.length ? Math.min(...analyticsValues) : 0))}</strong></span>
         <span>${appLanguage === "ar" ? "المتوسط" : "Average"}: <strong>${escapeHtml(formatAnalyticsMetricValue(analyticsMetric, analyticsChartAvg))}</strong></span>
@@ -6295,8 +7936,9 @@
       ${statCard("TASK COMPLETION", `${taskRate}%`, ` ${completedTasks.length} of ${tasksInRange.length} tasks`, "✓")}
       ${statCard("STUDY STREAK", `${streak} ${appLanguage === "ar" ? "يوم" : "day"}${streak !== 1 ? appLanguage === "ar" ? "أيام" : "s" : ""}`, streak > 0 ? appLanguage === "ar" ? "أيام متتالية" : "consecutive days" : " No activity yet", "↗")}
     </div>
+    ${heatmapPanel}
     <div class="grid dashboard-grid">
-      <section class="panel">${panelHeading(appLanguage === "ar" ? "ساعات الدراسة اليومية" : "Daily study hours", rangeLabel)}${`<div class="focus-chart" role="img" aria-label="Daily study hours">${bars}</div>`}</section>
+      <section class="panel">${panelHeading(chartTitle, rangeLabel)}<div class="analytics-bars-scroll"><div class="focus-chart analytics-bars" role="img" aria-label="${escapeHtml(chartTitle)}" style="grid-template-columns:repeat(${Math.max(1, chartData.length)},minmax(16px,1fr))">${bars}</div></div></section>
       <section class="panel">${panelHeading(appLanguage === "ar" ? "أكثر المواد دراسة" : "Top subject", appLanguage === "ar" ? "بناءً على وقت التركيز" : "Based on focus time")}<div class="metric-large">${escapeHtml(topSubject)}</div><p class="metric-caption">${appLanguage === "ar" ? "أكثر مادة قضيتم فيها وقتًا" : "Subject with most focus time in range"}</p></section>
     </div>
     <section class="panel section-spacer">${panelHeading(appLanguage === "ar" ? "إنجاز المهام" : "Task completion", appLanguage === "ar" ? "المهام المكتملة في النطاق" : "Completed tasks in range")}
@@ -6307,7 +7949,7 @@
   }
 
   function goalsPage() {
-    return `${pageHeading("MILESTONES THAT MATTER", "Goals", "Turn the semester into small, achievable steps.", `<button class="button button-primary" data-action="goal-add">＋ Create a goal</button>`)}<div class="grid goal-grid">${goals.map((goal) => `<article class="goal-card"><span class="eyebrow">${escapeHtml(goal.due || (goal.completed_at ? "COMPLETED" : goal.period || "GOAL"))}</span><h3>${escapeHtml(goal.title)}</h3><p>${escapeHtml(goal.detail || goal.details || `${goal.current_value || 0} / ${goal.target_value || 1} ${goal.unit || "sessions"}`)}</p><div class="metric-large">${Math.round(goal.progress ?? 0)}<small>%</small></div><div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, Math.max(0, goal.progress ?? 0))}%"></div></div>${session && goal.id ? `<div class="card-actions"><button class="text-button" data-action="goal-progress" data-id="${escapeHtml(goal.id)}">Add progress</button><button class="text-button" data-action="goal-edit" data-id="${escapeHtml(goal.id)}">Edit</button><button class="text-button" data-action="goal-delete" data-id="${escapeHtml(goal.id)}">Delete</button></div>` : ""}</article>`).join("") || `<div class="empty-state"><strong>No goals yet</strong>Create a goal to track progress toward a study milestone.</div>`}</div><p class="data-caption">${session ? "Goals and progress are saved to your private account." : "Preview goals are shown. Sign in to create and sync your own goals."}</p>`;
+    return `${pageHeading("MILESTONES THAT MATTER", "Goals", "Turn the semester into small, achievable steps.", `<button class="button button-primary" data-action="goal-add">ï¼‹ Create a goal</button>`)}<div class="grid goal-grid">${goals.map((goal) => `<article class="goal-card"><span class="eyebrow">${escapeHtml(goal.due || (goal.completed_at ? "COMPLETED" : goal.period || "GOAL"))}</span><h3>${escapeHtml(goal.title)}</h3><p>${escapeHtml(goal.detail || goal.details || `${goal.current_value || 0} / ${goal.target_value || 1} ${goal.unit || "sessions"}`)}</p><div class="metric-large">${Math.round(goal.progress ?? 0)}<small>%</small></div><div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, Math.max(0, goal.progress ?? 0))}%"></div></div>${session && goal.id ? `<div class="card-actions"><button class="text-button" data-action="goal-progress" data-id="${escapeHtml(goal.id)}">Add progress</button><button class="text-button" data-action="goal-edit" data-id="${escapeHtml(goal.id)}">Edit</button><button class="text-button" data-action="goal-delete" data-id="${escapeHtml(goal.id)}">Delete</button></div>` : ""}</article>`).join("") || `<div class="empty-state"><strong>No goals yet</strong>Create a goal to track progress toward a study milestone.</div>`}</div><p class="data-caption">${session ? "Goals and progress are saved to your private account." : "Preview goals are shown. Sign in to create and sync your own goals."}</p>`;
   }
 
   function examsPage() {
@@ -6341,7 +7983,7 @@
       ? examResults.filter((exam) => new Date(exam.exam_at) >= new Date())
           .length
       : 0;
-    return `${pageHeading("EXAM TRACKER", "Exams & results", "Keep upcoming assessments and your progress in one view.", `<button class="button button-primary" data-action="exam-add">＋ Add exam</button>`)}<div class="grid exam-grid">${cards || `<div class="empty-state"><strong>${session ? "No exams yet" : "No exam results to show"}</strong>${session ? "Add an exam to track its date and result." : "Sign in to add and track your own exams."}</div>`}</div><section class="panel section-spacer">${panelHeading("Upcoming assessments", `${upcoming} upcoming`)}${
+    return `${pageHeading("EXAM TRACKER", "Exams & results", "Keep upcoming assessments and your progress in one view.", `<button class="button button-primary" data-action="exam-add">ï¼‹ Add exam</button>`)}<div class="grid exam-grid">${cards || `<div class="empty-state"><strong>${session ? "No exams yet" : "No exam results to show"}</strong>${session ? "Add an exam to track its date and result." : "Sign in to add and track your own exams."}</div>`}</div><section class="panel section-spacer">${panelHeading("Upcoming assessments", `${upcoming} upcoming`)}${
       upcoming
         ? `<div class="activity-list">${examResults
             .filter((exam) => new Date(exam.exam_at) >= new Date())
@@ -6604,7 +8246,7 @@
             <input name="due_date" type="date" aria-label="${appLanguage === "ar" ? "تاريخ الاستحقاق" : "Due date"}" />
             <input name="due_time" type="time" aria-label="${appLanguage === "ar" ? "وقت الاستحقاق" : "Due time"}" />
             <select name="priority" aria-label="${appLanguage === "ar" ? "الأولوية" : "Priority"}"><option value="medium">${appLanguage === "ar" ? "متوسطة" : "Medium"}</option><option value="low">${appLanguage === "ar" ? "منخفضة" : "Low"}</option><option value="high">${appLanguage === "ar" ? "عالية" : "High"}</option><option value="urgent">${appLanguage === "ar" ? "عاجلة" : "Urgent"}</option></select>
-            <button class="button button-primary button-small" type="submit">＋</button>
+            <button class="button button-primary button-small" type="submit">ï¼‹</button>
           </form>
           <div class="team-task-list">${taskList}</div>
         </section>
@@ -7046,6 +8688,13 @@
     return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
   }
 
+  function formatVoiceTime(seconds) {
+    const total = Math.max(0, Math.floor(Number(seconds) || 0));
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+
   async function loadVoiceNotes() {
     if (!supabase || !session || voiceNotesLoading) return;
     voiceNotesLoading = true;
@@ -7097,48 +8746,93 @@
       ? notes.find((item) => String(item.id) === String(note.note_id))
       : null;
     const url = note.signed_url || note.local_url || "";
-    return `<article class="voice-note-card" data-voice-id="${escapeHtml(note.id)}">
+    const ar = appLanguage === "ar";
+    const date = new Intl.DateTimeFormat(ar ? "ar-EG" : "en", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(note.created_at || Date.now()));
+    const duration = formatVoiceDuration(note.duration_seconds);
+    const badge = note.local ? (ar ? " · لهذه الجلسة فقط" : " · this session only") : "";
+    const title = note.title || (ar ? "ملاحظة صوتية" : "Voice note");
+    return `<article class="voice-note-card voice-note-card-premium" data-voice-id="${escapeHtml(note.id)}">
       <div class="voice-note-head">
-        <span class="voice-note-icon">◉</span>
-        <div class="voice-note-title"><strong dir="auto">${escapeHtml(note.title || "Voice note")}</strong><small>${escapeHtml(new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(note.created_at || Date.now())))} · ${escapeHtml(formatVoiceDuration(note.duration_seconds))}${note.local ? (appLanguage === "ar" ? " · هذه الجلسة فقط" : " · this session only") : ""}</small></div>
+        <div class="voice-note-meta">
+          <div class="voice-note-icon" aria-hidden="true">◉</div>
+          <div class="voice-note-title">
+            <strong dir="auto">${escapeHtml(title)}</strong>
+            <small>${escapeHtml(date)} · ${escapeHtml(duration)}${escapeHtml(badge)}</small>
+          </div>
+        </div>
         <div class="voice-note-actions">
-          <button class="task-icon" data-action="voice-rename" data-id="${escapeHtml(note.id)}" aria-label="${appLanguage === "ar" ? "إعادة تسمية" : "Rename"}">✎</button>
-          <button class="task-icon danger" data-action="voice-delete" data-id="${escapeHtml(note.id)}" aria-label="${appLanguage === "ar" ? "حذف" : "Delete"}">×</button>
+          <button class="task-icon" data-action="voice-rename" data-id="${escapeHtml(note.id)}" aria-label="${ar ? "إعادة تسمية" : "Rename"}" title="${ar ? "إعادة تسمية" : "Rename"}">✎</button>
+          <button class="task-icon danger" data-action="voice-delete" data-id="${escapeHtml(note.id)}" aria-label="${ar ? "حذف" : "Delete"}" title="${ar ? "حذف" : "Delete"}">×</button>
         </div>
       </div>
-      ${url ? `<audio controls preload="none" src="${escapeHtml(url)}"></audio>` : `<p class="data-caption">${appLanguage === "ar" ? "تعذر إنشاء رابط تشغيل خاص." : "Could not create a private playback link."}</p>`}
-      ${linked ? `<p class="voice-note-link">${appLanguage === "ar" ? "مرتبطة بـ" : "Linked to"} <button data-action="note-open" data-id="${escapeHtml(linked.id)}">${escapeHtml(linked.title || "Untitled note")}</button></p>` : ""}
+      ${
+        url
+          ? `<div class="sz-audio-player" data-src="${escapeHtml(url)}" data-duration="${Number(note.duration_seconds) || 0}">
+              <audio preload="metadata" src="${escapeHtml(url)}"></audio>
+              <div class="sz-audio-top">
+                <button type="button" class="sz-audio-play" data-audio-action="toggle" aria-label="${ar ? "تشغيل" : "Play"}">▶</button>
+                <div class="sz-audio-wave" data-audio-action="seek" role="slider" aria-label="${ar ? "شريط التقدم" : "Progress"}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+                  <div class="sz-audio-wave-bars" aria-hidden="true">${Array.from({ length: 40 }, (_, i) => `<span style="--h:${20 + ((i * 37 + 11) % 60)}%"></span>`).join("")}</div>
+                  <div class="sz-audio-wave-progress"></div>
+                </div>
+                <div class="sz-audio-time"><span data-audio-current>00:00</span><span class="sz-audio-sep">/</span><span data-audio-total>${escapeHtml(duration)}</span></div>
+              </div>
+              <div class="sz-audio-controls">
+                <button type="button" class="sz-audio-btn" data-audio-action="skip-back" aria-label="${ar ? "رجوع 10 ثوانٍ" : "Back 10 seconds"}">↺10</button>
+                <button type="button" class="sz-audio-btn" data-audio-action="skip-forward" aria-label="${ar ? "تقديم 10 ثوانٍ" : "Forward 10 seconds"}">10↻</button>
+                <label class="sz-audio-speed"><span>${ar ? "السرعة" : "Speed"}</span>
+                  <select data-audio-speed aria-label="${ar ? "سرعة التشغيل" : "Playback speed"}">
+                    <option value="0.5">0.5×</option>
+                    <option value="1" selected>1×</option>
+                    <option value="1.25">1.25×</option>
+                    <option value="1.5">1.5×</option>
+                    <option value="2">2×</option>
+                  </select>
+                </label>
+                <label class="sz-audio-volume" data-audio-volume-wrap>
+                  <span aria-hidden="true">🔊</span>
+                  <input type="range" min="0" max="1" step="0.05" value="1" data-audio-volume aria-label="${ar ? "مستوى الصوت" : "Volume"}" />
+                </label>
+              </div>
+            </div>`
+          : `<p class="data-caption">${ar ? "تعذر إنشاء رابط تشغيل خاص." : "Could not create a private playback link."}</p>`
+      }
+      ${linked ? `<p class="voice-note-link">${ar ? "مرتبطة بـ" : "Linked to"} <button data-action="note-open" data-id="${escapeHtml(linked.id)}">${escapeHtml(linked.title || "Untitled note")}</button></p>` : ""}
     </article>`;
   }
 
   function voicePage() {
-    const actions = `<button class="button button-primary" data-action="voice-open">● ${appLanguage === "ar" ? "تسجيل ملاحظة صوتية" : "Record voice note"}</button>`;
+    const ar = appLanguage === "ar";
+    const actions = `<button class="button button-primary" data-action="voice-open"><span class="voice-rec-dot" aria-hidden="true"></span> ${ar ? "تسجيل ملاحظة صوتية" : "Record voice note"}</button>`;
     if (!session && !voiceNotes.length) {
-      return `${pageHeading("SPEAK IT, KEEP IT", appLanguage === "ar" ? "الملاحظات الصوتية" : "Voice notes", appLanguage === "ar" ? "سجّل أفكارك واحفظها بشكل خاص." : "Capture ideas out loud and keep them private.", actions)}
-        <section class="panel"><div class="empty-state"><strong>${appLanguage === "ar" ? "جرّب تسجيلًا لهذه الجلسة" : "Try a session-only recording"}</strong><p>${appLanguage === "ar" ? "يمكنك التسجيل الآن كمعاينة تبقى في هذا المتصفح فقط. سجّل الدخول للتخزين الخاص الدائم." : "You can record a preview now; it stays in this browser session only. Sign in to save recordings to your private storage."}</p><div class="teams-empty-actions"><button class="button button-primary button-small" data-action="voice-open">● ${appLanguage === "ar" ? "تسجيل معاينة" : "Record a preview"}</button><button class="button button-secondary button-small" id="open-auth">${appLanguage === "ar" ? "تسجيل الدخول للحفظ" : "Sign in to save"}</button></div></div></section>`;
+      return `${pageHeading("SPEAK IT, KEEP IT", ar ? "الملاحظات الصوتية" : "Voice notes", ar ? "سجّل أفكارك واحفظها بشكل خاص بمشغل احترافي." : "Capture ideas out loud and keep them private with a modern player.", actions)}
+        <section class="panel"><div class="empty-state voice-empty-state"><div class="voice-empty-illustration" aria-hidden="true">◉</div><strong>${ar ? "جرّب تسجيلًا لهذه الجلسة" : "Try a session-only recording"}</strong><p>${ar ? "يمكنك التسجيل الآن كمعاينة تبقى في هذا المتصفح فقط. سجّل الدخول لحفظ التسجيلات في التخزين الخاص." : "You can record a preview now; it stays in this browser session only. Sign in to save recordings to your private storage."}</p><div class="teams-empty-actions"><button class="button button-primary button-small" data-action="voice-open">● ${ar ? "تسجيل معاينة" : "Record a preview"}</button><button class="button button-secondary button-small" id="open-auth">${ar ? "تسجيل الدخول للحفظ" : "Sign in to save"}</button></div></div></section>`;
     }
     if (session && voiceNotesLoading && !voiceNotesLoaded) {
-      return `${pageHeading("SPEAK IT, KEEP IT", appLanguage === "ar" ? "الملاحظات الصوتية" : "Voice notes", appLanguage === "ar" ? "سجّل أفكارك واحفظها بشكل خاص." : "Capture ideas out loud and keep them private.", actions)}<section class="panel"><div class="empty-state" role="status">${appLanguage === "ar" ? "جارٍ تحميل التسجيلات…" : "Loading recordings…"}</div></section>`;
+      return `${pageHeading("SPEAK IT, KEEP IT", ar ? "الملاحظات الصوتية" : "Voice notes", ar ? "سجّل أفكارك واحفظها بشكل خاص." : "Capture ideas out loud and keep them private.", actions)}<section class="panel"><div class="empty-state" role="status">${ar ? "جارٍ تحميل التسجيلات…" : "Loading recordings…"}</div></section>`;
     }
     const setupHint = !voiceNotesSupported
-      ? `<section class="panel"><div class="empty-state"><strong>${appLanguage === "ar" ? "التسجيلات الصوتية غير مهيأة" : "Voice note storage is not enabled yet"}</strong><p>${appLanguage === "ar" ? "طبّق ملف الترحيل 001_studyzone_enhancements.sql لإنشاء الجدول والحاوية الخاصة." : "Apply supabase/migrations/001_studyzone_enhancements.sql to create the private bucket and metadata table."}</p></div></section>`
+      ? `<section class="panel"><div class="empty-state"><strong>${ar ? "التسجيلات الصوتية غير مفعّلة" : "Voice note storage is not enabled yet"}</strong><p>${ar ? "طبّق ملف الترحيل 001_studyzone_enhancements.sql لإنشاء الجدول والحاوية الخاصة." : "Apply supabase/migrations/001_studyzone_enhancements.sql to create the private bucket and metadata table."}</p></div></section>`
       : "";
     const errorHint =
       voiceNotesError && voiceNotesSupported
-        ? `<section class="panel"><div class="empty-state"><strong>${appLanguage === "ar" ? "تعذر تحميل التسجيلات" : "Could not load recordings"}</strong><p>${escapeHtml(voiceNotesError)}</p><button class="button button-secondary button-small" data-action="voice-retry">${appLanguage === "ar" ? "إعادة المحاولة" : "Try again"}</button></div></section>`
+        ? `<section class="panel"><div class="empty-state"><strong>${ar ? "تعذر تحميل التسجيلات" : "Could not load recordings"}</strong><p>${escapeHtml(voiceNotesError)}</p><button class="button button-secondary button-small" data-action="voice-retry">${ar ? "إعادة المحاولة" : "Try again"}</button></div></section>`
         : "";
     const list = voiceNotes.length
-      ? `<div class="voice-note-grid">${voiceNotes.map(voiceNoteCard).join("")}</div>`
-      : `<div class="empty-state"><strong>${appLanguage === "ar" ? "لا تسجيلات بعد" : "No recordings yet"}</strong>${appLanguage === "ar" ? "اضغط تسجيل وابدأ بفكرة." : "Press record and capture a thought, a lecture summary, or a reminder."}</div>`;
-    return `${pageHeading("SPEAK IT, KEEP IT", appLanguage === "ar" ? "الملاحظات الصوتية" : "Voice notes", appLanguage === "ar" ? "سجّل أفكارك واحفظها بشكل خاص." : "Capture ideas out loud and keep them private.", actions)}
+      ? `<div class="voice-note-grid voice-note-grid-premium">${voiceNotes.map(voiceNoteCard).join("")}</div>`
+      : `<div class="empty-state voice-empty-state"><div class="voice-empty-illustration" aria-hidden="true">◉</div><strong>${ar ? "لا توجد تسجيلات بعد" : "No recordings yet"}</strong><p>${ar ? "اضغط تسجيل وابدأ بفكرة، ملخص محاضرة، أو تذكير." : "Press record and capture a thought, a lecture summary, or a reminder."}</p><button class="button button-primary button-small" data-action="voice-open">● ${ar ? "تسجيل الآن" : "Record now"}</button></div>`;
+    return `${pageHeading("SPEAK IT, KEEP IT", ar ? "الملاحظات الصوتية" : "Voice notes", ar ? "سجّل أفكارك واحفظها بشكل خاص بمشغل احترافي." : "Capture ideas out loud and keep them private with a modern player.", actions)}
       ${setupHint}${errorHint}
-      <section class="panel">${panelHeading(appLanguage === "ar" ? "تسجيلاتك" : "Your recordings", appLanguage === "ar" ? `${voiceNotes.length} ملاحظة صوتية` : `${voiceNotes.length} voice note${voiceNotes.length === 1 ? "" : "s"}`)}${list}</section>
+      <section class="panel voice-notes-panel">${panelHeading(ar ? "تسجيلاتك" : "Your recordings", ar ? `${voiceNotes.length} ملاحظة صوتية` : `${voiceNotes.length} voice note${voiceNotes.length === 1 ? "" : "s"}`)}${list}</section>
       <p class="data-caption">${
         session
-          ? appLanguage === "ar"
-            ? "الصوت يُحفظ في حاوية خاصة، ولا يمكن الوصول إليه إلا بروابط موقعة قصيرة الأجل."
+          ? ar
+            ? "الصوت يُحفظ في حاوية خاصة. ولا يمكن الوصول إليه إلا بروابط مؤقتة موقعة."
             : "Audio is stored in a private bucket. Playback uses short-lived signed URLs; files are never public."
-          : appLanguage === "ar"
+          : ar
             ? "معاينات الضيف تبقى في هذه الجلسة فقط ولا تُرفع. سجّل الدخول للحفظ الدائم."
             : "Guest previews stay in this browser session only and are never uploaded. Sign in to save permanently."
       }</p>`;
@@ -7193,60 +8887,46 @@
     const discard = document.getElementById("voice-discard");
     const save = document.getElementById("voice-save");
     const preview = document.getElementById("voice-preview");
+    const previewShell = document.getElementById("voice-preview-shell");
+    const visual = document.getElementById("voice-record-visual");
     if (!timer) return;
+    const ar = appLanguage === "ar";
     timer.textContent = formatVoiceDuration(voiceElapsedMs() / 1000);
     const labels = {
-      idle: appLanguage === "ar" ? "جاهز عندما تكون." : "Ready when you are.",
-      requesting:
-        appLanguage === "ar"
-          ? "جارٍ طلب إذن الميكروفون…"
-          : "Requesting microphone permission…",
-      recording: appLanguage === "ar" ? "جارٍ التسجيل…" : "Recording…",
-      paused:
-        appLanguage === "ar" ? "التسجيل متوقف مؤقتًا." : "Recording paused.",
-      processing:
-        appLanguage === "ar"
-          ? "جارٍ تجهيز التسجيل…"
-          : "Preparing your recording…",
-      ready:
-        appLanguage === "ar"
-          ? "استمع للمعاينة ثم احفظ."
-          : "Preview your recording, then save it.",
+      idle: ar ? "جاهز عندما تكون مستعدًا." : "Ready when you are.",
+      requesting: ar ? "جارٍ طلب إذن الميكروفون…" : "Requesting microphone permission…",
+      recording: ar ? "جارٍ التسجيل…" : "Recording…",
+      paused: ar ? "التسجيل متوقف مؤقتًا." : "Recording paused.",
+      processing: ar ? "جارٍ تجهيز التسجيل…" : "Preparing your recording…",
+      ready: ar ? "استمع للمعاينة ثم احفظ." : "Preview your recording, then save it.",
     };
     if (status) status.textContent = labels[voiceState] || "";
+    if (visual) visual.dataset.state = voiceState;
     if (start) {
       start.hidden = voiceState !== "idle" && voiceState !== "ready";
       start.textContent =
         voiceState === "ready"
-          ? appLanguage === "ar"
-            ? "● تسجيل جديد"
-            : "● Record again"
-          : appLanguage === "ar"
-            ? "● بدء التسجيل"
-            : "● Start recording";
+          ? (ar ? "● تسجيل جديد" : "● Record again")
+          : (ar ? "● بدء التسجيل" : "● Start recording");
     }
     if (pause) {
       pause.hidden = voiceState !== "recording" && voiceState !== "paused";
-      pause.textContent =
-        voiceState === "paused"
-          ? appLanguage === "ar"
-            ? "استئناف"
-            : "Resume"
-          : appLanguage === "ar"
-            ? "إيقاف مؤقت"
-            : "Pause";
+      pause.textContent = voiceState === "paused" ? (ar ? "استئناف" : "Resume") : (ar ? "إيقاف مؤقت" : "Pause");
     }
-    if (stop)
-      stop.hidden = voiceState !== "recording" && voiceState !== "paused";
-    if (discard)
-      discard.hidden = voiceState === "idle" || voiceState === "processing";
+    if (stop) stop.hidden = voiceState !== "recording" && voiceState !== "paused";
+    if (discard) discard.hidden = voiceState === "idle" || voiceState === "processing";
     if (save) save.disabled = voiceState !== "ready" || !voiceBlob;
+    if (previewShell) previewShell.hidden = !(voiceState === "ready" && voicePreviewUrl);
     if (preview) {
-      preview.hidden = voiceState !== "ready" || !voicePreviewUrl;
-      if (voicePreviewUrl) preview.src = voicePreviewUrl;
+      if (voicePreviewUrl) {
+        preview.src = voicePreviewUrl;
+        preview.controls = true;
+      } else {
+        preview.removeAttribute("src");
+        preview.controls = false;
+      }
     }
   }
-
   function openVoiceModal() {
     resetVoiceRecorder();
     document.getElementById("voice-title").value =
@@ -7516,6 +9196,120 @@
       }
     }
     render();
+  }
+
+  function initVoiceAudioPlayers(root = document) {
+    const players = root.querySelectorAll(".sz-audio-player");
+    if (!players.length) return;
+    players.forEach((player) => {
+      if (player.dataset.enhanced === "1") return;
+      player.dataset.enhanced = "1";
+      const audio = player.querySelector("audio");
+      if (!audio) return;
+      const playBtn = player.querySelector('[data-audio-action="toggle"]');
+      const wave = player.querySelector(".sz-audio-wave");
+      const progress = player.querySelector(".sz-audio-wave-progress");
+      const currentEl = player.querySelector("[data-audio-current]");
+      const totalEl = player.querySelector("[data-audio-total]");
+      const speed = player.querySelector("[data-audio-speed]");
+      const volume = player.querySelector("[data-audio-volume]");
+      const volumeWrap = player.querySelector("[data-audio-volume-wrap]");
+      const ar = appLanguage === "ar";
+
+      const setTime = () => {
+        const cur = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+        const dur = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : Number(player.dataset.duration || 0);
+        if (currentEl) currentEl.textContent = formatVoiceTime(cur);
+        if (totalEl && dur) totalEl.textContent = formatVoiceTime(dur);
+        const pct = dur ? Math.max(0, Math.min(100, (cur / dur) * 100)) : 0;
+        if (progress) progress.style.width = `${pct}%`;
+        if (wave) {
+          wave.setAttribute("aria-valuenow", String(Math.round(pct)));
+          wave.style.setProperty("--progress", `${pct}%`);
+        }
+      };
+      const setPlayState = () => {
+        const playing = !audio.paused && !audio.ended;
+        player.classList.toggle("is-playing", playing);
+        if (playBtn) {
+          playBtn.textContent = playing ? "❚❚" : "▶";
+          playBtn.setAttribute("aria-label", playing ? (ar ? "إيقاف مؤقت" : "Pause") : (ar ? "تشغيل" : "Play"));
+        }
+      };
+
+      playBtn?.addEventListener("click", () => {
+        if (audio.paused || audio.ended) {
+          document.querySelectorAll(".sz-audio-player audio").forEach((other) => {
+            if (other !== audio && !other.paused) other.pause();
+          });
+          void audio.play().catch(() => {});
+        } else {
+          audio.pause();
+        }
+      });
+      player.querySelector('[data-audio-action="skip-back"]')?.addEventListener("click", () => {
+        audio.currentTime = Math.max(0, (audio.currentTime || 0) - 10);
+      });
+      player.querySelector('[data-audio-action="skip-forward"]')?.addEventListener("click", () => {
+        const dur = Number.isFinite(audio.duration) ? audio.duration : Infinity;
+        audio.currentTime = Math.min(dur, (audio.currentTime || 0) + 10);
+      });
+      speed?.addEventListener("change", () => {
+        audio.playbackRate = Number(speed.value) || 1;
+      });
+      if (volume) {
+        const canVolume = !/iPad|iPhone|iPod/.test(navigator.userAgent);
+        if (!canVolume && volumeWrap) volumeWrap.hidden = true;
+        volume.addEventListener("input", () => {
+          audio.volume = Number(volume.value);
+          audio.muted = audio.volume === 0;
+        });
+      }
+
+      const seekToClientX = (clientX) => {
+        if (!wave) return;
+        const rect = wave.getBoundingClientRect();
+        const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
+        const dur = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : Number(player.dataset.duration || 0);
+        if (dur) audio.currentTime = ratio * dur;
+      };
+      let dragging = false;
+      wave?.addEventListener("pointerdown", (event) => {
+        dragging = true;
+        wave.setPointerCapture?.(event.pointerId);
+        seekToClientX(event.clientX);
+      });
+      wave?.addEventListener("pointermove", (event) => {
+        if (dragging) seekToClientX(event.clientX);
+      });
+      const stopDrag = () => { dragging = false; };
+      wave?.addEventListener("pointerup", stopDrag);
+      wave?.addEventListener("pointercancel", stopDrag);
+      wave?.addEventListener("click", (event) => seekToClientX(event.clientX));
+      wave?.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowLeft") { audio.currentTime = Math.max(0, (audio.currentTime || 0) - 5); event.preventDefault(); }
+        if (event.key === "ArrowRight") { const dur = Number.isFinite(audio.duration) ? audio.duration : Infinity; audio.currentTime = Math.min(dur, (audio.currentTime || 0) + 5); event.preventDefault(); }
+      });
+
+      audio.addEventListener("play", () => {
+        document.querySelectorAll(".sz-audio-player audio").forEach((other) => {
+          if (other !== audio && !other.paused) other.pause();
+        });
+        setPlayState();
+      });
+      audio.addEventListener("pause", setPlayState);
+      audio.addEventListener("ended", setPlayState);
+      audio.addEventListener("timeupdate", setTime);
+      audio.addEventListener("loadedmetadata", setTime);
+      audio.addEventListener("durationchange", setTime);
+      setTime();
+      setPlayState();
+    });
+  }
+
+  function enhanceVoiceAudioPlayers() {
+    if (currentPage !== "voice") return;
+    initVoiceAudioPlayers(document.getElementById("page-content") || document);
   }
 
   async function deleteVoiceNote(id) {
@@ -9565,6 +11359,8 @@
     content.innerHTML = pageRenderers[currentPage]();
     const analyticsChartHost = content.querySelector("[data-analytics-line-chart]");
     if (analyticsChartHost) attachAnalyticsLineChartHandlers(analyticsChartHost);
+    const analyticsHeatmapHost = content.querySelector("[data-heatmap-panel]");
+    if (analyticsHeatmapHost) attachHeatmapHandlers(analyticsHeatmapHost);
     if (shouldAnimate() && pageChanged) {
       void content.offsetWidth;
       content.classList.add("page-enter");
@@ -9709,6 +11505,7 @@
     animateRewardCounters();
     updateScrollProgress();
     syncFocusTicker();
+    enhanceVoiceAudioPlayers();
   }
 
   function navigate(page) {
@@ -9871,7 +11668,6 @@
       .select("id,name,color,credit_hours")
       .order("name");
     if (subjectError) {
-      subjects = [];
       showToast(`Could not load subjects: ${subjectError.message}`);
       console.error("Supabase subject read failed.", subjectError);
     } else {
@@ -9923,7 +11719,6 @@
     }
     const { data, error } = taskResult;
     if (error) {
-      tasks = [];
       deadlinesLoading = false;
       scheduleRender();
       showToast(`Could not load tasks: ${error.message}`);
@@ -10104,8 +11899,7 @@
       return true;
     };
 
-    if (reportError("study schedule", scheduleResult)) schedule = [];
-    else
+    if (!reportError("study schedule", scheduleResult)) {
       schedule = (scheduleResult.data || []).map((block) => ({
         ...block,
         day: new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(
@@ -10118,27 +11912,27 @@
         length: `${Math.max(1, Math.round((new Date(block.ends_at) - new Date(block.starts_at)) / 60000))} min`,
         subject: subjectName(block.subject_id),
       }));
+    }
 
-    if (reportError("study files", fileResult)) sampleFiles = [];
-    else
+    if (!reportError("study files", fileResult)) {
       sampleFiles = (fileResult.data || []).map((file) => ({
         ...file,
         type: file.mime_type,
         subject: subjectName(file.subject_id),
       }));
+    }
 
-    if (reportError("notes", noteResult)) notes = [];
-    else
-      notes = (noteResult.data || []).map((note) => ({
+    if (!reportError("notes", noteResult)) {
+      notes = (noteResult.data || []).map((note) => normalizeNoteRecord({
         ...note,
         subject: subjectName(note.subject_id),
         updated: new Intl.DateTimeFormat(appLanguage, {
           dateStyle: "medium",
         }).format(new Date(note.updated_at)),
       }));
+    }
 
-    if (reportError("goals", goalResult)) goals = [];
-    else
+    if (!reportError("goals", goalResult)) {
       goals = (goalResult.data || []).map((goal) => ({
         ...goal,
         progress: Math.min(
@@ -10159,22 +11953,29 @@
           goal.details ||
           `${goal.current_value} / ${goal.target_value} ${goal.unit}`,
       }));
+    }
 
-    if (reportError("exams", examResult)) examResults = [];
-    else
+    if (!reportError("exams", examResult)) {
       examResults = (examResult.data || []).map((exam) => ({
         ...exam,
         subject: subjectName(exam.subject_id),
       }));
+    }
 
-    if (reportError("profile", profileResult)) accountProfile = null;
-    else {
-      accountProfile = profileResult.data;
-      if (accountProfile)
+    if (!reportError("profile", profileResult)) {
+      accountProfile = profileResult.data || accountProfile;
+      if (accountProfile) {
         accountProfile.avatar_display_url = await resolveProfileAvatarUrl(
           accountProfile.avatar_url,
           userId,
         );
+      }
+    } else if (profileResult?.data) {
+      accountProfile = profileResult.data;
+      accountProfile.avatar_display_url = await resolveProfileAvatarUrl(
+        accountProfile.avatar_url,
+        userId,
+      );
     }
 
     if (reportError("daily reminder preferences", reminderResult)) {
@@ -10238,26 +12039,67 @@
     scheduleRender();
   }
 
+  const avatarBlobCacheKey = (userId, path) => `avatar:${userId}:${path}`;
+
+  async function cacheAvatarBlob(userId, avatarPath, blob) {
+    if (!userId || !avatarPath || !blob) return;
+    try {
+      await saveMediaBlob(avatarBlobCacheKey(userId, avatarPath), blob, {
+        name: avatarPath.split("/").pop() || "avatar",
+        type: blob.type || "image/jpeg",
+        size: blob.size || 0,
+        kind: "image",
+      });
+    } catch (e) {
+      console.warn("Could not cache avatar locally.", e);
+    }
+  }
+
+  async function getCachedAvatarObjectUrl(userId, avatarPath) {
+    if (!userId || !avatarPath) return "";
+    try {
+      const rec = await getMediaBlob(avatarBlobCacheKey(userId, avatarPath));
+      if (!rec?.blob) return "";
+      return URL.createObjectURL(rec.blob);
+    } catch {
+      return "";
+    }
+  }
+
   async function resolveProfileAvatarUrl(avatarPath, userId) {
     if (!avatarPath) return "";
+    const cached = await getCachedAvatarObjectUrl(userId, avatarPath);
     if (avatarPath.startsWith(`${userId}/`)) {
-      const { data, error } = await supabase.storage
-        .from("studyflow-files")
-        .createSignedUrl(avatarPath, 86400);
-      if (error) {
+      if (!supabase || !navigator.onLine) return cached;
+      try {
+        const { data, error } = await supabase.storage
+          .from("studyflow-files")
+          .createSignedUrl(avatarPath, 86400);
+        if (error) throw error;
+        const signedUrl = data?.signedUrl || "";
+        if (signedUrl) {
+          // refresh local cache in background for offline use
+          void fetch(signedUrl)
+            .then((r) => (r.ok ? r.blob() : null))
+            .then((blob) => blob && cacheAvatarBlob(userId, avatarPath, blob))
+            .catch(() => {});
+          return signedUrl;
+        }
+      } catch (error) {
         console.error("Could not create a private profile photo URL.", error);
+        if (cached) return cached;
         showToast(`Could not load profile photo: ${error.message}`);
         return "";
       }
-      return data.signedUrl;
+      return cached;
     }
     try {
       const url = new URL(avatarPath);
-      return url.protocol === "https:" ? url.href : "";
+      if (url.protocol === "https:") return url.href;
     } catch (error) {
       console.error("The profile photo reference is invalid.", error);
-      return "";
     }
+    return cached;
   }
 
   function resetAccountWorkspacePreview() {
@@ -13038,6 +14880,7 @@
     if (currentPage === "focus") render();
     if (record.completed && record.session_type === "focus")
       await refreshRewardSummary({ celebrate: true });
+    void window.StudyZoneApp?.syncWidgets?.();
     return true;
   }
 
@@ -13319,6 +15162,37 @@
       });
   }
 
+  document.addEventListener("dragover", (event) => {
+    if (event.target.closest && event.target.closest("#media-editor-modal .media-editor-preview, #media-editor-modal .media-editor-grid")) {
+      event.preventDefault();
+    }
+  });
+  document.addEventListener("drop", async (event) => {
+    const zone = event.target.closest && event.target.closest("#media-editor-modal .media-editor-preview, #media-editor-modal .media-editor-grid");
+    if (!zone || !mediaEditorDraft) return;
+    event.preventDefault();
+    syncMediaDraftFromInputs();
+    const files = Array.from(event.dataTransfer?.files || []);
+    if (!files.length) return;
+    // infer kind from first supported file, fallback to current mode
+    const first = files[0];
+    const kind = (first?.type || "").startsWith("video/") ? "video" : (first?.type || "").startsWith("image/") ? "image" : (mediaEditorDraft.mode || "image");
+    await addFilesToMediaDraft(files, kind, null);
+  });
+
+  document.addEventListener("change", (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || input.id !== "profile-avatar-file") return;
+    const file = input.files && input.files[0];
+    const preview = document.getElementById("profile-avatar-preview");
+    if (!preview || !file) return;
+    const url = URL.createObjectURL(file);
+    preview.innerHTML = `<img id="profile-avatar-preview-img" src="${url}" alt="" style="width:72px;height:72px;border-radius:50%;object-fit:cover;display:block;" />`;
+    // revoke on next change/save by storing on element
+    if (preview._avatarPreviewUrl) { try { URL.revokeObjectURL(preview._avatarPreviewUrl); } catch {} }
+    preview._avatarPreviewUrl = url;
+  });
+
   document.addEventListener("submit", async (event) => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement) || form.id !== "daily-reminder-form")
@@ -13555,6 +15429,61 @@
     } else if (target.matches('[data-action="voice-retry"]')) {
       voiceNotesLoaded = false;
       void loadVoiceNotes();
+    } else if (target.matches('[data-action="note-open-media"]')) {
+      notesView = "media";
+      render();
+    } else if (target.matches('[data-action="note-media-back"]')) {
+      notesView = "main";
+      render();
+    } else if (target.matches('[data-action="note-media-filter"]')) {
+      mediaFilter = target.dataset.filter || "all";
+      render();
+    } else if (target.matches('[data-action="note-media-add"]')) {
+      void openMediaNotePicker();
+    } else if (target.matches('[data-action="media-editor-close"]')) {
+      closeMediaEditor();
+    } else if (target.matches('[data-action="media-editor-pick-images"]')) {
+      syncMediaDraftFromInputs();
+      triggerMediaFilePicker("image");
+    } else if (target.matches('[data-action="media-editor-pick-videos"]')) {
+      syncMediaDraftFromInputs();
+      triggerMediaFilePicker("video");
+    } else if (target.matches('[data-action="media-editor-replace"]')) {
+      syncMediaDraftFromInputs();
+      const idx = Number(target.dataset.idx);
+      const att = mediaEditorDraft?.attachments?.[idx];
+      triggerMediaFilePicker(att?.kind || mediaEditorDraft?.mode || "image", idx);
+    } else if (target.matches('[data-action="media-editor-remove"]')) {
+      syncMediaDraftFromInputs();
+      const idx = Number(target.dataset.idx);
+      const d = mediaEditorDraft;
+      if (d && d.attachments[idx]) {
+        const [removed] = d.attachments.splice(idx, 1);
+        if (removed?.previewUrl) { try { URL.revokeObjectURL(removed.previewUrl); } catch {} }
+        if (removed?.localKey) { void deleteMediaBlob(removed.localKey); }
+        renderMediaEditorModal();
+      }
+    } else if (target.matches('[data-action="media-editor-save"]')) {
+      syncMediaDraftFromInputs();
+      const d = mediaEditorDraft;
+      const ar = appLanguage === "ar";
+      const errEl = document.getElementById("media-editor-error");
+      if (!d || !(d.attachments || []).length) {
+        if (errEl) errEl.textContent = ar ? "اختر صورة أو فيديو واحدًا على الأقل قبل الحفظ." : "Select at least one image or video before saving.";
+      } else {
+        if (errEl) errEl.textContent = "";
+        const title = (d.title || "").trim() || (d.mode === "video" ? (ar ? "ملاحظة فيديو" : "Video note") : (ar ? "ملاحظة صور" : "Image note"));
+        const description = (d.description || "").trim();
+        const attachments = d.attachments.map(({ previewUrl, ...rest }) => rest);
+        const type = d.mode === "video" ? "video" : "image";
+        try {
+          await saveMediaNoteRecord({ id: d.id, title, description, attachments, type, existingCreatedAt: null });
+          closeMediaEditor();
+          showToast(ar ? "تم حفظ ملاحظة الوسائط." : "Media note saved.");
+        } catch (e) {
+          if (errEl) errEl.textContent = e?.message || (ar ? "تعذر حفظ الملاحظة." : "Could not save note.");
+        }
+      }
     } else if (target.matches('[data-action="note-add"]')) {
       const templateKey =
         document.getElementById("note-template")?.value || "blank";
@@ -13562,7 +15491,12 @@
     } else if (
       target.matches('[data-action="note-open"], [data-action="note-edit"]')
     ) {
-      openNoteEditor(target.dataset.id);
+      const n = notes.find((x) => String(x.id) === String(target.dataset.id));
+      if (n && isMediaNote(n)) {
+        void openMediaNoteViewer(target.dataset.id);
+      } else {
+        openNoteEditor(target.dataset.id);
+      }
     } else if (target.matches('[data-action="note-pin"]')) {
       await toggleNotePin(target.dataset.id);
     } else if (target.matches('[data-action="note-delete"]')) {
@@ -13751,22 +15685,100 @@
       void resetFocusSession();
     } else if (target.id === "timer-skip") {
       await skipFocusSession();
+    } else if (target.matches('[data-action="dash-cal-select"]')) {
+      dashboardSelectedDate = target.dataset.date || dateKey(new Date());
+      render();
+    } else if (target.matches('[data-action="heatmap-day"]')) {
+      analyticsHeatmapSelected = target.dataset.date || null;
+      render();
+    } else if (target.matches('[data-action="dash-cal-prev"]')) {
+      dashboardMonth = new Date(
+        dashboardMonth.getFullYear(),
+        dashboardMonth.getMonth() - 1,
+        1,
+      );
+      render();
+    } else if (target.matches('[data-action="dash-cal-next"]')) {
+      dashboardMonth = new Date(
+        dashboardMonth.getFullYear(),
+        dashboardMonth.getMonth() + 1,
+        1,
+      );
+      render();
+    } else if (target.matches('[data-action="dash-cal-today"]')) {
+      dashboardMonth = new Date(
+        new Date().getFullYear(),
+        new Date().getMonth(),
+        1,
+      );
+      dashboardSelectedDate = dateKey(new Date());
+      render();
+    } else if (target.matches('[data-action="habit-toggle"]')) {
+      const routine = routines.find(
+        (item) => String(item.id) === String(target.dataset.id),
+      );
+      if (routine && target.dataset.date) {
+        await toggleRoutineOccurrence(
+          routineVirtualTask(routine, target.dataset.date),
+        );
+        void window.StudyZoneApp?.syncWidgets?.();
+      }
+    } else if (target.matches('[data-action="deadline-calendar-mode"]')) {
+      deadlineCalendarMode = ["month", "week", "day"].includes(
+        target.dataset.mode,
+      )
+        ? target.dataset.mode
+        : "month";
+      const anchor = parseLocalDateKey(selectedDeadlineDate) || new Date();
+      deadlineMonth = new Date(
+        anchor.getFullYear(),
+        anchor.getMonth(),
+        1,
+      );
+      render();
     } else if (target.matches('[data-action="calendar-select"]')) {
       selectedDeadlineDate = target.dataset.date;
+      const selected = parseLocalDateKey(selectedDeadlineDate);
+      if (selected)
+        deadlineMonth = new Date(
+          selected.getFullYear(),
+          selected.getMonth(),
+          1,
+        );
       render();
     } else if (target.matches('[data-action="calendar-prev"]')) {
-      deadlineMonth = new Date(
-        deadlineMonth.getFullYear(),
-        deadlineMonth.getMonth() - 1,
-        1,
-      );
+      if (deadlineCalendarMode === "month") {
+        deadlineMonth = new Date(
+          deadlineMonth.getFullYear(),
+          deadlineMonth.getMonth() - 1,
+          1,
+        );
+      } else {
+        const anchor = parseLocalDateKey(selectedDeadlineDate) || new Date();
+        const next = addLocalDays(
+          anchor,
+          deadlineCalendarMode === "week" ? -7 : -1,
+        );
+        selectedDeadlineDate = dateKey(next);
+        deadlineMonth = new Date(next.getFullYear(), next.getMonth(), 1);
+      }
       render();
     } else if (target.matches('[data-action="calendar-next"]')) {
-      deadlineMonth = new Date(
-        deadlineMonth.getFullYear(),
-        deadlineMonth.getMonth() + 1,
-        1,
-      );
+      if (deadlineCalendarMode === "month") {
+        deadlineMonth = new Date(
+          deadlineMonth.getFullYear(),
+          deadlineMonth.getMonth() + 1,
+          1,
+        );
+      } else {
+        const anchor = parseLocalDateKey(selectedDeadlineDate) || new Date();
+        const next = addLocalDays(
+          anchor,
+          deadlineCalendarMode === "week" ? 7 : 1,
+        );
+        selectedDeadlineDate = dateKey(next);
+        deadlineMonth = new Date(next.getFullYear(), next.getMonth(), 1);
+      }
       render();
     } else if (target.matches('[data-action="calendar-today"]')) {
       deadlineMonth = new Date(
@@ -13778,6 +15790,7 @@
       render();
     } else if (target.matches('[data-action="toggle-task"]')) {
       await updateTaskStatus(target.dataset.id);
+      void window.StudyZoneApp?.syncWidgets?.();
     } else if (target.matches('[data-action="delete-task"]')) {
       await deleteTask(target.dataset.id);
     } else if (target.matches('[data-action="theme-toggle"]')) {
@@ -14185,6 +16198,19 @@
       analyticsMetric = target.value;
       saveAnalyticsSettings();
       render();
+    } else if (target?.id === "analytics-activity-type") {
+      analyticsHeatmapType = heatmapActivityTypes.some(
+        (item) => item.id === target.value,
+      )
+        ? target.value
+        : "overall";
+      analyticsHeatmapSelected = null;
+      render();
+    } else if (target?.id === "analytics-heatmap-year") {
+      const year = Number(target.value);
+      analyticsHeatmapYear = Number.isInteger(year) ? year : null;
+      analyticsHeatmapSelected = null;
+      render();
     } else if (target?.matches?.("[data-notification-type]")) {
       saveNotificationTypes({
         [target.dataset.notificationType]: target.checked,
@@ -14586,6 +16612,8 @@
         return `${deadline.title || (ar ? "موعد نهائي" : "Deadline")} · ${due}`;
       });
 
+    const contributionYear = heatmapActiveYear();
+    const contributionData = heatmapGridData(contributionYear);
     const payloads = {
       today_tasks: {
         date: dateStr,
@@ -14621,6 +16649,17 @@
         deadline1: upcoming[0] || (ar ? "لا توجد مواعيد قادمة" : "No upcoming deadlines"),
         deadline2: upcoming[1] || "",
         deadline3: upcoming[2] || "",
+      },
+      contributions: {
+        title: ar ? "خريطة النشاط" : "Activity Map",
+        year: String(contributionYear),
+        type: analyticsHeatmapType,
+        typeLabel: heatmapTypeLabel(analyticsHeatmapType),
+        total: contributionData.total,
+        activeDays: contributionData.activeDays,
+        weeks: contributionData.weeks || [],
+        weekLabels: contributionData.weekLabels || [],
+        summary: heatmapFormattedValue(analyticsHeatmapType, contributionData.total),
       },
     };
 

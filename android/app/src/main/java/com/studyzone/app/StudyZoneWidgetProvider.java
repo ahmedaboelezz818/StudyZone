@@ -7,11 +7,16 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.widget.RemoteViews;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 /**
  * Shared implementation for the five Study Zone home-screen widgets.
@@ -80,6 +85,9 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
         updateClass(context, manager, StudyZoneDailyProgressWidget.class, "daily_progress");
         updateClass(context, manager, StudyZoneFocusWidget.class, "focus");
         updateClass(context, manager, StudyZoneUpcomingDeadlinesWidget.class, "upcoming_deadlines");
+        updateClass(context, manager, StudyZoneContributionsWidgetSmall.class, "contributions_small");
+        updateClass(context, manager, StudyZoneContributionsWidgetMedium.class, "contributions_medium");
+        updateClass(context, manager, StudyZoneContributionsWidgetLarge.class, "contributions_large");
     }
 
     private static void updateClass(Context context, AppWidgetManager manager,
@@ -111,7 +119,7 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
                 android.util.Log.w("StudyZoneWidget", "theme apply failed", themeError);
             }
             try {
-                populateData(views, type, dataJson);
+                populateData(context, views, type, dataJson, themeId);
             } catch (RuntimeException dataError) {
                 android.util.Log.w("StudyZoneWidget", "data populate failed", dataError);
             }
@@ -138,6 +146,9 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
             case "daily_progress": return R.layout.widget_daily_progress;
             case "focus": return R.layout.widget_focus;
             case "upcoming_deadlines": return R.layout.widget_upcoming_deadlines;
+            case "contributions_small": return R.layout.widget_contributions_small;
+            case "contributions_medium": return R.layout.widget_contributions_medium;
+            case "contributions_large": return R.layout.widget_contributions_large;
             case "today_tasks":
             default: return R.layout.widget_today_tasks;
         }
@@ -148,6 +159,9 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
             case "focus": return "focus";
             case "daily_progress": return "dashboard";
             case "upcoming_deadlines": return "deadlines";
+            case "contributions_small":
+            case "contributions_medium":
+            case "contributions_large": return "analytics";
             case "today_tasks":
             case "large_tasks":
             default: return "tasks";
@@ -208,6 +222,14 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
                 views.setTextColor(R.id.widget_deadlines_open, muted);
                 views.setInt(R.id.widget_divider, "setBackgroundColor", border);
                 break;
+            case "contributions_small":
+            case "contributions_medium":
+            case "contributions_large":
+                views.setTextColor(R.id.widget_contrib_title, text);
+                views.setTextColor(R.id.widget_contrib_summary, muted);
+                views.setTextColor(R.id.widget_contrib_open, muted);
+                views.setInt(R.id.widget_contrib_divider, "setBackgroundColor", border);
+                break;
             default:
                 break;
         }
@@ -222,7 +244,7 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
         return context.getColor(id);
     }
 
-    private static void populateData(RemoteViews views, String type, String json) {
+    private static void populateData(Context context, RemoteViews views, String type, String json, String themeId) {
         switch (type) {
             case "today_tasks":
                 views.setTextViewText(R.id.widget_date, value(json, "date", "Today"));
@@ -259,8 +281,228 @@ public abstract class StudyZoneWidgetProvider extends AppWidgetProvider {
                 views.setTextViewText(R.id.widget_deadline_2, value(json, "deadline2", ""));
                 views.setTextViewText(R.id.widget_deadline_3, value(json, "deadline3", ""));
                 break;
+            case "contributions_small":
+            case "contributions_medium":
+            case "contributions_large":
+                views.setTextViewText(R.id.widget_contrib_title, value(json, "title", "Activity"));
+                views.setTextViewText(
+                    R.id.widget_contrib_summary,
+                    value(json, "summary", String.valueOf(number(json, "activeDays", 0)) + " days")
+                );
+                views.setTextViewText(R.id.widget_contrib_open, "Tap to open analytics");
+                populateContributionCells(context, views, type, json, themeId);
+                break;
             default:
                 break;
+        }
+    }
+
+    private static int contributionCellId(String type, int row, int column) {
+        if ("contributions_small".equals(type)) {
+            switch (column) {
+                case 0: return R.id.widget_contrib_cell_0;
+                case 1: return R.id.widget_contrib_cell_1;
+                case 2: return R.id.widget_contrib_cell_2;
+                case 3: return R.id.widget_contrib_cell_3;
+                case 4: return R.id.widget_contrib_cell_4;
+                case 5: return R.id.widget_contrib_cell_5;
+                default: return R.id.widget_contrib_cell_6;
+            }
+        }
+        if ("contributions_medium".equals(type)) {
+            switch (row) {
+                case 0:
+                    switch (column) {
+                        case 0: return R.id.widget_contrib_cell_m_0_0;
+                        case 1: return R.id.widget_contrib_cell_m_0_1;
+                        case 2: return R.id.widget_contrib_cell_m_0_2;
+                        case 3: return R.id.widget_contrib_cell_m_0_3;
+                        case 4: return R.id.widget_contrib_cell_m_0_4;
+                        case 5: return R.id.widget_contrib_cell_m_0_5;
+                        default: return R.id.widget_contrib_cell_m_0_6;
+                    }
+                case 1:
+                    switch (column) {
+                        case 0: return R.id.widget_contrib_cell_m_1_0;
+                        case 1: return R.id.widget_contrib_cell_m_1_1;
+                        case 2: return R.id.widget_contrib_cell_m_1_2;
+                        case 3: return R.id.widget_contrib_cell_m_1_3;
+                        case 4: return R.id.widget_contrib_cell_m_1_4;
+                        case 5: return R.id.widget_contrib_cell_m_1_5;
+                        default: return R.id.widget_contrib_cell_m_1_6;
+                    }
+                case 2:
+                    switch (column) {
+                        case 0: return R.id.widget_contrib_cell_m_2_0;
+                        case 1: return R.id.widget_contrib_cell_m_2_1;
+                        case 2: return R.id.widget_contrib_cell_m_2_2;
+                        case 3: return R.id.widget_contrib_cell_m_2_3;
+                        case 4: return R.id.widget_contrib_cell_m_2_4;
+                        case 5: return R.id.widget_contrib_cell_m_2_5;
+                        default: return R.id.widget_contrib_cell_m_2_6;
+                    }
+                case 3:
+                    switch (column) {
+                        case 0: return R.id.widget_contrib_cell_m_3_0;
+                        case 1: return R.id.widget_contrib_cell_m_3_1;
+                        case 2: return R.id.widget_contrib_cell_m_3_2;
+                        case 3: return R.id.widget_contrib_cell_m_3_3;
+                        case 4: return R.id.widget_contrib_cell_m_3_4;
+                        case 5: return R.id.widget_contrib_cell_m_3_5;
+                        default: return R.id.widget_contrib_cell_m_3_6;
+                    }
+                case 4:
+                    switch (column) {
+                        case 0: return R.id.widget_contrib_cell_m_4_0;
+                        case 1: return R.id.widget_contrib_cell_m_4_1;
+                        case 2: return R.id.widget_contrib_cell_m_4_2;
+                        case 3: return R.id.widget_contrib_cell_m_4_3;
+                        case 4: return R.id.widget_contrib_cell_m_4_4;
+                        case 5: return R.id.widget_contrib_cell_m_4_5;
+                        default: return R.id.widget_contrib_cell_m_4_6;
+                    }
+                case 5:
+                    switch (column) {
+                        case 0: return R.id.widget_contrib_cell_m_5_0;
+                        case 1: return R.id.widget_contrib_cell_m_5_1;
+                        case 2: return R.id.widget_contrib_cell_m_5_2;
+                        case 3: return R.id.widget_contrib_cell_m_5_3;
+                        case 4: return R.id.widget_contrib_cell_m_5_4;
+                        case 5: return R.id.widget_contrib_cell_m_5_5;
+                        default: return R.id.widget_contrib_cell_m_5_6;
+                    }
+                default: return R.id.widget_contrib_cell_m_0_0;
+            }
+        }
+        if ("contributions_large".equals(type)) {
+            switch (row) {
+                case 0:
+                    switch (column) {
+                        case 0: return R.id.widget_contrib_cell_l_0_0;
+                        case 1: return R.id.widget_contrib_cell_l_0_1;
+                        case 2: return R.id.widget_contrib_cell_l_0_2;
+                        case 3: return R.id.widget_contrib_cell_l_0_3;
+                        case 4: return R.id.widget_contrib_cell_l_0_4;
+                        case 5: return R.id.widget_contrib_cell_l_0_5;
+                        default: return R.id.widget_contrib_cell_l_0_6;
+                    }
+                case 1:
+                    switch (column) {
+                        case 0: return R.id.widget_contrib_cell_l_1_0;
+                        case 1: return R.id.widget_contrib_cell_l_1_1;
+                        case 2: return R.id.widget_contrib_cell_l_1_2;
+                        case 3: return R.id.widget_contrib_cell_l_1_3;
+                        case 4: return R.id.widget_contrib_cell_l_1_4;
+                        case 5: return R.id.widget_contrib_cell_l_1_5;
+                        default: return R.id.widget_contrib_cell_l_1_6;
+                    }
+                case 2:
+                    switch (column) {
+                        case 0: return R.id.widget_contrib_cell_l_2_0;
+                        case 1: return R.id.widget_contrib_cell_l_2_1;
+                        case 2: return R.id.widget_contrib_cell_l_2_2;
+                        case 3: return R.id.widget_contrib_cell_l_2_3;
+                        case 4: return R.id.widget_contrib_cell_l_2_4;
+                        case 5: return R.id.widget_contrib_cell_l_2_5;
+                        default: return R.id.widget_contrib_cell_l_2_6;
+                    }
+                case 3:
+                    switch (column) {
+                        case 0: return R.id.widget_contrib_cell_l_3_0;
+                        case 1: return R.id.widget_contrib_cell_l_3_1;
+                        case 2: return R.id.widget_contrib_cell_l_3_2;
+                        case 3: return R.id.widget_contrib_cell_l_3_3;
+                        case 4: return R.id.widget_contrib_cell_l_3_4;
+                        case 5: return R.id.widget_contrib_cell_l_3_5;
+                        default: return R.id.widget_contrib_cell_l_3_6;
+                    }
+                case 4:
+                    switch (column) {
+                        case 0: return R.id.widget_contrib_cell_l_4_0;
+                        case 1: return R.id.widget_contrib_cell_l_4_1;
+                        case 2: return R.id.widget_contrib_cell_l_4_2;
+                        case 3: return R.id.widget_contrib_cell_l_4_3;
+                        case 4: return R.id.widget_contrib_cell_l_4_4;
+                        case 5: return R.id.widget_contrib_cell_l_4_5;
+                        default: return R.id.widget_contrib_cell_l_4_6;
+                    }
+                case 5:
+                    switch (column) {
+                        case 0: return R.id.widget_contrib_cell_l_5_0;
+                        case 1: return R.id.widget_contrib_cell_l_5_1;
+                        case 2: return R.id.widget_contrib_cell_l_5_2;
+                        case 3: return R.id.widget_contrib_cell_l_5_3;
+                        case 4: return R.id.widget_contrib_cell_l_5_4;
+                        case 5: return R.id.widget_contrib_cell_l_5_5;
+                        default: return R.id.widget_contrib_cell_l_5_6;
+                    }
+                case 6:
+                    switch (column) {
+                        case 0: return R.id.widget_contrib_cell_l_6_0;
+                        case 1: return R.id.widget_contrib_cell_l_6_1;
+                        case 2: return R.id.widget_contrib_cell_l_6_2;
+                        case 3: return R.id.widget_contrib_cell_l_6_3;
+                        case 4: return R.id.widget_contrib_cell_l_6_4;
+                        case 5: return R.id.widget_contrib_cell_l_6_5;
+                        default: return R.id.widget_contrib_cell_l_6_6;
+                    }
+                default: return R.id.widget_contrib_cell_l_0_0;
+            }
+        }
+        return 0;
+    }
+
+    private static int cellColor(Context context, String themeId, int level) {
+        int backgroundId = context.getResources().getIdentifier(
+            "widget_background_" + themeId,
+            "color",
+            context.getPackageName()
+        );
+        int background = backgroundId == 0 ? Color.BLACK : context.getColor(backgroundId);
+        if (level <= 0) {
+            return background;
+        }
+        int primaryId = context.getResources().getIdentifier(
+            "widget_primary_" + themeId,
+            "color",
+            context.getPackageName()
+        );
+        int primary = primaryId == 0 ? Color.MAGENTA : context.getColor(primaryId);
+        float alpha = level == 1 ? 0.16f : level == 2 ? 0.38f : level == 3 ? 0.66f : 1f;
+        return Color.argb(
+            Math.round(255 * alpha),
+            Color.red(primary),
+            Color.green(primary),
+            Color.blue(primary)
+        );
+    }
+
+    private static void populateContributionCells(Context context, RemoteViews views, String type, String json, String themeId) {
+        try {
+            JSONObject data = new JSONObject(json);
+            JSONArray weeks = data.optJSONArray("weeks");
+            int rowCount = weeks == null ? 0 : weeks.length();
+            if ("contributions_small".equals(type)) rowCount = 1;
+            if ("contributions_medium".equals(type)) rowCount = Math.min(6, Math.max(0, rowCount));
+            if ("contributions_large".equals(type)) rowCount = Math.min(53, Math.max(0, rowCount));
+
+            int maxRows = "contributions_medium".equals(type) ? 6 : ("contributions_large".equals(type) ? 53 : 1);
+            for (int row = 0; row < maxRows; row += 1) {
+                JSONArray week = row < rowCount && weeks != null ? weeks.optJSONArray(row) : null;
+                for (int column = 0; column < 7; column += 1) {
+                    int level = week == null ? 0 : week.optInt(column, 0);
+                    int cellId = contributionCellId(type, row, column);
+                    views.setInt(cellId, "setBackgroundColor", cellColor(context, themeId, level));
+                    views.setTextColor(cellId, context.getColor(
+                        context.getResources().getIdentifier(
+                            "widget_text_" + themeId,
+                            "color",
+                            context.getPackageName()
+                        )
+                    ));
+                }
+            }
+        } catch (JSONException ignored) {
         }
     }
 
