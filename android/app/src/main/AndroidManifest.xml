@@ -121,7 +121,6 @@
                 android:resource="@xml/widget_info_deadlines" />
         </receiver>
 
-<<<<<<< HEAD
         <receiver
             android:name=".StudyZoneContributionsWidgetSmall"
             android:label="@string/widget_contributions_small"
@@ -161,8 +160,6 @@
                 android:resource="@xml/widget_info_contributions_large" />
         </receiver>
 
-=======
->>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
     </application>
 
     <!-- Permissions -->

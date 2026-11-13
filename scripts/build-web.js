@@ -17,13 +17,10 @@ const files = [
   "themes.css",
   "ui-controls.css",
   "ui-controls.js",
-<<<<<<< HEAD
   "premium.css",
   "premium-dashboard.css",
   "premium-pages.css",
   "premium-responsive.css",
-=======
->>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
   "design-tokens.css",
   "themes-presets.css",
   "supabase-config.js",
@@ -39,11 +36,7 @@ const files = [
   "apple-touch-icon.png",
 ];
 
-<<<<<<< HEAD
 const directories = ["icons", "vendor", "locales", "fonts", "assets"];
-=======
-const directories = ["icons", "vendor", "locales", "fonts"];
->>>>>>> f97e75219e4e1614f47cfda7a15deea4a3c08ecb
 
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
