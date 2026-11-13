@@ -922,13 +922,23 @@
   async function getCachedTableData(userId, table) {
     if (!userId || !table) return null;
     const entries = await getAll(CACHE_STORE, "userId", userId);
-    const rows = [];
+    // Several GET variants for the same table can be cached (different filters
+    // or ordering). Merge them, but never return the same row twice.
+    const byId = new Map();
+    const anonymous = [];
     for (const entry of entries) {
       if (entry.table !== table) continue;
       const data = entry.data;
-      if (Array.isArray(data)) rows.push(...data);
-      else if (data) rows.push(data);
+      const list = Array.isArray(data) ? data : data ? [data] : [];
+      for (const row of list) {
+        if (row && typeof row === "object" && row.id != null) {
+          byId.set(String(row.id), row);
+        } else if (row) {
+          anonymous.push(row);
+        }
+      }
     }
+    const rows = [...byId.values(), ...anonymous];
     return rows.length ? rows : null;
   }
 

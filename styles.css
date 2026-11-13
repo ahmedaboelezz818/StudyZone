@@ -951,6 +951,11 @@ body::before {
 .rt-swatch { width: 22px; height: 22px; padding: 0; border: 2px solid transparent; border-radius: 6px; background: var(--swatch); cursor: pointer; }
 .rt-swatch:hover { border-color: var(--polar); }
 .rt-editor { flex: 1; min-height: 300px; max-height: 52vh; overflow-y: auto; padding: 22px 24px; outline: 0; color: var(--polar); font: 400 13px/1.8 "Inter", "Segoe UI", sans-serif; caret-color: var(--accent); }
+/* Each paragraph resolves its own direction, so mixed Arabic/English notes
+   keep connected Arabic letters, correct punctuation order and a caret that
+   follows the language of the line being edited. */
+.rt-editor, .rt-editor p, .rt-editor div, .rt-editor h1, .rt-editor h2, .rt-editor h3,
+.rt-editor h4, .rt-editor li, .rt-editor blockquote, .rt-editor pre { text-align: start; unicode-bidi: plaintext; }
 .rt-editor:empty::before { content: attr(data-placeholder); color: var(--color-muted); }
 .rt-editor h1 { font-size: 24px; letter-spacing: -.6px; margin: .7em 0 .35em; }
 .rt-editor h2 { font-size: 19px; letter-spacing: -.4px; margin: .7em 0 .35em; }

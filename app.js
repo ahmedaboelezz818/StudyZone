@@ -334,6 +334,7 @@
     durationMinutes: null,
   };
   let focusRecords = [];
+  let focusRecordsIdentity = "";
   let pendingFocusRecords = [];
   let focusLoadedIdentity = "";
   let focusTicker = null;
@@ -634,8 +635,11 @@
   let noteSort = "updated";
   let noteTypeFilter = "all";
   let notesView = "main"; // "main" | "media"
-  let mediaFilter = "all"; // "all" | "image" | "video"
-  let mediaEditorDraft = null; // {id?, title, description, attachments:[...], mode:'image'|'video'}
+  let mediaFilter = "all"; // "all" | "image" | "video" | "favorites"
+  let mediaSort = "newest"; // "newest" | "oldest"
+  let mediaNotesList = []; // Local-only Media Notes (IndexedDB metadata + blobs)
+  let mediaNotesLoaded = false;
+  let mediaEditorDraft = null; // {id?, title, description, attachments:[...], mode:'image'|'video', favorite}
   let noteEditorState = null;
   let noteSaveTimer = null;
   let noteSaveStatus = "idle";
@@ -1761,6 +1765,7 @@
     "Study files": "ملفات الدراسة",
     Notes: "الملاحظات",
     "Voice notes": "الملاحظات الصوتية",
+    "Media notes": "ملاحظات الوسائط",
     Teams: "الفرق",
     "Focus timer": "مؤقت التركيز",
     Analytics: "التحليلات",
@@ -2946,6 +2951,15 @@
   }
 
   const mediaObjectUrlCache = new Map();
+  /**
+   * Backwards-compatible alias used by Media Notes and the avatar cache.
+   * It was referenced in several call sites but had never been defined, which
+   * made every local media save throw. Keep one implementation only.
+   */
+  async function saveMediaBlob(id, blob, meta = {}) {
+    return putMediaBlob(id, blob, meta);
+  }
+
   async function getMediaObjectUrl(id) {
     if (!id) return "";
     if (mediaObjectUrlCache.has(id)) return mediaObjectUrlCache.get(id);
@@ -2960,6 +2974,332 @@
     if (!id || !mediaObjectUrlCache.has(id)) return;
     try { URL.revokeObjectURL(mediaObjectUrlCache.get(id)); } catch {}
     mediaObjectUrlCache.delete(id);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Local-only Media Notes store.
+  //
+  // Media Notes are intentionally independent from the text/voice notes and
+  // from every Supabase table: binaries live in the media IndexedDB database
+  // and their metadata lives in a dedicated local database. No remote read, no
+  // remote write, no queue, no cloud backup for Media Notes.
+  // ---------------------------------------------------------------------------
+  const MEDIA_META_DB_NAME = "studyzone-media-meta-v1";
+  const MEDIA_META_STORE = "meta";
+  let mediaMetaDbPromise = null;
+
+  function openMediaMetaDb() {
+    if (mediaMetaDbPromise) return mediaMetaDbPromise;
+    mediaMetaDbPromise = new Promise((resolve, reject) => {
+      if (!("indexedDB" in window)) {
+        reject(new Error("IndexedDB unavailable"));
+        return;
+      }
+      const req = indexedDB.open(MEDIA_META_DB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(MEDIA_META_STORE)) {
+          db.createObjectStore(MEDIA_META_STORE, { keyPath: "id" });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error("Could not open media metadata database"));
+    });
+    return mediaMetaDbPromise;
+  }
+
+  async function putMediaMeta(record) {
+    const db = await openMediaMetaDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(MEDIA_META_STORE, "readwrite");
+      tx.objectStore(MEDIA_META_STORE).put(record);
+      tx.oncomplete = () => resolve(record);
+      tx.onerror = () => reject(tx.error || new Error("Could not save media metadata"));
+    });
+  }
+
+  async function listMediaMetas() {
+    const db = await openMediaMetaDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(MEDIA_META_STORE, "readonly");
+      const req = tx.objectStore(MEDIA_META_STORE).getAll();
+      req.onsuccess = () => {
+        const rows = Array.isArray(req.result) ? req.result : [];
+        rows.sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")));
+        resolve(rows);
+      };
+      req.onerror = () => reject(req.error || new Error("Could not read media metadata"));
+    });
+  }
+
+  async function updateMediaMeta(id, patch) {
+    const rows = await listMediaMetas();
+    const current = rows.find((row) => String(row.id) === String(id));
+    if (!current) return null;
+    const next = { ...current, ...patch, id: current.id };
+    return putMediaMeta(next);
+  }
+
+  async function deleteMediaMeta(id) {
+    const rows = await listMediaMetas();
+    const current = rows.find((row) => String(row.id) === String(id));
+    if (current && Array.isArray(current.attachments)) {
+      for (const att of current.attachments) {
+        if (att?.localKey) {
+          try { await deleteMediaBlob(att.localKey); } catch { /* ignore */ }
+        }
+      }
+    }
+    const db = await openMediaMetaDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(MEDIA_META_STORE, "readwrite");
+      tx.objectStore(MEDIA_META_STORE).delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error("Could not delete media metadata"));
+    });
+  }
+
+  async function clearMediaMetas() {
+    const db = await openMediaMetaDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(MEDIA_META_STORE, "readwrite");
+      tx.objectStore(MEDIA_META_STORE).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error("Could not clear media metadata"));
+    });
+  }
+
+  async function loadMediaNotesList() {
+    try {
+      const rows = await listMediaMetas();
+      mediaNotesList = rows.map((row) => ({
+        id: row.id,
+        type: row.kind === "video" ? "video" : "image",
+        title: String(row.title || ""),
+        description: String(row.description || ""),
+        category: String(row.category || ""),
+        favorite: Boolean(row.favorite),
+        attachments: Array.isArray(row.attachments) ? row.attachments : [],
+        created_at: row.createdAt || "",
+        updated_at: row.updatedAt || "",
+        createdAt: row.createdAt || "",
+        updatedAt: row.updatedAt || "",
+        kind: row.kind,
+      }));
+    } catch (error) {
+      console.warn("Could not load the local media library.", error);
+      mediaNotesList = [];
+    }
+    return mediaNotesList;
+  }
+
+  async function toggleMediaFavorite(id) {
+    const note = mediaNotesList.find((n) => String(n.id) === String(id));
+    if (!note) return false;
+    const next = !Boolean(note.favorite);
+    const saved = await updateMediaMeta(String(id), { favorite: next });
+    if (saved) {
+      mediaNotesList = mediaNotesList.map((n) =>
+        String(n.id) === String(id) ? { ...n, favorite: next } : n,
+      );
+    }
+    render();
+    return next;
+  }
+
+  async function mediaLibraryPayload() {
+    const toDataUrl = async (blob) => {
+      if (!blob) return "";
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => resolve("");
+        reader.readAsDataURL(blob);
+      });
+    };
+    const items = await Promise.all(
+      mediaNotesList.map(async (n) => ({
+        id: String(n.id),
+        kind: n.kind || (n.type === "video" ? "video" : "image"),
+        title: String(n.title || ""),
+        description: String(n.description || ""),
+        category: String(n.category || ""),
+        favorite: Boolean(n.favorite),
+        attachments: await Promise.all(
+          (n.attachments || []).map(async (a) => {
+            let blob = a?.blob || null;
+            let dataUrl = "";
+            if (!blob && a?.localKey) {
+              try {
+                const rec = await getMediaBlob(String(a.localKey));
+                blob = rec?.blob || null;
+              } catch {
+                blob = null;
+              }
+            }
+            if (blob) dataUrl = await toDataUrl(blob);
+            return {
+              id: String(a?.id || a?.localKey || ""),
+              kind: a?.kind === "video" ? "video" : "image",
+              name: String(a?.name || ""),
+              mime: String(a?.mime || ""),
+              size: Number(a?.size) || 0,
+              duration: Number(a?.duration) || 0,
+              createdAt: a?.createdAt || null,
+              localKey: String(a?.localKey || ""),
+              dataUrl,
+            };
+          }),
+        ),
+        createdAt: n.createdAt || n.created_at || "",
+        updatedAt: n.updatedAt || n.updated_at || "",
+      })),
+    );
+    return {
+      app: "study-zone",
+      feature: "media-notes",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      items,
+    };
+  }
+
+  async function exportMediaLibrary() {
+    const payload = await mediaLibraryPayload();
+    const json = JSON.stringify(payload);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `study-zone-media-backup-${Date.now()}.json`;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    showToast(appLanguage === "ar" ? "تم تنزيل نسخة احتياطية الوسائط." : "Media backup downloaded.");
+  }
+
+  async function importMediaLibrary(file) {
+    const text = await file.text();
+    const payload = JSON.parse(text);
+    if (
+      !payload ||
+      payload.app !== "study-zone" ||
+      payload.feature !== "media-notes" ||
+      !Array.isArray(payload.items)
+    )
+      throw new Error("This file is not a Study Zone media backup.");
+    const dataUrlToBlob = async (dataUrl) => {
+      if (!dataUrl || typeof dataUrl !== "string") return null;
+      try {
+        const res = await fetch(dataUrl);
+        return await res.blob();
+      } catch {
+        return null;
+      }
+    };
+    let imported = 0;
+    for (const item of payload.items || []) {
+      if (!item) continue;
+      const kind = item.kind === "video" ? "video" : "image";
+      const mediaId = `media-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const attachments = [];
+      for (const att of Array.isArray(item.attachments) ? item.attachments : []) {
+        let blob = await dataUrlToBlob(att?.dataUrl);
+        let localKey = (typeof crypto !== "undefined" && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : `media-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        if (blob) {
+          const meta = {
+            name: String(att?.name || ""),
+            type: String(att?.mime || blob.type || ""),
+            size: Number(att?.size || blob.size || 0),
+            kind,
+          };
+          await putMediaBlob(localKey, blob, meta);
+        } else {
+          // If no blob data in backup, skip attachment (cannot restore original).
+          continue;
+        }
+        attachments.push({
+          id: localKey,
+          kind,
+          name: String(att?.name || ""),
+          mime: String(att?.mime || blob.type || ""),
+          size: Number(att?.size || blob.size || 0),
+          duration: Number(att?.duration) || 0,
+          createdAt: att?.createdAt || null,
+          localKey,
+        });
+      }
+      if (!attachments.length) continue;
+      const mediaRecord = {
+        id: mediaId,
+        kind,
+        title: String(item.title || ""),
+        description: String(item.description || ""),
+        category: String(item.category || ""),
+        favorite: Boolean(item.favorite),
+        attachments,
+        createdAt: item.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const savedMedia = await putMediaMeta(mediaRecord);
+      const savedMediaNote = {
+        id: savedMedia.id,
+        type: savedMedia.kind,
+        title: savedMedia.title,
+        description: savedMedia.description,
+        category: String(savedMedia.category || ""),
+        favorite: Boolean(savedMedia.favorite),
+        attachments: Array.isArray(savedMedia.attachments) ? savedMedia.attachments : [],
+        created_at: savedMedia.createdAt || "",
+        updated_at: savedMedia.updatedAt || "",
+        createdAt: savedMedia.createdAt || "",
+        updatedAt: savedMedia.updatedAt || "",
+        kind: savedMedia.kind,
+      };
+      const mediaIdx = mediaNotesList.findIndex(
+        (n) => String(n.id) === String(savedMedia.id),
+      );
+      if (mediaIdx >= 0) mediaNotesList[mediaIdx] = savedMediaNote;
+      else mediaNotesList.unshift(savedMediaNote);
+      imported += 1;
+    }
+    render();
+    showToast(
+      appLanguage === "ar"
+        ? `تم استيراد ${imported} ملف وسائط.`
+        : `Imported ${imported} media files.`,
+    );
+    return imported;
+  }
+
+  async function clearMediaLibrary() {
+    if (!mediaNotesList.length) return;
+    const confirmed =
+      appLanguage === "ar"
+        ? "هل تريد مسح مكتبة الوسائط بالكامل؟ لا يمكن التراجع."
+        : "Clear the entire media library? This cannot be undone.";
+    if (!window.confirm(confirmed)) return;
+    const metas = await listMediaMetas();
+    for (const row of metas) {
+      if (Array.isArray(row?.attachments)) {
+        for (const att of row.attachments) {
+          if (att?.localKey) {
+            try { await deleteMediaBlob(att.localKey); } catch { /* ignore */ }
+          }
+        }
+      }
+    }
+    try {
+      await clearMediaMetas();
+    } catch {
+      /* ignore clear failures */
+    }
+    mediaNotesList = [];
+    render();
+    showToast(appLanguage === "ar" ? "تم مسح مكتبة الوسائط." : "Media library cleared.");
   }
 
   const MEDIA_NOTE_PREFIX = "__SZ_MEDIA_NOTE__:";
@@ -3040,7 +3380,7 @@
     return next;
   }
 
-  function readLocalNotes() {
+  function readStoredNoteRecords() {
     try {
       const saved = localStorage.getItem(localNotesKey);
       if (saved) {
@@ -3050,6 +3390,19 @@
     } catch (error) {
       console.error("Could not read saved notes.", error);
     }
+    return [];
+  }
+
+  function readLocalNotes() {
+    const stored = readStoredNoteRecords();
+    const accountId = session?.user?.id || null;
+    // Keep cached notes scoped to the signed-in account. Before sign-in only
+    // guest notes (no owner) are visible, so another account's local notes are
+    // never shown on this device.
+    const visible = stored.filter((note) =>
+      accountId ? !note.ownerId || note.ownerId === accountId : !note.ownerId,
+    );
+    if (visible.length) return visible;
     return sampleNotes.map((note, index) => normalizeNoteRecord({
       id: `local-note-${index + 1}`,
       title: note.title,
@@ -3074,7 +3427,20 @@
 
   function saveLocalNotes() {
     try {
-      localStorage.setItem(localNotesKey, JSON.stringify(notes));
+      // The notes key is shared by the whole device. Keep other accounts' local
+      // (unsynced) notes intact, and only replace the current identity's notes.
+      const scope = session?.user?.id || null;
+      const stored = readStoredNoteRecords();
+      const ownIds = new Set(notes.map((note) => String(note.id)));
+      const foreign = stored.filter(
+        (note) =>
+          (note.ownerId || null) !== scope && !ownIds.has(String(note.id)),
+      );
+      const own = notes.map((note) => ({
+        ...note,
+        ownerId: note.ownerId || scope,
+      }));
+      localStorage.setItem(localNotesKey, JSON.stringify([...foreign, ...own]));
     } catch (error) {
       console.error("Could not save notes in this browser.", error);
     }
@@ -3710,7 +4076,7 @@
         : "tone-cyan"
       : "tone-slate";
     const hero = `<section class="sz-hero">
-      <div class="sz-hero-media"><img src="./assets/images/hero-study-desk.webp" alt="" loading="eager" decoding="async" fetchpriority="high" onerror="this.remove()" /></div>
+      <div class="sz-hero-media"><img src="./assets/images/hero-study-desk.webp" alt="" loading="eager" decoding="async" fetchpriority="high" onerror="this.remove()" /><div class="sz-hero-dim" aria-hidden="true"></div></div>
       <div class="sz-hero-content">
         <div class="sz-hero-top">
           <span class="sz-hero-badge"><i></i>${escapeHtml(dayLabelText)}</span>
@@ -5234,6 +5600,17 @@
   const RICH_SAFE_STYLE =
     /^(color|background-color|font-size|text-align|direction|font-family|font-weight|font-style|text-decoration)$/;
   const RICH_SAFE_STYLE_VALUE = /^[#a-zA-Z0-9.,%()\s_-]+$/;
+  const BLOCK_DIRECTION_TAGS = new Set([
+    "p",
+    "div",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "li",
+    "blockquote",
+    "pre",
+  ]);
 
   function sanitizeRichText(html) {
     if (!html) return "";
@@ -5298,6 +5675,14 @@
           return;
         if (tag === "a" && (name === "target" || name === "rel")) return;
         if (tag === "img" && (name === "alt" || name === "loading")) return;
+        // Preserve explicit paragraph direction so Arabic/RTL notes reopen
+        // exactly as written (execCommand dirRtl/LTR writes dir="rtl|ltr").
+        if (
+          (BLOCK_DIRECTION_TAGS.has(tag) || tag === "div" || tag === "span") &&
+          name === "dir" &&
+          /^(rtl|ltr|auto)$/i.test(value.trim())
+        )
+          return;
         element.removeAttribute(attribute.name);
       });
       if (tag === "a") {
@@ -5534,6 +5919,12 @@
     return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
   }
 
+  function findMediaNoteById(id) {
+    const found = mediaNotesList.find((n) => String(n.id) === String(id));
+    if (found) return found;
+    return notes.find((n) => String(n.id) === String(id));
+  }
+
   function mediaAttachmentThumbMarkup(att) {
     const ar = appLanguage === "ar";
     if (att.kind === "video") {
@@ -5547,6 +5938,34 @@
     </div>`;
   }
 
+  async function createMediaThumbnail(url, kind) {
+    if (!kind || kind !== "image") return url;
+    try {
+      const img = new Image();
+      img.src = url;
+      img.crossOrigin = "anonymous";
+      await new Promise((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("thumbnail failed"));
+      });
+      const maxDim = 480;
+      const scale = Math.min(1, maxDim / Math.max(img.naturalWidth || maxDim, img.naturalHeight || maxDim, 1));
+      const w = Math.max(1, Math.round((img.naturalWidth || maxDim) * scale));
+      const h = Math.max(1, Math.round((img.naturalHeight || maxDim) * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
+      if (!blob) return url;
+      return URL.createObjectURL(blob);
+    } catch {
+      // Fall back to the original object URL when thumbnail generation fails.
+      return url;
+    }
+  }
+
   async function hydrateMediaThumbs(root = document) {
     const els = root.querySelectorAll('.media-thumb[data-media-key]');
     for (const el of els) {
@@ -5558,7 +5977,14 @@
         const url = await getMediaObjectUrl(key);
         if (!url) continue;
         if (el.classList.contains('media-thumb-image')) {
-          el.innerHTML = `<img src="${url}" alt="" loading="lazy" />`;
+          const thumbUrl = await createMediaThumbnail(url, 'image');
+          const img = document.createElement("img");
+          img.src = thumbUrl;
+          img.alt = "";
+          img.loading = "lazy";
+          img.onload = () => { try { URL.revokeObjectURL(thumbUrl); } catch {} };
+          el.innerHTML = "";
+          el.appendChild(img);
         } else if (el.classList.contains('media-thumb-video')) {
           // use video element for thumbnail frame
           el.innerHTML = `<video muted playsinline preload="metadata" src="${url}#t=0.1"></video><span class="media-thumb-badge">${escapeHtml(el.querySelector('.media-thumb-badge')?.textContent || '')}</span>`;
@@ -5572,23 +5998,72 @@
 
   function mediaNotesPage() {
     const ar = appLanguage === "ar";
-    const mediaNotes = notes.filter((n) => isMediaNote(n));
-    const filtered = mediaNotes.filter((n) => {
-      const type = noteTypeOf(n);
-      if (mediaFilter === "image" && type !== "image") return false;
-      if (mediaFilter === "video" && type !== "video") return false;
-      if (noteSearch) {
+    const source = mediaNotesList.length
+      ? mediaNotesList
+      : notes.filter((n) => isMediaNote(n));
+    const filtered = source
+      .filter((n) => {
+        const type = noteTypeOf(n);
+        if (mediaFilter === "image" && type !== "image") return false;
+        if (mediaFilter === "video" && type !== "video") return false;
+        if (mediaFilter === "favorites" && !n.favorite) return false;
+        if (noteSearch) {
         const text = `${n.title || ""} ${n.description || ""} ${noteAttachments(n).map(a=>a.name||"").join(" ")}`.toLowerCase();
         if (!text.includes(noteSearch.toLowerCase())) return false;
-      }
-      return true;
-    }).sort((a,b)=> new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0));
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const key = mediaSort === "oldest" ? "created_at" : "updated_at";
+        const av = new Date(a[key] || a.created_at || 0);
+        const bv = new Date(b[key] || b.created_at || 0);
+        const delta = bv - av;
+        return mediaSort === "oldest" ? -delta : delta;
+      });
+
+    const imagesCount = source.filter((n) => noteTypeOf(n) === "image").length;
+    const videosCount = source.filter((n) => noteTypeOf(n) === "video").length;
+    const storageBytes = source.reduce(
+      (sum, n) =>
+        sum +
+        noteAttachments(n).reduce((acc, a) => acc + Number(a?.size || 0), 0),
+      0,
+    );
+
+    const statsCards = `
+      <div class="grid stats-grid">
+        ${statCard(
+          ar ? "إجمالي الوسائط" : "Total media",
+          new Intl.NumberFormat(ar ? "ar-EG" : "en").format(source.length),
+          ar ? "ملاحظات محلية" : "Local notes",
+          "◇",
+        )}
+        ${statCard(
+          ar ? "الصور" : "Images",
+          new Intl.NumberFormat(ar ? "ar-EG" : "en").format(imagesCount),
+          ar ? "صور محفوظة" : "Saved photos",
+          "🖼",
+        )}
+        ${statCard(
+          ar ? "الفيديوهات" : "Videos",
+          new Intl.NumberFormat(ar ? "ar-EG" : "en").format(videosCount),
+          ar ? "فيديوهات محفوظة" : "Saved videos",
+          "🎬",
+        )}
+        ${statCard(
+          ar ? "المساحة المستخدمة" : "Storage used",
+          formatBytesShort(storageBytes),
+          ar ? "المحتوى محلي" : "Local content",
+          "☁",
+        )}
+      </div>`;
 
     const tabs = `
       <div class="notes-media-tabs" role="tablist" aria-label="${ar ? "تصفية الوسائط" : "Media filters"}">
         <button type="button" class="notes-media-tab ${mediaFilter==='all'?'active':''}" data-action="note-media-filter" data-filter="all">${ar?"الكل":"All"}</button>
         <button type="button" class="notes-media-tab ${mediaFilter==='image'?'active':''}" data-action="note-media-filter" data-filter="image">${ar?"صور":"Images"}</button>
         <button type="button" class="notes-media-tab ${mediaFilter==='video'?'active':''}" data-action="note-media-filter" data-filter="video">${ar?"فيديو":"Videos"}</button>
+        <button type="button" class="notes-media-tab ${mediaFilter==='favorites'?'active':''}" data-action="note-media-filter" data-filter="favorites">${ar?"المفضلة":"Favorites"}</button>
       </div>`;
 
     const cards = filtered.map((note) => {
@@ -5608,6 +6083,7 @@
           <span class="note-card-date">${escapeHtml(updated || meta)}</span>
         </button>
         <div class="note-card-actions">
+          <button class="task-icon ${note.favorite ? "pinned" : ""}" data-action="media-favorite" data-id="${escapeHtml(note.id)}" aria-label="${escapeHtml(ar ? (note.favorite ? "إزالة من المفضلة" : "إضافة إلى المفضلة") : (note.favorite ? "Remove from favorites" : "Add to favorites"))}" aria-pressed="${Boolean(note.favorite || note.is_favorite)}">${note.favorite ? "★" : "☆"}</button>
           <button class="task-icon" data-action="note-edit" data-id="${escapeHtml(note.id)}" aria-label="${ar?'تعديل':'Edit'}">✎</button>
           <button class="task-icon danger" data-action="note-delete" data-id="${escapeHtml(note.id)}" aria-label="${ar?'حذف':'Delete'}">✕</button>
         </div>
@@ -5621,12 +6097,17 @@
     const html = `${pageHeading(
       "MEDIA NOTES",
       ar ? "ملاحظات الوسائط" : "Media Notes",
-      ar ? "احفظ ونظّم صورك وفيديوهاتك في قسم مستقل." : "Save and organize your photos and videos in a dedicated section.",
-      `<div class="notes-heading-actions"><button class="button button-secondary" data-action="note-media-back">${ar?"رجوع":"Back"}</button><button class="button button-primary" data-action="note-media-add">${ar?"إضافة وسائط":"Add media"}</button></div>`
+      ar ? "احفظ ونظّم صورك وفيديوهاتك في قسم مستقل." : "Save and organize unlimited photos and videos in your private local library.",
+      `<div class="notes-heading-actions"><button class="button button-secondary" data-action="note-media-back">${ar?"رجوع":"Back"}</button><button class="button button-secondary" data-action="media-add">${ar?"إضافة وسائط":"Add Media"}</button><button class="button button-secondary" data-action="media-add-image">${ar?"إضافة صورة":"Add Image"}</button><button class="button button-primary" data-action="media-add-video">${ar?"إضافة فيديو":"Add Video"}</button><button class="button button-secondary" data-action="media-export">${ar?"تصدير نسخة احتياطية":"Export backup"}</button><button class="button button-secondary" data-action="media-import">${ar?"استيراد النسخة":"Import backup"}</button><button class="button button-secondary danger" data-action="media-clear">${ar?"مسح المكتبة":"Clear library"}</button></div>`
     )}
+      ${statsCards}
       <section class="panel notes-toolbar notes-media-toolbar">
         ${tabs}
-        <label class="search-box"><span aria-hidden="true">🔎</span><input id="note-search" type="search" dir="auto" value="${escapeHtml(noteSearch)}" placeholder="${ar ? "ابحث في الوسائط" : "Search media"}" aria-label="${ar ? "ابحث في الوسائط" : "Search media"}"></label>
+        <select class="filter-select" id="media-sort" aria-label="${ar ? "ترتيب الوسائط" : "Sort media"}">
+          <option value="newest" ${mediaSort === "newest" ? "selected" : ""}>${ar ? "الأحدث" : "Newest"}</option>
+          <option value="oldest" ${mediaSort === "oldest" ? "selected" : ""}>${ar ? "الأقدم" : "Oldest"}</option>
+        </select>
+        <label class="search-box"><span aria-hidden="true">🔎</span><input id="media-note-search" type="search" dir="auto" value="${escapeHtml(noteSearch)}" placeholder="${ar ? "ابحث في الوسائط" : "Search media"}" aria-label="${ar ? "ابحث في الوسائط" : "Search media"}"></label>
         <span class="notes-count">${new Intl.NumberFormat(ar?'ar-EG':'en').format(filtered.length)} ${ar ? 'عنصر' : (filtered.length===1?'item':'items')}</span>
       </section>
       ${body}
@@ -5639,7 +6120,15 @@
 
 ﻿  function ensureMediaEditorDraft(kind = "image") {
     if (!mediaEditorDraft) {
-      mediaEditorDraft = { id: null, title: "", description: "", attachments: [], mode: kind === "video" ? "video" : "image" };
+      mediaEditorDraft = {
+        id: null,
+        title: "",
+        description: "",
+        category: "",
+        attachments: [],
+        mode: kind === "video" ? "video" : "image",
+        favorite: false,
+      };
     }
     return mediaEditorDraft;
   }
@@ -5653,59 +6142,115 @@
     })();
     const d = ensureMediaEditorDraft("image");
     const ar = appLanguage === "ar";
+    const isEdit = Boolean(d.id);
     const previewItems = (d.attachments || []).map((att, idx) => {
       const isVideo = att.kind === "video";
       const key = att.localKey || att.id || "";
       const url = att.previewUrl || "";
       const thumb = url
-        ? (isVideo ? `<video muted playsinline preload="metadata" src="${url}#t=0.1"></video>` : `<img src="${url}" alt="" />`)
+        ? (isVideo ? `<video muted playsinline preload="metadata" src="${url}#t=0.1"></video>` : `<img src="${url}" alt="" loading="lazy" />`)
         : `<div class="media-thumb-placeholder">${isVideo ? "🎬" : "🖼️"}</div>`;
       const meta = `${escapeHtml(att.name || mediaTypeLabel(att.kind))}${att.size ? ` · ${escapeHtml(formatBytesShort(att.size))}` : ""}${isVideo && att.duration ? ` · ${escapeHtml(formatDurationShort(att.duration))}` : ""}`;
       return `<div class="media-editor-item" data-idx="${idx}">
-        <div class="media-editor-thumb ${isVideo ? "is-video":"is-image"}" data-media-key="${escapeHtml(key)}">${thumb}</div>
+        <div class="media-editor-thumb ${isVideo ? "is-video":"is-image"}" data-media-key="${escapeHtml(key)}">${thumb}${isVideo ? '<span class="media-thumb-badge">▶</span>' : ""}</div>
         <div class="media-editor-item-meta" dir="auto">${meta}</div>
         <div class="media-editor-item-actions">
-          <button type="button" class="button button-small" data-action="media-editor-replace" data-idx="${idx}">${ar?"استبدال":"Replace"}</button>
-          <button type="button" class="button button-small button-secondary" data-action="media-editor-remove" data-idx="${idx}">${ar?"إزالة":"Remove"}</button>
+          <button type="button" class="button button-small button-secondary" data-action="media-editor-replace" data-idx="${idx}">${ar?"استبدال":"Replace"}</button>
+          <button type="button" class="button button-small danger" data-action="media-editor-remove" data-idx="${idx}">${ar?"إزالة":"Remove"}</button>
         </div>
       </div>`;
     }).join("");
 
     host.innerHTML = `<div class="modal-backdrop media-editor-backdrop" id="media-editor-modal">
-      <section class="modal media-editor-modal" role="dialog" aria-modal="true" aria-labelledby="media-editor-title">
-        <header class="note-editor-head">
+      <section class="modal media-editor-modal premium-media-editor" role="dialog" aria-modal="true" aria-labelledby="media-editor-title">
+        <header class="note-editor-head media-editor-header">
           <div class="note-editor-title-wrap">
-            <p class="eyebrow">${ar ? "ملاحظة وسائط" : "MEDIA NOTE"}</p>
-            <h2 id="media-editor-title">${ar ? "إضافة وسائط" : "Add media"}</h2>
+            <p class="eyebrow">${ar ? "ملاحظات الوسائط" : "MEDIA NOTES"}</p>
+            <h2 id="media-editor-title">${isEdit ? (ar ? "تعديل ملاحظة الوسائط" : "Edit Media Note") : (ar ? "إضافة ملاحظة وسائط" : "Add Media Note")}</h2>
+            <p class="page-subtitle">${ar ? "أضف صورًا أو فيديوهات محفوظة محليًا بجودة أصلية." : "Add photos or videos stored locally in their original quality."}</p>
           </div>
           <button class="modal-close" type="button" data-action="media-editor-close" aria-label="${ar ? "إغلاق" : "Close"}">×</button>
         </header>
         <div class="media-editor-body">
-          <div class="media-editor-type-row">
-            <button type="button" class="button ${d.mode==='image'?'button-primary':'button-secondary'}" data-action="media-editor-pick-images">${ar ? "إضافة صور من المعرض" : "Add Images from Gallery"}</button>
-            <button type="button" class="button ${d.mode==='video'?'button-primary':'button-secondary'}" data-action="media-editor-pick-videos">${ar ? "إضافة فيديو من المعرض" : "Add Videos from Gallery"}</button>
+          <div class="media-drop-zone" id="media-drop-zone" tabindex="0" role="button" aria-label="${ar ? "اختر صورًا أو فيديوهات" : "Choose photos or videos"}">
+            <div class="media-drop-icon" aria-hidden="true">🖼️🎬</div>
+            <h3>${ar ? "اختر صورًا أو فيديوهات" : "Choose photos or videos"}</h3>
+            <p>${ar ? "اسحب الملفات وأفلتها هنا، أو انقر للتصفح. لا يوجد حد لحجم الملف من التطبيق." : "Drag and drop files here, or click to browse. No app-imposed file size limit."}</p>
+            <div class="media-drop-actions">
+              <button type="button" class="button button-primary" data-action="media-editor-pick-images">${ar ? "إضافة صور" : "Add Images"}</button>
+              <button type="button" class="button button-secondary" data-action="media-editor-pick-videos">${ar ? "إضافة فيديوهات" : "Add Videos"}</button>
+            </div>
+            <p class="media-drop-caption">${ar ? "يدعم الصور والفيديوهات الشائعة. تُحفظ الملفات محليًا بالجودة الأصلية." : "Supports common image and video formats. Files are saved locally in original quality."}</p>
           </div>
-          <label class="field"><span>${ar ? "العنوان" : "Title"}</span><input id="media-editor-title-input" type="text" dir="auto" maxlength="180" value="${escapeHtml(d.title || "")}" placeholder="${ar ? "عنوان الملاحظة" : "Note title"}" /></label>
-          <label class="field"><span>${ar ? "الوصف (اختياري)" : "Description (optional)"}</span><textarea id="media-editor-desc-input" dir="auto" rows="3" placeholder="${ar ? "أضف وصفًا..." : "Add a description..."}">${escapeHtml(d.description || "")}</textarea></label>
+
           <div class="media-editor-preview">
-            <div class="media-editor-preview-head"><strong>${ar ? "المعاينة قبل الحفظ" : "Preview before saving"}</strong><span class="muted">${(d.attachments||[]).length} ${ar?"ملف":"file(s)"}</span></div>
-            <div class="media-editor-grid">${previewItems || `<p class="muted">${ar ? "لم يتم اختيار وسائط بعد. اختر صورًا أو فيديو من المعرض." : "No media selected yet. Choose images or videos from your gallery."}</p>`}</div>
+            <div class="media-editor-preview-head">
+              <strong>${ar ? "المعاينة قبل الحفظ" : "Preview before saving"}</strong>
+              <span class="muted">${(d.attachments||[]).length} ${ar?"ملف":"file(s)"}</span>
+            </div>
+            <div class="media-editor-grid">${previewItems || `<div class="empty-state media-editor-empty"><strong>${ar ? "لم يتم اختيار وسائط بعد" : "No media selected yet"}</strong><span>${ar ? "اختر صورًا أو فيديوهات من جهازك." : "Choose photos or videos from your device."}</span></div>`}</div>
           </div>
+
+          <div class="media-editor-form grid">
+            <label class="field"><span>${ar ? "العنوان" : "Title"}</span><input id="media-editor-title-input" type="text" dir="auto" maxlength="180" value="${escapeHtml(d.title || "")}" placeholder="${ar ? "عنوان الملاحظة" : "Note title"}" /></label>
+            <label class="field"><span>${ar ? "الوصف" : "Description"}</span><textarea id="media-editor-desc-input" dir="auto" rows="3" placeholder="${ar ? "أضف وصفًا..." : "Add a description..."}">${escapeHtml(d.description || "")}</textarea></label>
+            <label class="field"><span>${ar ? "التصنيف (اختياري)" : "Category (optional)"}</span><input id="media-editor-category-input" type="text" dir="auto" maxlength="80" value="${escapeHtml(d.category || "")}" placeholder="${ar ? "مثال: محاضرات" : "e.g. Lectures"}" /></label>
+            <div class="setting-row">
+              <div>
+                <strong>${ar ? "المفضلة" : "Favorite"}</strong>
+                <small>${ar ? "يمكنك تصفية المفضلة لاحقًا." : "You can later filter by favorites."}</small>
+              </div>
+              <label class="focus-setting-toggle"><span>${ar ? "مفعّل" : "Enabled"}</span><input type="checkbox" id="media-editor-favorite" ${d.favorite ? "checked" : ""}><i aria-hidden="true"></i></label>
+            </div>
+          </div>
+
           <p id="media-editor-error" class="auth-error" aria-live="polite"></p>
           <p id="media-editor-status" class="muted" aria-live="polite"></p>
         </div>
-        <footer class="modal-actions">
+        <footer class="modal-actions media-editor-footer">
           <button type="button" class="button button-secondary" data-action="media-editor-close">${ar ? "إلغاء" : "Cancel"}</button>
-          <button type="button" class="button button-primary" data-action="media-editor-save">${ar ? "حفظ الملاحظة" : "Save note"}</button>
+          <button type="button" class="button button-primary media-save-primary" id="media-editor-save-btn" data-action="media-editor-save">${isEdit ? (ar ? "حفظ التغييرات" : "Save changes") : (ar ? "حفظ ملاحظة الوسائط" : "Save Media Note")}</button>
         </footer>
       </section>
     </div>`;
+    setupMediaDropZone();
+  }
+
+  function setupMediaDropZone() {
+    const zone = document.getElementById("media-drop-zone");
+    if (!zone || zone.dataset.bound === "1") return;
+    zone.dataset.bound = "1";
+    const prevent = (e) => { e.preventDefault(); e.stopPropagation(); };
+    ["dragenter", "dragover", "dragleave", "drop"].forEach((evt) => zone.addEventListener(evt, prevent));
+    zone.addEventListener("dragover", () => zone.classList.add("is-dragover"));
+    zone.addEventListener("dragleave", () => zone.classList.remove("is-dragover"));
+    zone.addEventListener("drop", async (e) => {
+      zone.classList.remove("is-dragover");
+      const files = Array.from(e.dataTransfer?.files || []);
+      if (!files.length) return;
+      const images = files.filter((f) => String(f.type || "").startsWith("image/"));
+      const videos = files.filter((f) => String(f.type || "").startsWith("video/"));
+      if (images.length) await addFilesToMediaDraft(images, "image", null);
+      if (videos.length) await addFilesToMediaDraft(videos, "video", null);
+    });
+    zone.addEventListener("click", (e) => {
+      if (e.target.closest("button")) return;
+      triggerMediaFilePicker("image");
+    });
+    zone.addEventListener("keydown", (e) => {
+      if ((e.key === "Enter" || e.key === " ") && !e.target.closest("button")) {
+        e.preventDefault();
+        triggerMediaFilePicker("image");
+      }
+    });
   }
 
   function syncMediaDraftFromInputs() {
     if (!mediaEditorDraft) return;
     mediaEditorDraft.title = document.getElementById("media-editor-title-input")?.value || mediaEditorDraft.title || "";
     mediaEditorDraft.description = document.getElementById("media-editor-desc-input")?.value || mediaEditorDraft.description || "";
+    mediaEditorDraft.category = document.getElementById("media-editor-category-input")?.value || mediaEditorDraft.category || "";
+    mediaEditorDraft.favorite = Boolean(document.getElementById("media-editor-favorite")?.checked);
   }
 
   function closeMediaEditor() {
@@ -5724,18 +6269,67 @@
     renderMediaEditorModal();
   }
 
+  async function openMediaNoteEditor(id) {
+    const note = findMediaNoteById(id);
+    if (!note) {
+      showToast(
+        appLanguage === "ar"
+          ? "تعذر العثور على الوسائط."
+          : "The media note could not be found.",
+      );
+      return;
+    }
+    const attachments = [];
+    for (const att of noteAttachments(note)) {
+      const copy = { ...att };
+      // Create an independent preview URL for the editor so closing the editor
+      // never revokes the cached object URLs used by the gallery/viewer.
+      if (copy.localKey) {
+        try {
+          const rec = await getMediaBlob(copy.localKey);
+          if (rec?.blob) copy.previewUrl = URL.createObjectURL(rec.blob);
+        } catch { /* keep without preview */ }
+      }
+      attachments.push(copy);
+    }
+    mediaEditorDraft = {
+      id: String(note.id),
+      title: String(note.title || ""),
+      description: String(note.description || ""),
+      category: String(note.category || ""),
+      attachments,
+      mode: noteTypeOf(note) === "video" ? "video" : "image",
+      favorite: Boolean(note.favorite),
+      originalAttachmentKeys: new Set(noteAttachments(note).map((a) => String(a?.localKey || "")).filter(Boolean)),
+    };
+    renderMediaEditorModal();
+  }
+
   function validateMediaFile(file, kind) {
     const ar = appLanguage === "ar";
     const type = String(file?.type || "");
     if (kind === "image" && !type.startsWith("image/")) return ar ? "يرجى اختيار ملفات صور فقط." : "Please select image files only.";
     if (kind === "video" && !type.startsWith("video/")) return ar ? "يرجى اختيار ملفات فيديو فقط." : "Please select video files only.";
-    const max = kind === "video" ? 200 * 1024 * 1024 : 25 * 1024 * 1024;
-    if ((file.size || 0) > max) {
-      return ar
-        ? `الملف كبير جدًا (${formatBytesShort(file.size)}). الحد التقريبي ${kind === "video" ? "200MB" : "25MB"}.`
-        : `File is too large (${formatBytesShort(file.size)}). Approximate limit is ${kind === "video" ? "200MB" : "25MB"}.`;
-    }
+    // Media Notes intentionally accept any image/video size supported by the
+    // device and browser. There is no artificial application-level size limit;
+    // real constraints (browser/device storage quota) are surfaced through
+    // navigator.storage estimates and IndexedDB quota errors during saving.
     return "";
+  }
+
+  async function checkMediaStorage() {
+    const supported = Boolean(navigator.storage && typeof navigator.storage.estimate === "function");
+    let estimate = null;
+    let persisted = false;
+    let persistSupported = false;
+    if (supported) {
+      try {
+        estimate = await navigator.storage.estimate().catch(() => null);
+        persistSupported = Boolean(navigator.storage.persist);
+        if (persistSupported) persisted = await navigator.storage.persist().catch(() => false);
+      } catch { /* storage API unavailable */ }
+    }
+    return { supported, estimate, persisted, persistSupported };
   }
 
   async function addFilesToMediaDraft(files, kind, replaceIdx = null) {
@@ -5753,7 +6347,8 @@
       if (replaceIdx != null && d.attachments[replaceIdx]) {
         const old = d.attachments[replaceIdx];
         if (old.previewUrl) try { URL.revokeObjectURL(old.previewUrl); } catch {}
-        if (old.localKey && old.localKey !== att.localKey) { try { await deleteMediaBlob(old.localKey); } catch {} }
+        const isOriginalOld = d?.id && d?.originalAttachmentKeys && d.originalAttachmentKeys.has(String(old.localKey || ""));
+        if (old.localKey && old.localKey !== att.localKey && !isOriginalOld) { try { await deleteMediaBlob(old.localKey); } catch {} }
         d.attachments[replaceIdx] = att;
         replaceIdx = null;
       } else {
@@ -5779,8 +6374,13 @@
     input.click();
   }
 
-  async function saveMediaNoteRecord({ id = null, title, description = "", attachments = [], type = "image", existingCreatedAt = null }) {
+  async function saveMediaNoteRecord({ id = null, title, description = "", category = "", attachments = [], type = "image", existingCreatedAt = null, favorite = false }) {
     const now = new Date().toISOString();
+    const statusEl = document.getElementById("media-editor-status");
+    if (statusEl) statusEl.textContent = appLanguage === "ar" ? "جارٍ حفظ الملف…" : "Saving media…";
+    // Ask for persistent browser storage when the browser supports it, so the
+    // local media library survives eviction better. Failures are non-fatal.
+    void checkMediaStorage();
     const noteId = id || `local-note-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
     const safeAttachments = (Array.isArray(attachments) ? attachments : []).map((a) => {
       const copy = { ...a };
@@ -5802,85 +6402,448 @@
     });
     note.content = serializeMediaNoteContent(note);
 
-    if (supabase && session) {
-      try {
-        const syncedAttachments = [];
-        for (let i = 0; i < note.attachments.length; i++) {
-          const att = note.attachments[i];
-          let storagePath = att.storagePath || "";
-          if (!storagePath && att.localKey) {
-            const rec = await getMediaBlob(att.localKey);
-            if (rec?.blob) {
-              const safeName = String(att.name || att.localKey).replace(/[^a-zA-Z0-9._-]+/g, "_");
-              storagePath = `${session.user.id}/${note.id}/${att.localKey}-${safeName}`;
-              const statusEl = document.getElementById("media-editor-status");
-              if (statusEl) statusEl.textContent = appLanguage === "ar" ? `جارٍ رفع الملف ${i + 1} من ${note.attachments.length}...` : `Uploading ${i + 1} of ${note.attachments.length}...`;
-              const up = await supabase.storage.from("note-media").upload(storagePath, rec.blob, {
-                upsert: true,
-                contentType: att.mime || rec.type || undefined,
-              });
-              if (up.error) throw up.error;
-            }
-          }
-          syncedAttachments.push({ ...att, storagePath, bucket: "note-media" });
-        }
-        note.attachments = syncedAttachments;
-        note.content = serializeMediaNoteContent(note);
-        const payload = { title: note.title, content: note.content, subject_id: null, is_favorite: false };
-        const isLocal = String(note.id).startsWith("local-");
-        let result;
-        if (!isLocal) {
-          result = await supabase.from("notes").update(payload).eq("id", note.id).select("id,title,content,subject_id,is_favorite,created_at,updated_at").single();
-        } else {
-          result = await supabase.from("notes").insert(payload).select("id,title,content,subject_id,is_favorite,created_at,updated_at").single();
-        }
-        if (result.error) throw result.error;
-        const saved = normalizeNoteRecord({ ...result.data, subject: "" });
-        const idx = notes.findIndex((n) => String(n.id) === String(saved.id) || String(n.id) === String(note.id));
-        if (idx >= 0) notes[idx] = saved; else notes.unshift(saved);
-        render();
-        return;
-      } catch (e) {
-        console.warn("Media note remote sync failed, saving locally.", e);
-      }
-    }
-
-    const idx = notes.findIndex((n) => String(n.id) === String(note.id));
-    if (idx >= 0) notes[idx] = note; else notes.unshift(note);
-    saveLocalNotes();
+    // Media Notes are strictly LOCAL-ONLY. Binaries are kept in IndexedDB
+    // (saved by readFileAsAttachment) and metadata lives in the dedicated local
+    // media metadata database. Nothing here talks to Supabase or any server.
+    const mediaId = String(id || `media-${Date.now()}-${Math.random().toString(36).slice(2,7)}`);
+    const mediaRecord = {
+      id: mediaId,
+      kind: type === "video" ? "video" : "image",
+      title: String(title || (appLanguage === "ar" ? "ملاحظة وسائط" : "Media note")).trim(),
+      description: String(description || ""),
+      category: String(category || ""),
+      favorite: Boolean(favorite),
+      attachments: safeAttachments.map((a) => ({
+        id: String(a?.id || a?.localKey || mediaId),
+        kind: a?.kind === "video" ? "video" : "image",
+        name: String(a?.name || ""),
+        mime: String(a?.mime || ""),
+        size: Number(a?.size) || 0,
+        duration: Number(a?.duration) || 0,
+        createdAt: a?.createdAt || null,
+        localKey: String(a?.localKey || ""),
+      })),
+      createdAt: existingCreatedAt || now,
+      updatedAt: now,
+    };
+    const savedMedia = await putMediaMeta(mediaRecord);
+    if (statusEl) statusEl.textContent = appLanguage === "ar" ? "تم الحفظ." : "Saved.";
+    const savedMediaNote = {
+      id: savedMedia.id,
+      type: savedMedia.kind,
+      title: savedMedia.title,
+      description: savedMedia.description,
+      category: String(savedMedia.category || ""),
+      favorite: Boolean(savedMedia.favorite),
+      attachments: Array.isArray(savedMedia.attachments) ? savedMedia.attachments : [],
+      created_at: savedMedia.createdAt || "",
+      updated_at: savedMedia.updatedAt || "",
+      createdAt: savedMedia.createdAt || "",
+      updatedAt: savedMedia.updatedAt || "",
+      kind: savedMedia.kind,
+    };
+    const mediaIdx = mediaNotesList.findIndex((n) => String(n.id) === String(savedMedia.id));
+    if (mediaIdx >= 0) mediaNotesList[mediaIdx] = savedMediaNote;
+    else mediaNotesList.unshift(savedMediaNote);
     render();
   }
 
-  async function openMediaNoteViewer(noteId) {
-    const note = notes.find((n) => String(n.id) === String(noteId));
+  let mediaFlushInFlight = false;
+
+  /** Re-uploads media notes that were saved locally while offline. */
+  async function flushPendingMediaNotes() {
+    // Media Notes are strictly local-only: binaries live in the IndexedDB media
+    // database and metadata in the local media metadata database. They never enter
+    // the Supabase sync queue, so there is nothing to flush remotely.
+    mediaFlushInFlight = false;
+  }
+
+  async function openMediaNoteViewer(noteId, startIndex = 0) {
+    const note = findMediaNoteById(noteId);
     if (!note) return;
-    const ar = appLanguage === 'ar';
+    const ar = appLanguage === "ar";
     const atts = noteAttachments(note);
-    if (!atts.length) { showToast(ar ? 'لا توجد وسائط.' : 'No media.'); return; }
-    const att = atts[0];
-    try {
-      let url = '';
-      if (att.localKey) url = await getMediaObjectUrl(att.localKey);
-      if (!url && supabase && att.storagePath) {
-        const signed = await supabase.storage.from(att.bucket || 'note-media').createSignedUrl(att.storagePath, 3600);
-        if (!signed.error) url = signed.data?.signedUrl || '';
-      }
-      if (!url) { showToast(ar ? 'تعذر فتح الوسائط (غير متاحة محليًا/أونلاين).' : 'Could not open media (not available locally/online).'); return; }
-      const modal = document.createElement('div');
-      modal.className = 'modal-backdrop media-viewer-backdrop';
-      modal.innerHTML = `<div class="modal media-viewer-modal" role="dialog" aria-modal="true">
-        <div class="media-viewer-head"><h3 dir="auto">${escapeHtml(note.title || (ar?'ملاحظة وسائط':'Media note'))}</h3><button type="button" class="modal-close" data-action="close-media-viewer" aria-label="${ar?'إغلاق':'Close'}">×</button></div>
-        <div class="media-viewer-body">${att.kind === 'video' ? `<video controls playsinline src="${url}" class="media-viewer-video"></video>` : `<img src="${url}" alt="" class="media-viewer-image" />`}</div>
-        ${note.description ? `<p class="media-viewer-desc" dir="auto">${escapeHtml(note.description)}</p>` : ''}
-      </div>`;
-      modal.addEventListener('click', (e) => {
-        if (e.target === modal || e.target.closest('[data-action="close-media-viewer"]')) modal.remove();
-      });
-      document.body.appendChild(modal);
-    } catch (e) {
-      console.error('Media viewer failed', e);
-      showToast(ar ? 'تعذر فتح الوسائط.' : 'Could not open media.');
+    if (!atts.length) {
+      showToast(ar ? "لا توجد وسائط." : "No media.");
+      return;
     }
+    const state = {
+      index: Math.max(0, Math.min(atts.length - 1, Number(startIndex) || 0)),
+      zoom: 1,
+    };
+    const urlCache = new Map();
+    let drawToken = 0;
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop media-viewer-backdrop";
+    modal.innerHTML = `<div class="modal media-viewer-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(note.title || (ar ? "ملاحظة وسائط" : "Media note"))}">
+      <div class="media-viewer-head">
+        <div class="media-viewer-head-text">
+          <h3 dir="auto">${escapeHtml(note.title || (ar ? "ملاحظة وسائط" : "Media note"))}</h3>
+          ${note.description ? `<p class="media-viewer-desc" dir="auto">${escapeHtml(note.description)}</p>` : ""}
+        </div>
+        <button type="button" class="modal-close" data-media-action="close" aria-label="${ar ? "إغلاق" : "Close"}">×</button>
+      </div>
+      <div class="media-viewer-stage-wrap">
+        <button type="button" class="media-viewer-nav media-viewer-prev" data-media-action="prev" aria-label="${ar ? "السابق" : "Previous"}" ${atts.length < 2 ? "hidden" : ""}>‹</button>
+        <div class="media-viewer-stage" data-media-stage aria-live="polite"></div>
+        <button type="button" class="media-viewer-nav media-viewer-next" data-media-action="next" aria-label="${ar ? "التالي" : "Next"}" ${atts.length < 2 ? "hidden" : ""}>›</button>
+      </div>
+      <div class="media-viewer-toolbar">
+        <span class="media-viewer-counter" data-media-counter></span>
+        <div class="media-viewer-zoom" data-media-zoom ${atts[state.index]?.kind === "video" ? "hidden" : ""}>
+          <button type="button" class="button button-small button-secondary" data-media-action="zoom-out" aria-label="${ar ? "تصغير" : "Zoom out"}">−</button>
+          <span data-media-zoom-label>100%</span>
+          <button type="button" class="button button-small button-secondary" data-media-action="zoom-in" aria-label="${ar ? "تكبير" : "Zoom in"}">＋</button>
+          <button type="button" class="button button-small button-secondary" data-media-action="zoom-reset">${ar ? "إعادة الضبط" : "Reset"}</button>
+        </div>
+        <div class="media-viewer-video-controls" data-media-video-controls hidden>
+          <label class="media-speed-label">${ar ? "السرعة" : "Speed"}
+            <select class="filter-select media-speed-select" data-media-action="speed" aria-label="${ar ? "سرعة التشغيل" : "Playback speed"}">
+              <option value="0.25">0.25x</option>
+              <option value="0.5">0.5x</option>
+              <option value="0.75">0.75x</option>
+              <option value="1" selected>1x</option>
+              <option value="1.25">1.25x</option>
+              <option value="1.5">1.5x</option>
+              <option value="1.75">1.75x</option>
+              <option value="2">2x</option>
+            </select>
+          </label>
+          <label class="media-speed-label"><input type="checkbox" data-media-action="loop"> ${ar ? "تكرار" : "Loop"}</label>
+          </label>
+          <button type="button" class="button button-small button-secondary" data-media-action="pip" hidden>${ar ? "صورة داخل صورة" : "Picture-in-Picture"}</button>
+          <button type="button" class="button button-small button-secondary" data-media-action="fullscreen" hidden>${ar ? "ملء الشاشة" : "Fullscreen"}</button>
+        </div>
+        <div class="media-viewer-actions">
+          <button type="button" class="button button-small button-secondary" data-media-action="favorite">${note.favorite ? (ar ? "إزالة من المفضلة" : "Remove from favorites") : (ar ? "إضافة إلى المفضلة" : "Add to favorites")}</button>
+          <button type="button" class="button button-small button-secondary" data-media-action="edit">${ar ? "تعديل" : "Edit"}</button>
+          <button type="button" class="button button-small button-secondary danger" data-media-action="delete">${ar ? "حذف" : "Delete"}</button>
+        </div>
+      </div>
+      ${atts.length > 1 ? `<div class="media-viewer-thumbs">${atts
+        .map(
+          (item, index) =>
+            `<button type="button" class="media-viewer-thumb ${item.kind === "video" ? "is-video" : "is-image"} ${index === state.index ? "active" : ""}" data-media-action="go" data-index="${index}" aria-label="${ar ? "الوسائط" : "Media"} ${index + 1}">${item.kind === "video" ? "▶" : "▣"}</button>`,
+        )
+        .join("")}</div>` : ""}
+    </div>`;
+    document.body.appendChild(modal);
+
+    const stage = modal.querySelector("[data-media-stage]");
+    const counter = modal.querySelector("[data-media-counter]");
+    const zoomBar = modal.querySelector("[data-media-zoom]");
+    const zoomLabel = modal.querySelector("[data-media-zoom-label]");
+    const videoControls = modal.querySelector("[data-media-video-controls]");
+    const fullscreenButton = modal.querySelector('[data-media-action="fullscreen"]');
+    const pipButton = modal.querySelector('[data-media-action="pip"]');
+
+    const close = () => {
+      document.removeEventListener("keydown", onKeydown, true);
+      for (const url of urlCache.values()) {
+        try { URL.revokeObjectURL(url); } catch {}
+      }
+      urlCache.clear();
+      modal.remove();
+      if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
+    };
+
+    async function resolveUrl(index, force = false) {
+      if (!force && urlCache.has(index)) return urlCache.get(index);
+      const att = atts[index];
+      let url = "";
+      // Media Notes are local-only: always resolve from the original IndexedDB blob.
+      if (att?.localKey) {
+        try {
+          const rec = await getMediaBlob(att.localKey);
+          if (rec?.blob) url = URL.createObjectURL(rec.blob);
+        } catch {
+          url = "";
+        }
+      }
+      urlCache.set(index, url);
+      return url;
+    }
+
+    async function draw() {
+      const token = ++drawToken;
+      const att = atts[state.index];
+      const isVideo = att?.kind === "video";
+      counter.textContent = atts.length > 1 ? `${state.index + 1} / ${atts.length}` : "";
+      zoomBar.hidden = isVideo;
+      if (videoControls) videoControls.hidden = !isVideo;
+      if (fullscreenButton) {
+        fullscreenButton.hidden = !isVideo;
+        fullscreenButton.textContent = ar ? "ملء الشاشة" : "Fullscreen";
+      }
+      if (pipButton) pipButton.hidden = !(isVideo && "pictureInPictureEnabled" in document);
+      modal.querySelectorAll("[data-media-action='go']").forEach((button) => {
+        button.classList.toggle(
+          "active",
+          Number(button.dataset.index) === state.index,
+        );
+      });
+      stage.innerHTML = `<div class="media-viewer-loading" role="status">${ar ? "جارٍ تحميل الوسائط…" : "Loading media…"}</div>`;
+      const url = await resolveUrl(state.index);
+      if (token !== drawToken) return;
+      if (!url) {
+        stage.innerHTML = `<div class="media-viewer-error"><p>${
+          ar
+            ? "تعذر فتح الملف الأصلي من التخزين المحلي. قد يكون الملف محذوفًا أو تالفًا."
+            : "Could not open the original file from local storage. The file may be missing or corrupted."
+        }</p><button type="button" class="button button-primary button-small" data-media-action="retry">${
+          ar ? "إعادة المحاولة" : "Retry"
+        }</button></div>`;
+        return;
+      }
+      if (isVideo) {
+        stage.innerHTML = `<div class="media-viewer-video-wrap"><video controls playsinline preload="metadata" src="${escapeHtml(url)}" class="media-viewer-video"></video></div>`;
+        const video = stage.querySelector("video");
+        const speedSelect = modal.querySelector('[data-media-action="speed"]');
+        const loopToggle = modal.querySelector('[data-media-action="loop"]');
+        if (speedSelect && video) {
+          video.playbackRate = Number(speedSelect.value || 1) || 1;
+        }
+        if (loopToggle && video) {
+          video.loop = Boolean(loopToggle.checked);
+        }
+        video?.addEventListener("error", () => {
+          stage.innerHTML = `<div class="media-viewer-error"><p>${
+            ar ? "تعذر تشغيل الفيديو. قد يكون التنسيق غير مدعوم في هذا المتصفح." : "Could not play the video. The format may not be supported in this browser."
+          }</p><button type="button" class="button button-primary button-small" data-media-action="retry">${
+            ar ? "إعادة المحاولة" : "Retry"
+          }</button></div>`;
+        });
+      } else {
+        stage.innerHTML = `<div class="media-viewer-zoom-frame" data-zoom-frame><img src="${escapeHtml(url)}" alt="" class="media-viewer-image" data-media-image draggable="false" /></div>`;
+        const frame = stage.querySelector("[data-zoom-frame]");
+        const image = stage.querySelector("[data-media-image]");
+        let dragging = false;
+        let startX = 0, startY = 0, scrollLeft = 0, scrollTop = 0;
+        if (frame) {
+          frame.addEventListener("dblclick", (e) => {
+            e.preventDefault();
+            setZoom(state.zoom === 1 ? 2 : 1);
+          });
+          frame.addEventListener("pointerdown", (e) => {
+            if (state.zoom <= 1) return;
+            dragging = true;
+            frame.setPointerCapture?.(e.pointerId);
+            startX = e.clientX;
+            startY = e.clientY;
+            scrollLeft = frame.scrollLeft;
+            scrollTop = frame.scrollTop;
+          });
+          frame.addEventListener("pointermove", (e) => {
+            if (!dragging) return;
+            frame.scrollLeft = scrollLeft - (e.clientX - startX);
+            frame.scrollTop = scrollTop - (e.clientY - startY);
+          });
+          const stopDrag = () => { dragging = false; };
+          frame.addEventListener("pointerup", stopDrag);
+          frame.addEventListener("pointercancel", stopDrag);
+          frame.addEventListener("pointerleave", stopDrag);
+        }
+        image?.addEventListener("error", () => {
+          stage.innerHTML = `<div class="media-viewer-error"><p>${
+            ar ? "تعذر عرض الصورة الأصلية." : "Could not display the original image."
+          }</p><button type="button" class="button button-primary button-small" data-media-action="retry">${
+            ar ? "إعادة المحاولة" : "Retry"
+          }</button></div>`;
+        });
+      }
+      applyZoom();
+      modal.dataset.index = String(state.index);
+    }
+
+    function applyZoom() {
+      const image = stage.querySelector("[data-media-image]");
+      const frame = stage.querySelector("[data-zoom-frame]");
+      if (image) {
+        if (state.zoom === 1) {
+          image.style.width = "auto";
+          image.style.height = "auto";
+          image.style.maxWidth = "100%";
+          image.style.maxHeight = "100%";
+        } else {
+          image.style.maxWidth = "none";
+          image.style.maxHeight = "none";
+          image.style.width = `${Math.round(state.zoom * 100)}%`;
+          image.style.height = "auto";
+        }
+        image.classList.toggle("is-zoomed", state.zoom > 1);
+      }
+      if (frame) frame.classList.toggle("is-zoomed", state.zoom > 1);
+      if (zoomLabel) zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
+    }
+
+    function go(delta) {
+      if (atts.length < 2) return;
+      state.index = (state.index + delta + atts.length) % atts.length;
+      state.zoom = 1;
+      void draw();
+    }
+
+    function setZoom(next) {
+      state.zoom = Math.max(1, Math.min(4, Math.round(next * 4) / 4));
+      applyZoom();
+    }
+
+    function enterFullscreen() {
+      const video = stage.querySelector("video");
+      if (!video) return;
+      if (video.webkitEnterFullscreen) {
+        try {
+          video.webkitEnterFullscreen();
+          return;
+        } catch {
+          /* fall through */
+        }
+      }
+      if (video.requestFullscreen) {
+        video.requestFullscreen().catch(() => {
+          showToast(ar ? "تعذر تفعيل ملء الشاشة." : "Could not enter fullscreen.");
+        });
+      }
+    }
+
+    function onKeydown(event) {
+      const tag = (event.target && event.target.tagName) || "";
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || event.target?.isContentEditable) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+      } else if (event.key === "ArrowLeft") {
+        const video = stage.querySelector("video");
+        event.preventDefault();
+        event.stopPropagation();
+        if (video) video.currentTime = Math.max(0, (video.currentTime || 0) - 10);
+        else go(-1);
+      } else if (event.key === "ArrowRight") {
+        const video = stage.querySelector("video");
+        event.preventDefault();
+        event.stopPropagation();
+        if (video) video.currentTime = Math.min(Number(video.duration) || Infinity, (video.currentTime || 0) + 10);
+        else go(1);
+      } else if (event.key === "ArrowUp") {
+        const video = stage.querySelector("video");
+        if (video) { event.preventDefault(); video.volume = Math.min(1, (video.volume || 0) + 0.1); }
+      } else if (event.key === "ArrowDown") {
+        const video = stage.querySelector("video");
+        if (video) { event.preventDefault(); video.volume = Math.max(0, (video.volume || 0) - 0.1); }
+      } else if (event.key === " " || event.code === "Space") {
+        const video = stage.querySelector("video");
+        if (video) { event.preventDefault(); if (video.paused) void video.play().catch(()=>{}); else video.pause(); }
+      } else if (event.key === "m" || event.key === "M") {
+        const video = stage.querySelector("video");
+        if (video) { event.preventDefault(); video.muted = !video.muted; }
+      } else if (event.key === "f" || event.key === "F") {
+        const video = stage.querySelector("video");
+        if (video) { event.preventDefault(); enterFullscreen(); }
+      } else if (event.key === "+" || event.key === "=") {
+        event.preventDefault();
+        setZoom(state.zoom + 0.25);
+      } else if (event.key === "-" || event.key === "_") {
+        event.preventDefault();
+        setZoom(state.zoom - 0.25);
+      }
+    }
+
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal) {
+        close();
+        return;
+      }
+      const action = event.target.closest?.("[data-media-action]");
+      if (!action) return;
+      const name = action.dataset.mediaAction;
+      if (name === "close") close();
+      else if (name === "prev") go(-1);
+      else if (name === "next") go(1);
+      else if (name === "go") {
+        state.index = Number(action.dataset.index) || 0;
+        state.zoom = 1;
+        void draw();
+      } else if (name === "zoom-in") setZoom(state.zoom + 0.25);
+      else if (name === "zoom-out") setZoom(state.zoom - 0.25);
+      else if (name === "zoom-reset") setZoom(1);
+      else if (name === "fullscreen") enterFullscreen();
+      else if (name === "favorite") {
+        const nextFavorite = !Boolean(note.favorite);
+        note.favorite = nextFavorite;
+        const favoriteActionButton = modal.querySelector(
+          "[data-media-action='favorite']",
+        );
+        if (favoriteActionButton) {
+          favoriteActionButton.textContent = nextFavorite
+            ? ar
+              ? "إزالة من المفضلة"
+              : "Remove from favorites"
+            : ar
+              ? "إضافة إلى المفضلة"
+              : "Add to favorites";
+        }
+        void updateMediaMeta(String(note.id), { favorite: nextFavorite }).then(
+          (saved) => {
+            if (saved) {
+              mediaNotesList = mediaNotesList.map((n) =>
+                String(n.id) === String(note.id)
+                  ? { ...n, favorite: nextFavorite }
+                  : n,
+              );
+            }
+          },
+        );
+      } else if (name === "edit") {
+        close();
+        void openMediaNoteEditor(String(note.id));
+      } else if (name === "delete") {
+        close();
+        void deleteNote(String(note.id));
+      } else if (name === "pip") {
+        const video = stage.querySelector("video");
+        if (video && document.pictureInPictureEnabled) {
+          if (document.pictureInPictureElement) {
+            void document.exitPictureInPicture?.().catch(() => {});
+          } else {
+            void video.requestPictureInPicture?.().catch(() => {
+              showToast(ar ? "صورة داخل صورة غير متاحة." : "Picture-in-Picture is not available.");
+            });
+          }
+        }
+      } else if (name === "retry") {
+        const index = state.index;
+        const old = urlCache.get(index);
+        if (old) { try { URL.revokeObjectURL(old); } catch {} }
+        urlCache.delete(index);
+        stage.innerHTML = `<div class="media-viewer-loading" role="status">${ar ? "جارٍ إعادة المحاولة…" : "Retrying…"}</div>`;
+        void resolveUrl(index, true).then((url) => {
+          if (state.index !== index) return;
+          if (url) void draw();
+          else
+            stage.innerHTML = `<div class="media-viewer-error"><p>${
+              ar
+                ? "ما زال تعذر فتح الملف من التخزين المحلي."
+                : "Still could not open the file from local storage."
+            }</p><button type="button" class="button button-primary button-small" data-media-action="retry">${
+              ar ? "إعادة المحاولة" : "Retry"
+            }</button></div>`;
+        });
+      }
+    });
+    modal.addEventListener("change", (event) => {
+      const target = event.target;
+      if (target?.matches?.('[data-media-action="speed"]')) {
+        const video = stage.querySelector("video");
+        if (video) video.playbackRate = Number(target.value || 1) || 1;
+      }
+      if (target?.matches?.('[data-media-action="loop"]')) {
+        const video = stage.querySelector("video");
+        if (video) video.loop = Boolean(target.checked);
+      }
+    });
+    document.addEventListener("keydown", onKeydown, true);
+    void draw();
   }
 
   function noteBodyForHtml(html) {
@@ -6068,9 +7031,37 @@
       is_favorite: Boolean(document.getElementById("note-editor-pin")?.checked),
     };
     if (notesColorSupported) payload.color = state.color || "";
+
+    // Writes to the local list + localStorage. Used on its own when signed out
+    // and as the fallback whenever the network write fails, so an offline or
+    // failed save never loses the note the user just typed.
+    const persistLocally = () => {
+      const now = new Date().toISOString();
+      const id = state.id || `local-note-${Date.now()}`;
+      const existing = notes.find((note) => String(note.id) === String(id));
+      const saved = {
+        ...(existing || {}),
+        ...payload,
+        id,
+        ownerId: session?.user?.id || existing?.ownerId || null,
+        localPending: Boolean(session),
+        subject: subjectName(payload.subject_id),
+        created_at: existing?.created_at || now,
+        updated_at: now,
+      };
+      if (existing)
+        notes = notes.map((note) =>
+          String(note.id) === String(id) ? saved : note,
+        );
+      else notes.unshift(saved);
+      state.id = id;
+      saveLocalNotes();
+      return saved;
+    };
+
     setNoteSaveStatus("saving");
     try {
-      if (supabase && session) {
+      if (supabase && session && navigator.onLine !== false) {
         let result;
         if (state.id && !String(state.id).startsWith("local-")) {
           result = await supabase
@@ -6096,41 +7087,45 @@
         const index = notes.findIndex(
           (note) => String(note.id) === String(saved.id),
         );
-        const normalized = { ...saved, subject: subjectName(saved.subject_id) };
+        const normalized = {
+          ...saved,
+          ownerId: session.user.id,
+          localPending: false,
+          subject: subjectName(saved.subject_id),
+        };
         if (index >= 0) notes[index] = normalized;
         else notes.unshift(normalized);
         state.id = saved.id;
-      } else {
-        const now = new Date().toISOString();
-        const id = state.id || `local-note-${Date.now()}`;
-        const existing = notes.find((note) => String(note.id) === String(id));
-        const saved = {
-          ...(existing || {}),
-          ...payload,
-          id,
-          subject: subjectName(payload.subject_id),
-          created_at: existing?.created_at || now,
-          updated_at: now,
-        };
-        if (existing)
-          notes = notes.map((note) =>
-            String(note.id) === String(id) ? saved : note,
-          );
-        else notes.unshift(saved);
-        state.id = id;
         saveLocalNotes();
+      } else {
+        persistLocally();
       }
       state.savedTitle = payload.title;
       setNoteSaveStatus("saved");
       updateNoteWordCount();
     } catch (error) {
-      console.error("Could not save the note.", error);
-      setNoteSaveStatus("error");
-      if (!silent)
-        showToast(
-          `${appLanguage === "ar" ? "تعذر حفظ الملاحظة:" : "Could not save the note:"} ${error.message}`,
-        );
-      throw error;
+      console.error("Could not save the note remotely.", error);
+      // Keep the user's text on this device instead of failing the save.
+      try {
+        persistLocally();
+        state.savedTitle = payload.title;
+        setNoteSaveStatus("saved");
+        updateNoteWordCount();
+        if (!silent)
+          showToast(
+            appLanguage === "ar"
+              ? "تعذر الاتصال بالخادم. تم حفظ الملاحظة على هذا الجهاز وستُزامن تلقائيًا."
+              : "Could not reach the server. The note was saved on this device and will sync automatically.",
+          );
+      } catch (fallbackError) {
+        console.error("Could not save the note locally.", fallbackError);
+        setNoteSaveStatus("error");
+        if (!silent)
+          showToast(
+            `${appLanguage === "ar" ? "تعذر حفظ الملاحظة:" : "Could not save the note:"} ${error.message}`,
+          );
+        throw error;
+      }
     }
   }
 
@@ -6155,7 +7150,7 @@
 
   function openNoteEditor(id = null, templateKey = "blank") {
     const note = id
-      ? notes.find((item) => String(item.id) === String(id))
+      ? notes.find((item) => String(item.id) === String(id)) || findMediaNoteById(id)
       : null;
     if (id && !note) {
       showToast(
@@ -6163,6 +7158,10 @@
           ? "تعذر العثور على الملاحظة."
           : "The note could not be found.",
       );
+      return;
+    }
+    if (id && note && isMediaNote(note)) {
+      void openMediaNoteViewer(String(id));
       return;
     }
     const existing = document.getElementById("note-modal");
@@ -6376,7 +7375,7 @@
   }
 
   async function deleteNote(id, { closeEditor = false } = {}) {
-    const note = notes.find((item) => String(item.id) === String(id));
+    const note = findMediaNoteById(id);
     if (!note) return;
     if (
       !window.confirm(
@@ -6388,19 +7387,21 @@
       return;
     try {
       if (isMediaNote(note)) {
+        // Media Notes deletion is local-only: drop the IndexedDB blob and the
+        // local media metadata entry. No remote delete is ever performed.
         for (const att of noteAttachments(note)) {
           if (att?.localKey) await deleteMediaBlob(att.localKey);
-          if (supabase && session && att?.storagePath) {
-            try { await supabase.storage.from(att.bucket || 'note-media').remove([att.storagePath]); } catch {}
-          }
         }
+        await deleteMediaMeta(String(id), null);
+        mediaNotesList = mediaNotesList.filter((item) => String(item.id) !== String(id));
+      } else {
+        if (supabase && session && !String(id).startsWith("local-")) {
+          const { error } = await supabase.from("notes").delete().eq("id", id);
+          if (error) throw error;
+        }
+        notes = notes.filter((item) => String(item.id) !== String(id));
+        if (!supabase || !session || String(id).startsWith("local-")) saveLocalNotes();
       }
-      if (supabase && session && !String(id).startsWith("local-")) {
-        const { error } = await supabase.from("notes").delete().eq("id", id);
-        if (error) throw error;
-      }
-      notes = notes.filter((item) => String(item.id) !== String(id));
-      if (!supabase || !session || String(id).startsWith("local-")) saveLocalNotes();
       if (closeEditor) {
         const modal = document.getElementById("note-modal");
         if (modal) closeModal(modal);
@@ -8695,36 +9696,236 @@
     return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
 
+  const voicePendingPrefix = "studyzone.voicePending.";
+  const voiceCachePrefix = "studyzone.voiceCache.";
+
+  function voiceScope() {
+    return session?.user?.id || "guest";
+  }
+
+  function voiceLocalKey(id) {
+    return `voice:${id}`;
+  }
+
+  function readJsonArray(key) {
+    try {
+      const value = JSON.parse(localStorage.getItem(key) || "[]");
+      return Array.isArray(value) ? value : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function writeJsonArray(key, value) {
+    try {
+      localStorage.setItem(
+        key,
+        JSON.stringify(
+          (Array.isArray(value) ? value : []).map((item) => {
+            const copy = { ...item };
+            // Blob URLs die with the page; they are rebuilt from IndexedDB.
+            delete copy.local_url;
+            delete copy.signed_url;
+            return copy;
+          }),
+        ),
+      );
+    } catch (error) {
+      console.warn("Could not persist voice note metadata.", error);
+    }
+  }
+
+  function readPendingVoiceNotes() {
+    return readJsonArray(voicePendingPrefix + voiceScope());
+  }
+
+  function writePendingVoiceNotes(list) {
+    writeJsonArray(voicePendingPrefix + voiceScope(), list);
+  }
+
+  /**
+   * One-time adoption of recordings made before signing in. They are moved to
+   * the signed-in account's queue instead of being shown to a different user.
+   */
+  function claimGuestVoiceNotes() {
+    if (!session?.user?.id) return;
+    const guestPendingKey = voicePendingPrefix + "guest";
+    const guestCacheKey = voiceCachePrefix + "guest";
+    const guestPending = readJsonArray(guestPendingKey);
+    const guestCache = readJsonArray(guestCacheKey);
+    if (!guestPending.length && !guestCache.length) return;
+    const currentPending = readPendingVoiceNotes();
+    const pendingIds = new Set(currentPending.map((item) => String(item.id)));
+    writePendingVoiceNotes([
+      ...guestPending.filter((item) => !pendingIds.has(String(item.id))),
+      ...currentPending,
+    ]);
+    const currentCache = readVoiceCache();
+    const cacheIds = new Set(currentCache.map((item) => String(item.id)));
+    writeVoiceCache([
+      ...guestCache.filter((item) => !cacheIds.has(String(item.id))),
+      ...currentCache,
+    ]);
+    try {
+      localStorage.removeItem(guestPendingKey);
+      localStorage.removeItem(guestCacheKey);
+    } catch {
+      /* storage unavailable */
+    }
+  }
+
+  function readVoiceCache() {
+    return readJsonArray(voiceCachePrefix + voiceScope());
+  }
+
+  function writeVoiceCache(list) {
+    writeJsonArray(voiceCachePrefix + voiceScope(), list);
+  }
+
+  async function hydrateVoiceNoteUrls(items) {
+    return Promise.all(
+      (items || []).map(async (item) => {
+        if (!item) return item;
+        if (item.localKey) {
+          try {
+            const url = await getMediaObjectUrl(item.localKey);
+            if (url) return { ...item, local_url: url };
+          } catch {
+            /* cached blob missing: keep signed URL if any */
+          }
+        }
+        return item;
+      }),
+    );
+  }
+
+  function voiceExtensionFor(mime) {
+    return /mp4|m4a/.test(mime || "")
+      ? "m4a"
+      : /ogg/.test(mime || "")
+        ? "ogg"
+        : "webm";
+  }
+
+  /**
+   * Saves the recording blob in IndexedDB and records it as pending upload.
+   * Used when the device is offline, the user is signed out, or the upload
+   * failed. The recording is never lost in that case.
+   */
+  async function saveLocalVoiceNote({ title, noteId, blob, mime }) {
+    const unique =
+      window.crypto?.randomUUID?.() ||
+      `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const localId = `local-voice-${unique}`;
+    const localKey = voiceLocalKey(localId);
+    const extension = voiceExtensionFor(mime);
+    const record = {
+      id: localId,
+      note_id: noteId,
+      title,
+      storage_path: "",
+      mime_type: mime,
+      duration_seconds: voiceDurationSeconds || 1,
+      size_bytes: blob.size || 0,
+      transcript: "",
+      transcription_status: null,
+      created_at: new Date().toISOString(),
+      local: true,
+      pendingUpload: true,
+      localKey,
+    };
+    try {
+      await putMediaBlob(localKey, blob, {
+        name: `${unique}.${extension}`,
+        type: mime,
+        size: blob.size || 0,
+        kind: "audio",
+      });
+    } catch (error) {
+      console.error("Could not store the recording on this device.", error);
+    }
+    const pending = readPendingVoiceNotes();
+    if (!pending.some((item) => item.localKey === localKey))
+      pending.unshift(record);
+    writePendingVoiceNotes(pending);
+    return record;
+  }
+
   async function loadVoiceNotes() {
-    if (!supabase || !session || voiceNotesLoading) return;
+    if (voiceNotesLoading) return;
     voiceNotesLoading = true;
     voiceNotesError = "";
     scheduleRender();
     try {
-      const { data, error } = await supabase
-        .from("voice_notes")
-        .select(
-          "id,note_id,title,storage_path,mime_type,duration_seconds,size_bytes,transcript,transcription_status,created_at",
-        )
-        .order("created_at", { ascending: false })
-        .limit(100);
-      if (error) throw error;
-      const rows = await Promise.all(
-        (data || []).map(async (row) => {
-          const { data: signed, error: signError } = await supabase.storage
-            .from("voice-notes")
-            .createSignedUrl(row.storage_path, 3600);
-          return {
-            ...row,
-            signed_url: signError ? "" : signed?.signedUrl || "",
-          };
-        }),
-      );
-      voiceNotes = rows;
-      voiceNotesSupported = true;
+      // 1) Local-first: cached and pending notes render immediately, before
+      //    any network request and even with no connection at all.
+      claimGuestVoiceNotes();
+      const cached = readVoiceCache();
+      const pending = readPendingVoiceNotes();
+      const known = new Map();
+      [...cached, ...pending, ...voiceNotes].forEach((item) => {
+        if (item?.id && !known.has(String(item.id))) known.set(String(item.id), item);
+      });
+      if (known.size) voiceNotes = await hydrateVoiceNoteUrls([...known.values()]);
+
+      // 2) Best-effort download. A failure must never erase the local list.
+      if (supabase && session && navigator.onLine !== false) {
+        const { data, error } = await supabase
+          .from("voice_notes")
+          .select(
+            "id,note_id,title,storage_path,mime_type,duration_seconds,size_bytes,transcript,transcription_status,created_at",
+          )
+          .order("created_at", { ascending: false })
+          .limit(100);
+        if (error) throw error;
+        const pendingIds = new Set(readPendingVoiceNotes().map((item) => String(item.id)));
+        const rows = await Promise.all(
+          (data || []).map(async (row) => {
+            let signedUrl = "";
+            if (navigator.onLine !== false) {
+              try {
+                const { data: signed } = await supabase.storage
+                  .from("voice-notes")
+                  .createSignedUrl(row.storage_path, 3600);
+                signedUrl = signed?.signedUrl || "";
+              } catch {
+                signedUrl = "";
+              }
+            }
+            const localMatch = voiceNotes.find(
+              (item) => item.localKey && item.id === row.id,
+            );
+            return {
+              ...row,
+              localKey: localMatch?.localKey || voiceLocalKey(row.id),
+              signed_url: signedUrl,
+            };
+          }),
+        );
+        const serverIds = new Set(rows.map((row) => String(row.id)));
+        // Keep pending uploads and any note that still exists only locally.
+        const localOnly = voiceNotes.filter(
+          (item) =>
+            item?.id &&
+            (pendingIds.has(String(item.id)) ||
+              (item.local && !serverIds.has(String(item.id)))),
+        );
+        voiceNotes = await hydrateVoiceNoteUrls([...rows, ...localOnly]);
+        voiceNotesSupported = true;
+        writeVoiceCache(voiceNotes);
+        // Download remote blobs in the background so playback works offline.
+        void cacheVoiceNoteBlobs(rows);
+      }
     } catch (error) {
       console.error("Could not load voice notes.", error);
-      voiceNotes = [];
+      // Keep everything that is already stored locally; do not blank the page.
+      if (!voiceNotes.length) {
+        const fallback = await hydrateVoiceNoteUrls([
+          ...readPendingVoiceNotes(),
+          ...readVoiceCache(),
+        ]);
+        if (fallback.length) voiceNotes = fallback;
+      }
       if (
         isMissingRelation(error) ||
         /bucket|not found/i.test(error.message || "")
@@ -8732,11 +9933,114 @@
         voiceNotesSupported = false;
         voiceNotesError = error.message || "";
       } else {
-        voiceNotesError = error.message || "Could not load voice notes.";
+        voiceNotesError =
+          error.message || "Could not load voice notes. Showing saved recordings.";
       }
     } finally {
       voiceNotesLoading = false;
       voiceNotesLoaded = true;
+      scheduleRender();
+    }
+  }
+
+  /** Caches server recordings in IndexedDB for offline playback. */
+  async function cacheVoiceNoteBlobs(rows) {
+    if (!supabase || navigator.onLine === false) return;
+    for (const row of rows || []) {
+      const key = row.localKey || voiceLocalKey(row.id);
+      try {
+        if (await getMediaBlob(key)) continue;
+        if (!row.signed_url) continue;
+        const response = await fetch(row.signed_url);
+        if (!response.ok) continue;
+        const blob = await response.blob();
+        await putMediaBlob(key, blob, {
+          name: row.storage_path || `${row.id}.webm`,
+          type: row.mime_type || blob.type || "audio/webm",
+          size: blob.size || 0,
+          kind: "audio",
+        });
+      } catch (error) {
+        console.warn("Could not cache a voice recording for offline use.", error);
+      }
+    }
+  }
+
+  /** Uploads locally saved recordings once connectivity returns. */
+  async function flushPendingVoiceNotes() {
+    if (!supabase || !session || navigator.onLine === false) return;
+    const pending = readPendingVoiceNotes();
+    if (!pending.length) return;
+    const remaining = [];
+    let uploaded = 0;
+    for (const item of pending) {
+      try {
+        const record = await getMediaBlob(item.localKey);
+        if (!record?.blob) {
+          remaining.push(item);
+          continue;
+        }
+        const extension = voiceExtensionFor(item.mime_type);
+        const unique =
+          String(item.id || "").replace(/^local-voice-/, "") ||
+          `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const path = `${session.user.id}/${unique}.${extension}`;
+        let storagePath = item.storage_path || "";
+        if (!storagePath) {
+          const upload = await supabase.storage
+            .from("voice-notes")
+            .upload(path, record.blob, {
+              contentType: item.mime_type || "audio/webm",
+              upsert: false,
+            });
+          if (upload.error) throw upload.error;
+          storagePath = path;
+        }
+        const insert = await supabase
+          .from("voice_notes")
+          .insert({
+            note_id: item.note_id || null,
+            title: item.title || (appLanguage === "ar" ? "ملاحظة صوتية" : "Voice note"),
+            storage_path: storagePath,
+            mime_type: item.mime_type || "audio/webm",
+            duration_seconds: Number(item.duration_seconds) || 1,
+            size_bytes: record.blob.size || Number(item.size_bytes) || 0,
+          })
+          .select(
+            "id,note_id,title,storage_path,mime_type,duration_seconds,size_bytes,transcript,transcription_status,created_at",
+          )
+          .single();
+        if (insert.error) throw insert.error;
+        const localKey = item.localKey;
+        if (localKey && localKey !== voiceLocalKey(insert.data.id)) {
+          // Keep the cached blob reachable under the server id too.
+          await putMediaBlob(voiceLocalKey(insert.data.id), record.blob, {
+            name: storagePath,
+            type: item.mime_type || "audio/webm",
+            size: record.blob.size || 0,
+            kind: "audio",
+          });
+        }
+        voiceNotes = voiceNotes.map((note) =>
+          String(note.id) === String(item.id)
+            ? {
+                ...insert.data,
+                local: true,
+                pendingUpload: false,
+                localKey: voiceLocalKey(insert.data.id),
+              }
+            : note,
+        );
+        uploaded += 1;
+      } catch (error) {
+        console.warn("A saved voice note could not be uploaded yet.", error);
+        remaining.push(item);
+      }
+    }
+    writePendingVoiceNotes(remaining);
+    writeVoiceCache(voiceNotes);
+    if (uploaded && currentPage === "voice") {
+      voiceNotes = await hydrateVoiceNoteUrls(voiceNotes);
       scheduleRender();
     }
   }
@@ -8947,10 +10251,65 @@
     translateInterface();
   }
 
+  function microphonePlugin() {
+    return window.Capacitor?.Plugins?.StudyZonePermissions || null;
+  }
+
+  function setMicrophoneSettingsHint(visible) {
+    const button = document.getElementById("voice-open-settings");
+    if (!button) return;
+    button.hidden = !visible;
+    button.textContent =
+      appLanguage === "ar" ? "فتح إعدادات التطبيق" : "Open app settings";
+  }
+
+  /**
+   * Android-only permission gate. Capacitor's WebView also asks for
+   * RECORD_AUDIO when getUserMedia() runs, but only this plugin can tell a
+   * one-time denial ("prompt") from a permanent one ("denied" after "Don't
+   * allow"), which is what the "Open app settings" affordance is for.
+   */
+  async function ensureMicrophonePermission() {
+    const plugin = microphonePlugin();
+    if (!plugin?.checkMicrophone) return null;
+    try {
+      const current = await plugin.checkMicrophone();
+      if (current?.state === "granted") return { granted: true };
+      if (current?.state === "denied")
+        return { granted: false, blocked: true };
+      const result = await plugin.requestMicrophone();
+      return {
+        granted: Boolean(result?.granted),
+        blocked: Boolean(result?.blocked),
+      };
+    } catch (error) {
+      console.warn("Native microphone permission check failed.", error);
+      return null;
+    }
+  }
+
+  async function openMicrophoneAppSettings() {
+    const plugin = microphonePlugin();
+    try {
+      if (plugin?.openAppSettings) {
+        await plugin.openAppSettings();
+        return;
+      }
+    } catch (error) {
+      console.warn("Could not open app settings.", error);
+    }
+    showToast(
+      appLanguage === "ar"
+        ? "افتح إعدادات الهاتف ← التطبيقات ← Study Zone ← الأذونات ← الميكروفون."
+        : "Open phone Settings → Apps → Study Zone → Permissions → Microphone.",
+    );
+  }
+
   async function startVoiceRecording() {
     if (voiceState === "recording" || voiceState === "requesting") return;
     const errorEl = document.getElementById("voice-error");
     errorEl.textContent = "";
+    setMicrophoneSettingsHint(false);
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
       errorEl.textContent =
         appLanguage === "ar"
@@ -8961,6 +10320,16 @@
     if (voiceState === "ready") resetVoiceRecorder();
     voiceState = "requesting";
     updateVoiceUi();
+    const permission = await ensureMicrophonePermission();
+    if (permission && !permission.granted) {
+      voiceState = "idle";
+      updateVoiceUi();
+      errorEl.textContent = appLanguage === "ar"
+        ? "تم رفض إذن الميكروفون. اسمح به من إعدادات التطبيق ثم أعد المحاولة."
+        : "Microphone permission is off. Allow it in the app settings, then try again.";
+      setMicrophoneSettingsHint(Boolean(permission.blocked));
+      return;
+    }
     try {
       voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (document.getElementById("voice-modal")?.hidden) {
@@ -8976,11 +10345,12 @@
         error?.name === "NotAllowedError" || error?.name === "SecurityError";
       errorEl.textContent = denied
         ? appLanguage === "ar"
-          ? "تم رفض إذن الميكروفون. اسمح به من إعدادات المتصفح."
-          : "Microphone permission was denied. Allow it in your browser settings and try again."
+          ? "تم رفض إذن الميكروفون. اسمح به من إعدادات التطبيق أو المتصفح."
+          : "Microphone permission was denied. Allow it in the app or browser settings and try again."
         : appLanguage === "ar"
           ? `تعذر بدء التسجيل: ${error.message}`
           : `Could not start recording: ${error.message}`;
+      if (denied) setMicrophoneSettingsHint(true);
       return;
     }
     const candidates = [
@@ -9086,6 +10456,7 @@
 
   async function saveVoiceNote() {
     if (!voiceBlob) return;
+    const ar = appLanguage === "ar";
     const errorEl = document.getElementById("voice-error");
     errorEl.textContent = "";
     const title =
@@ -9094,41 +10465,48 @@
     const noteId = document.getElementById("voice-note-link").value || null;
     const saveButton = document.getElementById("voice-save");
     saveButton.disabled = true;
-    if (!supabase || !session) {
-      voiceNotes.unshift({
-        id: `local-voice-${Date.now()}`,
-        title,
-        note_id: noteId,
-        duration_seconds: voiceDurationSeconds,
-        created_at: new Date().toISOString(),
-        local: true,
-        local_url: voicePreviewUrl,
-      });
-      voicePreviewUrl = "";
-      resetVoiceRecorder({ keepPreview: true });
+    const blob = voiceBlob;
+    const mime = voiceMimeType || blob.type || "audio/webm";
+    const extension = voiceExtensionFor(mime);
+
+    const finishLocally = async () => {
+      const record = await saveLocalVoiceNote({ title, noteId, blob, mime });
+      const url = await getMediaObjectUrl(record.localKey).catch(() => "");
+      voiceNotes.unshift({ ...record, local_url: url });
+      writeVoiceCache(voiceNotes);
+      if (voicePreviewUrl) {
+        try {
+          URL.revokeObjectURL(voicePreviewUrl);
+        } catch {
+          /* already revoked */
+        }
+        voicePreviewUrl = "";
+      }
+      resetVoiceRecorder();
       closeModal(document.getElementById("voice-modal"));
       if (currentPage === "voice") render();
+    };
+
+    // Local-first: signed-out users, airplane mode and a server outage all
+    // keep the recording on the device instead of losing it.
+    if (!supabase || !session || navigator.onLine === false) {
+      await finishLocally();
       showToast(
-        appLanguage === "ar"
-          ? "تم حفظ المعاينة لهذه الجلسة فقط. سجّل الدخول للحفظ الدائم."
-          : "Preview saved for this browser session only. Sign in to save permanently.",
+        ar
+          ? "تم حفظ التسجيل على هذا الجهاز. سيزامن تلقائيًا عند تسجيل الدخول وعودة الإنترنت."
+          : "Recording saved on this device. It will sync when you sign in and reconnect.",
       );
       return;
     }
     try {
-      const extension = /mp4|m4a/.test(voiceMimeType)
-        ? "m4a"
-        : /ogg/.test(voiceMimeType)
-          ? "ogg"
-          : "webm";
       const unique =
         window.crypto?.randomUUID?.() ||
         `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const path = `${session.user.id}/${unique}.${extension}`;
       const upload = await supabase.storage
         .from("voice-notes")
-        .upload(path, voiceBlob, {
-          contentType: voiceMimeType || "audio/webm",
+        .upload(path, blob, {
+          contentType: mime,
           upsert: false,
         });
       if (upload.error) throw upload.error;
@@ -9138,9 +10516,9 @@
           note_id: noteId,
           title,
           storage_path: path,
-          mime_type: voiceMimeType || "audio/webm",
+          mime_type: mime,
           duration_seconds: voiceDurationSeconds,
-          size_bytes: voiceBlob.size,
+          size_bytes: blob.size,
         })
         .select(
           "id,note_id,title,storage_path,mime_type,duration_seconds,size_bytes,transcript,transcription_status,created_at",
@@ -9150,13 +10528,35 @@
         await supabase.storage.from("voice-notes").remove([path]);
         throw insert.error;
       }
+      // Permanent local copy for offline playback (signed URLs expire).
+      const localKey = voiceLocalKey(insert.data.id);
+      try {
+        await putMediaBlob(localKey, blob, {
+          name: path,
+          type: mime,
+          size: blob.size || 0,
+          kind: "audio",
+        });
+      } catch (cacheError) {
+        console.warn("Could not cache the recording for offline playback.", cacheError);
+      }
       const signed = await supabase.storage
         .from("voice-notes")
         .createSignedUrl(path, 3600);
       voiceNotes.unshift({
         ...insert.data,
         signed_url: signed.error ? "" : signed.data?.signedUrl || "",
+        localKey,
       });
+      writeVoiceCache(voiceNotes);
+      if (voicePreviewUrl) {
+        try {
+          URL.revokeObjectURL(voicePreviewUrl);
+        } catch {
+          /* already revoked */
+        }
+        voicePreviewUrl = "";
+      }
       closeModal(document.getElementById("voice-modal"));
       resetVoiceRecorder();
       if (currentPage === "voice") render();
@@ -9164,14 +10564,19 @@
         appLanguage === "ar" ? "تم حفظ الملاحظة الصوتية." : "Voice note saved.",
       );
     } catch (error) {
-      console.error("Could not save the voice note.", error);
-      errorEl.textContent = isMissingRelation(error)
-        ? appLanguage === "ar"
-          ? "جدول الملاحظات الصوتية غير موجود. طبّق ملف الترحيل أولًا."
-          : "The voice_notes table is missing. Apply the migration first."
-        : appLanguage === "ar"
-          ? `تعذر حفظ التسجيل: ${error.message}`
-          : `Could not save the recording: ${error.message}`;
+      console.error("Could not upload the voice note; keeping it locally.", error);
+      await finishLocally();
+      showToast(
+        ar
+          ? "تعذر الرفع الآن، لكن التسجيل محفوظ على هذا الجهاز وسيُزامن تلقائيًا."
+          : "Upload failed, but the recording is saved on this device and will sync automatically.",
+      );
+      if (isMissingRelation(error)) {
+        errorEl.textContent = ar
+          ? "جدول الملاحظات الصوتية غير موجود. التسجيل محفوظ محليًا لحين تطبيق الترحيل."
+          : "The voice_notes table is missing. The recording is stored locally until the migration is applied.";
+      }
+    } finally {
       saveButton.disabled = false;
     }
   }
@@ -9195,6 +10600,12 @@
         return;
       }
     }
+    writeVoiceCache(voiceNotes);
+    writePendingVoiceNotes(
+      readPendingVoiceNotes().map((item) =>
+        String(item.id) === String(id) ? { ...item, title: note.title } : item,
+      ),
+    );
     render();
   }
 
@@ -9330,8 +10741,19 @@
         if (error) throw error;
         await supabase.storage.from("voice-notes").remove([note.storage_path]);
       }
+      if (note.localKey) {
+        try {
+          await deleteMediaBlob(note.localKey);
+        } catch {
+          /* cached blob may not exist */
+        }
+      }
       if (note.local_url) URL.revokeObjectURL(note.local_url);
+      writePendingVoiceNotes(
+        readPendingVoiceNotes().filter((item) => String(item.id) !== String(id)),
+      );
       voiceNotes = voiceNotes.filter((item) => String(item.id) !== String(id));
+      writeVoiceCache(voiceNotes);
       render();
       showToast(
         appLanguage === "ar" ? "تم حذف التسجيل." : "Recording deleted.",
@@ -10251,6 +11673,140 @@
     return `<section class="panel" data-sync-settings>${panelHeading(translateUiText("Offline & sync"), translateUiText("Changes are saved on this device and sent automatically when you reconnect."))}<div class="sync-summary"><div class="sync-summary-row"><span>${translateUiText("Status")}</span><strong data-sync-status>${translateUiText(snapshot.status === "synced" ? "Synced" : snapshot.status === "offline" ? "Offline" : snapshot.status === "syncing" ? "Syncing" : snapshot.status === "failed" ? "Sync failed" : "Pending sync")}</strong></div><div class="sync-summary-row"><span>${translateUiText("Queued changes")}</span><strong data-sync-pending>${snapshot.pending}</strong></div><div class="sync-summary-row"><span>${translateUiText("Failed changes")}</span><strong data-sync-failed>${snapshot.failed}</strong></div><div class="sync-summary-row"><span>${translateUiText("Conflicts")}</span><strong data-sync-conflicts>${snapshot.conflicts}</strong></div><div class="sync-summary-row"><span>${translateUiText("Last sync")}</span><strong data-sync-last>${escapeHtml(lastSync)}</strong></div></div><div class="sync-conflicts" data-sync-conflict-list></div><button class="button button-primary button-small" type="button" data-action="sync-now">${translateUiText("Sync now")}</button><p class="data-caption">${translateUiText("Your account data stays private.")} ${translateUiText("All data is protected by Supabase row-level security.")}</p></section>`;
   }
 
+  const clockNotificationKey = "studyzone.clockNotification";
+
+  function clockPlugin() {
+    return window.Capacitor?.Plugins?.StudyZoneClockPlugin || null;
+  }
+
+  function clockNotificationEnabled() {
+    return localStorage.getItem(clockNotificationKey) === "1";
+  }
+
+  function clockSettingsPanel() {
+    const ar = appLanguage === "ar";
+    const nativeApp = Boolean(window.Capacitor?.isNativePlatform?.());
+    if (!nativeApp) {
+      return `<section class="panel" data-clock-settings>${panelHeading(
+        ar ? "الساعة وإشعار النظام" : "Clock & system notification",
+        ar
+          ? "الويدجت وإشعار الساعة الدائم متاحان في تطبيق أندرويد فقط."
+          : "The home-screen clock widget and the persistent clock notification are Android-only features.",
+      )}<p class="data-caption">${ar ? "على الويب تظل ساعة التركيز داخل التطبيق تعمل كالمعتاد." : "The in-app Focus clock keeps working normally on the web."}</p></section>`;
+    }
+    const enabled = clockNotificationEnabled();
+    return `<section class="panel" data-clock-settings>${panelHeading(
+      ar ? "الساعة وإشعار النظام" : "Clock & system notification",
+      ar
+        ? "أضف ساعة Study Zone إلى الشاشة الرئيسية واعرض الوقت في شريط الإشعارات."
+        : "Add the Study Zone clock to your home screen and keep the time in the notification shade.",
+    )}<div class="setting-row"><div><strong>${
+      ar ? "إشعار الساعة الدائم" : "Persistent clock notification"
+    }</strong><small>${
+      ar
+        ? "يظل ظاهرًا بعد الخروج من التطبيق، ويستخدم ساعة النظام دون خدمة خلفية."
+        : "Stays after you close the app. Uses the system clock, no background service."
+    }</small></div><label class="focus-setting-toggle"><span>${
+      ar ? "مفعّل" : "Enabled"
+    }</span><input type="checkbox" name="clock_notification" ${
+      enabled ? "checked" : ""
+    }><i aria-hidden="true"></i></label></div><p class="data-caption">${
+      ar
+        ? "أضف ويدجت «الساعة» من قائمة الويدجت في الشاشة الرئيسية. يعرض الوقت الحقيقي ويحدّثه أندرويد حتى بعد إغلاق التطبيق."
+        : "Add the “Flip Clock” widget from your launcher’s widget picker. Android keeps the time live even when Study Zone is closed."
+    }</p><button class="button button-secondary button-small" type="button" data-action="clock-notification-settings">${
+      ar ? "إعدادات الإشعارات" : "Notification settings"
+    }</button><p class="form-error" data-clock-error role="alert"></p></section>`;
+  }
+
+  async function applyClockNotificationSetting(enabled) {
+    const ar = appLanguage === "ar";
+    const errorEl = document.querySelector("[data-clock-error]");
+    if (errorEl) errorEl.textContent = "";
+    const plugin = clockPlugin();
+    if (!plugin?.setClockNotification) {
+      localStorage.setItem(clockNotificationKey, "0");
+      showToast(
+        ar
+          ? "إشعار الساعة متاح في تطبيق أندرويد فقط."
+          : "The clock notification is available in the Android app only.",
+      );
+      render();
+      return;
+    }
+    try {
+      let result = await plugin.setClockNotification({ enabled: Boolean(enabled) });
+      if (enabled && !result?.enabled && result?.reason === "permission") {
+        const permission = await window.StudyZoneNotifications?.requestPermission?.();
+        if (permission === "granted") {
+          result = await plugin.setClockNotification({ enabled: true });
+        }
+      }
+      const active = Boolean(result?.enabled);
+      localStorage.setItem(clockNotificationKey, active ? "1" : "0");
+      if (enabled && !active) {
+        if (errorEl)
+          errorEl.textContent = ar
+            ? "لم يُمنح إذن الإشعارات. اسمح به من إعدادات التطبيق ثم أعد المحاولة."
+            : "Notification permission is not granted. Allow it in the app settings and try again.";
+        showToast(
+          ar
+            ? "تم رفض إذن الإشعارات، لذلك لم يتم تفعيل إشعار الساعة."
+            : "Notification permission was denied, so the clock notification was not enabled.",
+        );
+      } else {
+        showToast(
+          active
+            ? ar
+              ? "تم تفعيل إشعار الساعة."
+              : "Clock notification enabled."
+            : ar
+              ? "تم إيقاف إشعار الساعة."
+              : "Clock notification disabled.",
+        );
+      }
+      render();
+    } catch (error) {
+      console.warn("Could not update the clock notification.", error);
+      localStorage.setItem(clockNotificationKey, "0");
+      if (errorEl)
+        errorEl.textContent =
+          error?.message || (ar ? "تعذر تحديث إشعار الساعة." : "Could not update the clock notification.");
+      render();
+    }
+  }
+
+  async function openClockNotificationSettings() {
+    const ar = appLanguage === "ar";
+    const plugin = clockPlugin();
+    try {
+      if (plugin?.openClockNotificationSettings) {
+        await plugin.openClockNotificationSettings();
+        return;
+      }
+    } catch (error) {
+      console.warn("Could not open notification settings.", error);
+    }
+    showToast(
+      ar
+        ? "افتح إعدادات الهاتف ← التطبيقات ← Study Zone ← الإشعارات."
+        : "Open phone Settings → Apps → Study Zone → Notifications.",
+    );
+  }
+
+  async function reconcileClockNotificationState() {
+    const plugin = clockPlugin();
+    if (!plugin?.getClockNotification) return;
+    try {
+      const state = await plugin.getClockNotification();
+      if (state?.enabled) localStorage.setItem(clockNotificationKey, "1");
+      else if (state?.enabled === false) localStorage.setItem(clockNotificationKey, "0");
+      if (currentPage === "settings") render();
+    } catch (error) {
+      console.warn("Could not read the clock notification state.", error);
+    }
+  }
+
   function settingsPage() {
     const motionOptions = [
       ["full", "Full Motion", "Layered transitions and celebrations"],
@@ -10265,7 +11821,7 @@
     const reminderForm = session
       ? `<form id="daily-reminder-form" class="form-stack daily-reminder-form"><label class="focus-setting-toggle"><span>${translateUiText("Enable push reminders")}</span><input type="checkbox" name="enabled" ${dailyReminderPreference.enabled ? "checked" : ""}><i aria-hidden="true"></i></label><p class="data-caption">${translateUiText("Get a daily task check-in plus deadline and achievement notifications, even when Study Zone is closed.")}</p><label>${translateUiText("Reminder time")}<input type="time" name="local_time" value="${escapeHtml(String(dailyReminderPreference.local_time || "09:00").slice(0, 5))}" required></label><small>${translateUiText("Uses this device’s timezone.")}</small><button class="button button-primary button-small" type="submit">${translateUiText("Save reminder")}</button><p class="data-caption">${translateUiText("Push reminders need notification permission and the server setup described in README.md.")}</p><p class="form-error" data-reminder-error role="alert"></p></form>`
       : `<p class="data-caption">${translateUiText("Sign in to configure daily reminders.")}</p>`;
-    return `${pageHeading("MAKE IT YOURS", "Settings", "Tune Study Zone to the way you like to work.", "")}<div class="grid settings-grid"><section class="panel">${panelHeading("Appearance")}<div class="setting-row"><div><strong>Dark theme</strong><small>Designed for focus, day or night</small></div><button class="toggle on" data-action="theme-toggle" aria-label="Toggle light theme" aria-pressed="false"></button></div><div class="setting-row"><div><strong>Emerald accents</strong><small>Official Study Zone color palette</small></div><span class="subject-color"></span></div><div class="setting-row"><div><strong>Motion & celebrations</strong><small>Choose how much motion Study Zone uses.</small></div></div><div class="motion-options" role="group" aria-label="Animation level">${motionOptions}</div></section>${themeSettingsPanel()}<section class="panel">${panelHeading("Language")}<div class="setting-row"><div><strong>Display language</strong><small>Deadlines appear in the selected language.</small></div></div><div class="language-switcher" role="group" aria-label="Choose language"><span class="language-indicator ${appLanguage === "ar" ? "arabic" : ""}"></span><button class="language-option ${appLanguage === "ar" ? "selected" : ""}" data-language="ar" aria-pressed="${appLanguage === "ar"}">عربي <span>العربية</span></button><button class="language-option ${appLanguage === "en" ? "selected" : ""}" data-language="en" aria-pressed="${appLanguage === "en"}">EN <span>English</span></button></div></section><section class="panel">${panelHeading("Reminders")}<div class="setting-row"><div><strong>Daily study check-in</strong><small>Review your open tasks once a day, even when Study Zone is closed.</small></div></div>${reminderForm}</section>${notificationSettingsPanel()}${notificationPreferencesPanel()}${syncSettingsPanel()}<section class="panel">${panelHeading("Data & privacy")}<div class="setting-row"><div><strong>Account data</strong><small>Stored in your private Supabase account when configured</small></div></div><div class="setting-row"><div><strong>Service keys</strong><small>Only the public anon key belongs in this browser config.</small></div></div></section><section class="panel">${panelHeading("Backup & restore", "Your data, portable")}<p class="panel-copy">Download a private JSON copy of your tasks, routines, notes, journal, focus history, and preferences. Restoring merges new items and skips duplicates.</p><div class="setting-row"><div><strong>Export a backup</strong><small>Nothing leaves this device except the file you download.</small></div><button class="button button-secondary button-small" data-action="backup-export">Download</button></div><div class="setting-row"><div><strong>Restore from a backup</strong><small>Validated first, then merged without overwriting existing records.</small></div><button class="button button-secondary button-small" data-action="backup-import">Choose file</button></div><input id="backup-import-input" type="file" accept="application/json,.json" hidden /><p class="data-caption">Only restore files you exported from Study Zone. Never share a backup publicly.</p></section></div>`;
+    return `${pageHeading("MAKE IT YOURS", "Settings", "Tune Study Zone to the way you like to work.", "")}<div class="grid settings-grid"><section class="panel">${panelHeading("Appearance")}<div class="setting-row"><div><strong>Dark theme</strong><small>Designed for focus, day or night</small></div><button class="toggle on" data-action="theme-toggle" aria-label="Toggle light theme" aria-pressed="false"></button></div><div class="setting-row"><div><strong>Emerald accents</strong><small>Official Study Zone color palette</small></div><span class="subject-color"></span></div><div class="setting-row"><div><strong>Motion & celebrations</strong><small>Choose how much motion Study Zone uses.</small></div></div><div class="motion-options" role="group" aria-label="Animation level">${motionOptions}</div></section>${themeSettingsPanel()}<section class="panel">${panelHeading("Language")}<div class="setting-row"><div><strong>Display language</strong><small>Deadlines appear in the selected language.</small></div></div><div class="language-switcher" role="group" aria-label="Choose language"><span class="language-indicator ${appLanguage === "ar" ? "arabic" : ""}"></span><button class="language-option ${appLanguage === "ar" ? "selected" : ""}" data-language="ar" aria-pressed="${appLanguage === "ar"}">عربي <span>العربية</span></button><button class="language-option ${appLanguage === "en" ? "selected" : ""}" data-language="en" aria-pressed="${appLanguage === "en"}">EN <span>English</span></button></div></section><section class="panel">${panelHeading("Reminders")}<div class="setting-row"><div><strong>Daily study check-in</strong><small>Review your open tasks once a day, even when Study Zone is closed.</small></div></div>${reminderForm}</section>${notificationSettingsPanel()}${notificationPreferencesPanel()}${clockSettingsPanel()}${syncSettingsPanel()}<section class="panel">${panelHeading("Data & privacy")}<div class="setting-row"><div><strong>Account data</strong><small>Stored in your private Supabase account when configured</small></div></div><div class="setting-row"><div><strong>Service keys</strong><small>Only the public anon key belongs in this browser config.</small></div></div></section><section class="panel">${panelHeading("Backup & restore", "Your data, portable")}<p class="panel-copy">Download a private JSON copy of your tasks, routines, notes, journal, focus history, and preferences. Restoring merges new items and skips duplicates.</p><div class="setting-row"><div><strong>Export a backup</strong><small>Nothing leaves this device except the file you download.</small></div><button class="button button-secondary button-small" data-action="backup-export">Download</button></div><div class="setting-row"><div><strong>Restore from a backup</strong><small>Validated first, then merged without overwriting existing records.</small></div><button class="button button-secondary button-small" data-action="backup-import">Choose file</button></div><input id="backup-import-input" type="file" accept="application/json,.json" hidden /><p class="data-caption">Only restore files you exported from Study Zone. Never share a backup publicly.</p></section></div>`;
   }
 
   function formatAdminDate(value) {
@@ -11240,6 +12796,7 @@
     files: filesPage,
     notes: notesPage,
     voice: voicePage,
+    media: mediaNotesPage,
     teams: teamsPage,
     teamLeaderboard: teamLeaderboardPage,
     focus: focusPage,
@@ -11262,6 +12819,7 @@
     files: "Study files",
     notes: "Notes",
     voice: "Voice notes",
+    media: "Media notes",
     teams: "Teams",
     teamLeaderboard: "Team leaderboard",
     focus: "Focus timer",
@@ -11339,6 +12897,38 @@
     api.setBusyDates(Array.from(keys));
   }
 
+  let dashboardHeroDimTimer = 0;
+
+  function getDashboardHeroDimOpacity(date = new Date()) {
+    const minutes = date.getHours() * 60 + date.getMinutes();
+    const max = 1439;
+    const progress = max > 0 ? Math.min(1, Math.max(0, minutes / max)) : 0;
+    const maxOpacity = 0.58;
+    return Math.min(maxOpacity, Math.max(0, progress * maxOpacity));
+  }
+
+  function updateDashboardHeroDimming() {
+    if (currentPage !== "dashboard") return;
+    const overlay = document.querySelector(".sz-hero .sz-hero-dim");
+    if (!overlay) return;
+    const opacity = getDashboardHeroDimOpacity(new Date());
+    overlay.style.opacity = String(opacity);
+  }
+
+  function stopDashboardHeroDimming() {
+    if (dashboardHeroDimTimer) {
+      window.clearInterval(dashboardHeroDimTimer);
+      dashboardHeroDimTimer = 0;
+    }
+  }
+
+  function syncDashboardHeroDimming() {
+    stopDashboardHeroDimming();
+    if (currentPage !== "dashboard") return;
+    updateDashboardHeroDimming();
+    dashboardHeroDimTimer = window.setInterval(updateDashboardHeroDimming, 30000);
+  }
+
   function render() {
     if (scheduledRenderHandle) {
       window.cancelAnimationFrame(scheduledRenderHandle);
@@ -11404,6 +12994,7 @@
     syncWidgetData();
     syncBusyDates();
     window.StudyZoneSyncUI?.refresh?.();
+    syncDashboardHeroDimming();
     if (currentPage === "tasks") {
       document
         .getElementById("task-search")
@@ -11500,6 +13091,28 @@
           noteSort = event.target.value;
           render();
         });
+    }
+    if (currentPage === "media") {
+      document
+        .getElementById("media-note-search")
+        ?.addEventListener("input", (event) => {
+          noteSearch = event.target.value;
+          const cursor = event.target.selectionStart;
+          render();
+          const input = document.getElementById("media-note-search");
+          input.focus();
+          input.setSelectionRange(cursor, cursor);
+        });
+      document
+        .getElementById("media-sort")
+        ?.addEventListener("change", (event) => {
+          mediaSort = event.target.value;
+          render();
+        });
+      if (mediaNotesLoaded !== true) {
+        mediaNotesLoaded = true;
+        void loadMediaNotesList().then(() => render());
+      }
     }
     translateInterface();
     animateRewardCounters();
@@ -11923,13 +13536,30 @@
     }
 
     if (!reportError("notes", noteResult)) {
-      notes = (noteResult.data || []).map((note) => normalizeNoteRecord({
+      const remote = (noteResult.data || []).map((note) => normalizeNoteRecord({
         ...note,
+        ownerId: userId,
+        localPending: false,
         subject: subjectName(note.subject_id),
         updated: new Intl.DateTimeFormat(appLanguage, {
           dateStyle: "medium",
         }).format(new Date(note.updated_at)),
       }));
+      const remoteIds = new Set(remote.map((note) => String(note.id)));
+      // Notes written while offline (or whose upload failed) exist only on this
+      // device. They must survive this remote refresh instead of disappearing.
+      const pendingIds = await pendingNoteIds();
+      const localOnly = notes.filter((note) => {
+        if (!note?.id || remoteIds.has(String(note.id))) return false;
+        if (note.ownerId && note.ownerId !== userId) return false;
+        return (
+          note.localPending ||
+          pendingIds.has(String(note.id)) ||
+          String(note.id).startsWith("local-")
+        );
+      });
+      notes = [...localOnly, ...remote];
+      saveLocalNotes();
     }
 
     if (!reportError("goals", goalResult)) {
@@ -12132,6 +13762,180 @@
     voiceNotesSupported = true;
     voiceNotesError = "";
     notificationsPrimed = false;
+  }
+
+  /**
+   * Restores every cached workspace table before the network is touched.
+   * offline-sync.js stores each successful REST read in IndexedDB keyed by
+   * account, so this works after a cold start in airplane mode and never mixes
+   * two accounts.
+   */
+  async function hydrateWorkspaceFromOfflineCache(userId) {
+    const offline = window.StudyZoneOffline;
+    if (!offline?.getCachedTableData || !userId) return;
+    const read = async (table) => {
+      try {
+        const rows = await offline.getCachedTableData(userId, table);
+        return Array.isArray(rows) ? rows : rows ? [rows] : [];
+      } catch {
+        return [];
+      }
+    };
+    const [
+      subjectsRows,
+      tasksRows,
+      notesRows,
+      goalRows,
+      examRows,
+      scheduleRows,
+      fileRows,
+      profileRows,
+      sessionRows,
+    ] = await Promise.all([
+      read("subjects"),
+      read("tasks"),
+      read("notes"),
+      read("goals"),
+      read("exams"),
+      read("schedules"),
+      read("study_files"),
+      read("profiles"),
+      read("study_sessions"),
+    ]);
+
+    if (subjectsRows.length) {
+      subjects = subjectsRows.map((subject) => ({
+        ...subject,
+        credits: subject.credit_hours,
+        progress: null,
+      }));
+    }
+    if (tasksRows.length) {
+      tasks = tasksRows.map((task) => ({
+        recurrence_group_id: null,
+        recurrence_type: "none",
+        recurrence_days: [],
+        recurrence_until: null,
+        open_count: 0,
+        completed_count: 0,
+        postpone_count: 0,
+        is_all_day: false,
+        ...task,
+        subject: task.subjects?.name || subjectName(task.subject_id),
+      }));
+    }
+    const cachedNotes = notesRows.map((note) =>
+      normalizeNoteRecord({
+        ...note,
+        ownerId: userId,
+        localPending: false,
+        subject: subjectName(note.subject_id),
+        updated: note.updated_at
+          ? new Intl.DateTimeFormat(appLanguage, {
+              dateStyle: "medium",
+            }).format(new Date(note.updated_at))
+          : "",
+      }),
+    );
+    // Unsynced notes live in localStorage, not in the offline table cache. Bring
+    // them back before the network is touched so a cold start offline keeps
+    // every note the user wrote.
+    const pendingIds = await pendingNoteIds();
+    const storedLocal = readStoredNoteRecords()
+      .filter((note) => !note.ownerId || note.ownerId === userId)
+      .filter(
+        (note) =>
+          note.localPending ||
+          pendingIds.has(String(note.id)) ||
+          String(note.id || "").startsWith("local-"),
+      )
+      .map((note) => ({ ...note, ownerId: userId }));
+    const seenNoteIds = new Set();
+    const mergedNotes = [...storedLocal, ...cachedNotes].filter((note) => {
+      if (!note?.id || seenNoteIds.has(String(note.id))) return false;
+      seenNoteIds.add(String(note.id));
+      return true;
+    });
+    if (mergedNotes.length) notes = mergedNotes;
+    if (goalRows.length) {
+      goals = goalRows.map((goal) => ({
+        ...goal,
+        progress: Math.min(
+          100,
+          Math.round(
+            (Number(goal.current_value) / Number(goal.target_value)) * 100,
+          ),
+        ),
+        due: goal.completed_at
+          ? "Completed"
+          : goal.due_at
+            ? Math.max(
+                0,
+                Math.ceil((new Date(goal.due_at) - Date.now()) / 86400000),
+              ) + " days"
+            : goal.period,
+        detail:
+          goal.details ||
+          `${goal.current_value} / ${goal.target_value} ${goal.unit}`,
+      }));
+    }
+    if (examRows.length) {
+      examResults = examRows.map((exam) => ({
+        ...exam,
+        subject: subjectName(exam.subject_id),
+      }));
+    }
+    if (scheduleRows.length) {
+      schedule = scheduleRows.map((block) => ({
+        ...block,
+        day: new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(
+          new Date(block.starts_at),
+        ),
+        time: new Intl.DateTimeFormat(appLanguage, {
+          hour: "2-digit",
+          minute: "2-digit",
+        }).format(new Date(block.starts_at)),
+        length: `${Math.max(1, Math.round((new Date(block.ends_at) - new Date(block.starts_at)) / 60000))} min`,
+        subject: subjectName(block.subject_id),
+      }));
+    }
+    if (fileRows.length) {
+      sampleFiles = fileRows.map((file) => ({
+        ...file,
+        type: file.mime_type,
+        subject: subjectName(file.subject_id),
+      }));
+    }
+    if (profileRows.length) {
+      accountProfile = profileRows[0] || accountProfile;
+      if (accountProfile) {
+        accountProfile.avatar_display_url = await resolveProfileAvatarUrl(
+          accountProfile.avatar_url,
+          userId,
+        );
+      }
+    }
+    if (sessionRows.length && !focusRecords.length) {
+      focusRecords = sessionRows;
+      focusRecordsIdentity = `user-${userId}`;
+      updateActivityFromFocusRecords();
+    }
+    scheduleRender();
+  }
+
+  async function pendingNoteIds() {
+    const ids = new Set();
+    try {
+      const queue = (await window.StudyZoneOffline?.getQueue?.()) || [];
+      queue.forEach((entry) => {
+        if (entry.table !== "notes") return;
+        const body = Array.isArray(entry.body) ? entry.body[0] : entry.body;
+        if (body?.id) ids.add(String(body.id));
+      });
+    } catch {
+      /* queue unavailable */
+    }
+    return ids;
   }
 
   function clearAccountWorkspace() {
@@ -14102,35 +15906,9 @@
         tasks = [];
         subjects = [];
         clearAccountWorkspace();
-        // Offline-first: render cached local data instantly, then refresh from network
-        const offline = window.StudyZoneOffline;
-        const userId = session.user.id;
-        if (offline) {
-          const cachedSubjects = await offline.getCachedTableData(userId, "subjects");
-          if (cachedSubjects) {
-            subjects = cachedSubjects.map((s) => ({
-              ...s,
-              credits: s.credit_hours,
-              progress: null,
-            }));
-          }
-          const cachedTasks = await offline.getCachedTableData(userId, "tasks");
-          if (cachedTasks) {
-            tasks = cachedTasks.map((t) => ({
-              recurrence_group_id: null,
-              recurrence_type: "none",
-              recurrence_days: [],
-              recurrence_until: null,
-              open_count: 0,
-              completed_count: 0,
-              postpone_count: 0,
-              is_all_day: false,
-              ...t,
-              subject: t.subjects?.name || "Independent study",
-            }));
-          }
-          scheduleRender();
-        }
+        // Offline-first: render every cached table instantly, then refresh from
+        // the network. The cache is account-scoped (offline-sync IndexedDB).
+        await hydrateWorkspaceFromOfflineCache(session.user.id);
         await loadRemoteTasks();
         await loadAccountWorkspace();
         await loadRemoteNotifications();
@@ -14158,34 +15936,7 @@
           try {
             await verifyAdminAccess();
             await loadLanguagePreference();
-            const offline = window.StudyZoneOffline;
-            const userId = session.user.id;
-            if (offline) {
-              const cachedSubjects = await offline.getCachedTableData(userId, "subjects");
-              if (cachedSubjects) {
-                subjects = cachedSubjects.map((s) => ({
-                  ...s,
-                  credits: s.credit_hours,
-                  progress: null,
-                }));
-              }
-              const cachedTasks = await offline.getCachedTableData(userId, "tasks");
-              if (cachedTasks) {
-                tasks = cachedTasks.map((t) => ({
-                  recurrence_group_id: null,
-                  recurrence_type: "none",
-                  recurrence_days: [],
-                  recurrence_until: null,
-                  open_count: 0,
-                  completed_count: 0,
-                  postpone_count: 0,
-                  is_all_day: false,
-                  ...t,
-                  subject: t.subjects?.name || "Independent study",
-                }));
-              }
-              scheduleRender();
-            }
+            await hydrateWorkspaceFromOfflineCache(session.user.id);
             await loadRemoteTasks();
             await loadAccountWorkspace();
             await loadRemoteNotifications();
@@ -14373,10 +16124,13 @@
     } else {
       focusSession = createFocusSession("focus", 1);
     }
-    focusRecords =
-      identity === "guest" && Array.isArray(saved?.records)
-        ? saved.records
-        : [];
+    if (focusRecordsIdentity !== identity) {
+      focusRecords = [];
+      focusRecordsIdentity = identity;
+    }
+    if (identity === "guest" && Array.isArray(saved?.records)) {
+      focusRecords = saved.records;
+    }
     pendingFocusRecords = Array.isArray(saved?.pendingRecords)
       ? saved.pendingRecords
       : [];
@@ -14388,6 +16142,22 @@
     }
 
     return (async () => {
+      // Local-first: show cached sessions immediately, before any request. A
+      // cold start in airplane mode then still has the full focus history.
+      if (!focusRecords.length) {
+        try {
+          const cached = await window.StudyZoneOffline?.getCachedTableData?.(
+            session.user.id,
+            "study_sessions",
+          );
+          if (Array.isArray(cached) && cached.length) {
+            focusRecords = cached;
+            focusRecordsIdentity = identity;
+          }
+        } catch {
+          /* cache unavailable */
+        }
+      }
       const { data: settingsRow, error: settingsError } = await supabase
         .from("user_settings")
         .select("focus_settings")
@@ -14412,9 +16182,22 @@
         focusDataError = error.message;
         console.error("Could not load focus history.", error);
         showToast(`${focusText[appLanguage].dataError} ${error.message}`);
-        focusRecords = [];
+        // Do not blank the history: keep whatever was hydrated from the
+        // offline cache (or already in memory) and retry on the next load.
+        if (!focusRecords.length) {
+          try {
+            const cached = await window.StudyZoneOffline?.getCachedTableData?.(
+              session.user.id,
+              "study_sessions",
+            );
+            if (Array.isArray(cached) && cached.length) focusRecords = cached;
+          } catch {
+            /* cache unavailable */
+          }
+        }
       } else {
         focusRecords = data || [];
+        focusRecordsIdentity = identity;
       }
       updateActivityFromFocusRecords();
       reconcileFocusTimer();
@@ -14540,7 +16323,7 @@
    */
   function scheduleFocusTick() {
     clearFocusTicker();
-    if (currentPage !== "focus" || focusSession.status !== "running") return;
+    if (focusSession.status !== "running") return;
     const remaining = getFocusRemainingMs();
     if (remaining <= 0) {
       void finishFocusTimer();
@@ -14553,7 +16336,7 @@
     );
     focusTicker = window.setTimeout(() => {
       focusTicker = null;
-      if (currentPage !== "focus" || focusSession.status !== "running") return;
+      if (focusSession.status !== "running") return;
       if (getFocusRemainingMs() <= 0) {
         void finishFocusTimer();
         return;
@@ -14564,13 +16347,22 @@
   }
 
   function syncFocusTicker() {
-    const shouldTick =
-      currentPage === "focus" && focusSession.status === "running";
+    // The countdown must keep running (and finish) even when the user browses
+    // another page; only the DOM update is page-dependent. This prevents a
+    // session from silently stopping when the focus page is not mounted.
+    const shouldTick = focusSession.status === "running";
     if (!shouldTick) {
       clearFocusTicker();
       return;
     }
     if (!focusTicker) scheduleFocusTick();
+  }
+
+  function focusIsOffline() {
+    return (
+      navigator.onLine === false ||
+      window.StudyZoneOffline?.isOnline?.() === false
+    );
   }
 
   function updateTimerUi() {
@@ -14624,68 +16416,14 @@
   async function startFocusTimer() {
     if (focusSession.status === "running") return;
     const now = Date.now();
-    const linkedTaskId =
-      focusSession.taskId && !String(focusSession.taskId).startsWith("routine:")
-        ? focusSession.taskId
-        : null;
-    if (supabase && session) {
-      try {
-        const { error: startError, data: startData } = await supabase
-          .from("study_sessions")
-          .upsert(
-            {
-              idempotency_key: focusSession.id,
-              session_type: focusSession.type,
-              started_at: focusSession.startedAt || new Date(now).toISOString(),
-              ended_at: null,
-              duration_seconds: Math.round(
-                getFocusDurationMs(focusSession.type) / 1000,
-              ),
-              completed: false,
-              subject_id: focusSession.subjectId || null,
-              task_id: linkedTaskId,
-              updated_at: new Date(now).toISOString(),
-            },
-            { onConflict: "idempotency_key" },
-          )
-          .select(
-            "id,idempotency_key,session_type,started_at,ended_at,duration_seconds,completed,subject_id,task_id",
-          )
-          .single();
-        if (startError) {
-          focusDataError = startError.message;
-          console.error(
-            "Could not start the verified focus session.",
-            startError,
-          );
-          showToast(
-            `${focusText[appLanguage].sessionError} ${startError.message}`,
-          );
-          return;
-        }
-        if (!focusSession.startedAt)
-          focusSession.startedAt =
-            startData?.started_at || new Date(now).toISOString();
-        focusSession.remoteStarted = true;
-        focusSession.remainingMs = Math.max(
-          0,
-          getFocusDurationMs(focusSession.type),
-        );
-      } catch (error) {
-        focusDataError = error.message;
-        console.error(
-          "Could not start the verified focus session.",
-          error,
-        );
-        showToast(`${focusText[appLanguage].sessionError} ${error.message}`);
-        return;
-      }
-    } else if (!focusSession.startedAt) {
+    // Local-first: the countdown starts immediately. Supabase is never on the
+    // critical path, so Start works in airplane mode exactly like online.
+    if (!focusSession.startedAt)
       focusSession.startedAt = new Date(now).toISOString();
-    }
     focusSession.status = "running";
     focusSession.runStartedAt = now;
-    focusSession.endAt = now + focusSession.remainingMs;
+    focusSession.endAt =
+      now + Math.max(0, Number(focusSession.remainingMs) || 0);
     if (focusSettings.soundEnabled && focusSession.type === "focus") {
       void startAlert({
         key: `focus-start-${focusSession.id}`,
@@ -14698,45 +16436,53 @@
     persistFocusState();
     updateTimerUi();
     syncFocusTicker();
+
+    // Best-effort verified session row. Failure is logged, never surfaced as a
+    // blocked timer; the local record is queued when connectivity returns.
+    if (supabase && session && !focusIsOffline()) {
+      const linkedTaskId =
+        focusSession.taskId &&
+        !String(focusSession.taskId).startsWith("routine:")
+          ? focusSession.taskId
+          : null;
+      void (async () => {
+        try {
+          const { error } = await supabase.from("study_sessions").upsert(
+            {
+              idempotency_key: focusSession.id,
+              session_type: focusSession.type,
+              started_at: focusSession.startedAt,
+              ended_at: null,
+              duration_seconds: Math.round(
+                getFocusDurationMs(focusSession.type) / 1000,
+              ),
+              completed: false,
+              subject_id: focusSession.subjectId || null,
+              task_id: linkedTaskId,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "idempotency_key" },
+          );
+          if (error) throw error;
+          focusSession.remoteStarted = true;
+        } catch (error) {
+          focusDataError = error.message || String(error);
+          console.warn(
+            "Focus session will be synced later (start record).",
+            error,
+          );
+        }
+      })();
+    }
   }
 
   async function pauseFocusTimer() {
     if (focusSession.status !== "running") return;
     const now = Date.now();
-    const elapsedMs = Math.max(0, now - focusSession.runStartedAt);
-    const totalElapsedMs =
-      focusSession.elapsedBeforeRunMs + elapsedMs;
-    if (supabase && session && focusSession.remoteStarted) {
-      try {
-        const { error: pauseError } = await supabase
-          .from("study_sessions")
-          .update({
-            ended_at: new Date(now).toISOString(),
-            duration_seconds: Math.floor(totalElapsedMs / 1000),
-            updated_at: new Date(now).toISOString(),
-          })
-          .eq("idempotency_key", focusSession.id);
-        if (pauseError) {
-          console.error(
-            "Could not pause the verified focus session.",
-            pauseError,
-          );
-          showToast(
-            `${focusText[appLanguage].sessionError} ${pauseError.message}`,
-          );
-          return;
-        }
-      } catch (error) {
-        console.error(
-          "Could not pause the verified focus session.",
-          error,
-        );
-        showToast(
-          `${focusText[appLanguage].sessionError} ${error.message}`,
-        );
-        return;
-      }
-    }
+    const elapsedMs = Math.max(0, now - (focusSession.runStartedAt || now));
+    const totalElapsedMs = focusSession.elapsedBeforeRunMs + elapsedMs;
+    // Commit the paused state locally first; a flaky connection must never
+    // prevent Pause from stopping the clock.
     focusSession.remainingMs = Math.max(
       0,
       getFocusDurationMs(focusSession.type) - totalElapsedMs,
@@ -14748,6 +16494,32 @@
     persistFocusState();
     updateTimerUi();
     syncFocusTicker();
+
+    if (
+      supabase &&
+      session &&
+      focusSession.remoteStarted &&
+      !focusIsOffline()
+    ) {
+      void (async () => {
+        try {
+          const { error } = await supabase
+            .from("study_sessions")
+            .update({
+              ended_at: new Date(now).toISOString(),
+              duration_seconds: Math.floor(totalElapsedMs / 1000),
+              updated_at: new Date(now).toISOString(),
+            })
+            .eq("idempotency_key", focusSession.id);
+          if (error) throw error;
+        } catch (error) {
+          console.warn(
+            "Focus pause will be reconciled later by the sync queue.",
+            error,
+          );
+        }
+      })();
+    }
   }
 
   function makeFocusRecord(completed) {
@@ -15414,6 +17186,8 @@
       openVoiceModal();
     } else if (target.matches('[data-action="voice-start"]')) {
       await startVoiceRecording();
+    } else if (target.matches('[data-action="voice-open-settings"]')) {
+      await openMicrophoneAppSettings();
     } else if (target.matches('[data-action="voice-pause"]')) {
       pauseVoiceRecording();
     } else if (target.matches('[data-action="voice-stop"]')) {
@@ -15440,6 +17214,14 @@
       render();
     } else if (target.matches('[data-action="note-media-add"]')) {
       void openMediaNotePicker();
+    } else if (target.matches('[data-action="media-add-image"]')) {
+      ensureMediaEditorDraft("image");
+      renderMediaEditorModal();
+      triggerMediaFilePicker("image");
+    } else if (target.matches('[data-action="media-add-video"]')) {
+      ensureMediaEditorDraft("video");
+      renderMediaEditorModal();
+      triggerMediaFilePicker("video");
     } else if (target.matches('[data-action="media-editor-close"]')) {
       closeMediaEditor();
     } else if (target.matches('[data-action="media-editor-pick-images"]')) {
@@ -15460,7 +17242,10 @@
       if (d && d.attachments[idx]) {
         const [removed] = d.attachments.splice(idx, 1);
         if (removed?.previewUrl) { try { URL.revokeObjectURL(removed.previewUrl); } catch {} }
-        if (removed?.localKey) { void deleteMediaBlob(removed.localKey); }
+        // When editing an existing saved media note, defer blob deletion until
+        // save so cancel does not corrupt the stored record.
+        const isOriginal = d?.id && d?.originalAttachmentKeys && d.originalAttachmentKeys.has(String(removed?.localKey || ""));
+        if (removed?.localKey && !isOriginal) { void deleteMediaBlob(removed.localKey); }
         renderMediaEditorModal();
       }
     } else if (target.matches('[data-action="media-editor-save"]')) {
@@ -15468,35 +17253,86 @@
       const d = mediaEditorDraft;
       const ar = appLanguage === "ar";
       const errEl = document.getElementById("media-editor-error");
+      const saveBtn = document.getElementById("media-editor-save-btn");
       if (!d || !(d.attachments || []).length) {
         if (errEl) errEl.textContent = ar ? "اختر صورة أو فيديو واحدًا على الأقل قبل الحفظ." : "Select at least one image or video before saving.";
       } else {
         if (errEl) errEl.textContent = "";
         const title = (d.title || "").trim() || (d.mode === "video" ? (ar ? "ملاحظة فيديو" : "Video note") : (ar ? "ملاحظة صور" : "Image note"));
         const description = (d.description || "").trim();
+        const category = (d.category || "").trim();
         const attachments = d.attachments.map(({ previewUrl, ...rest }) => rest);
         const type = d.mode === "video" ? "video" : "image";
+        const existing = d.id ? findMediaNoteById(d.id) : null;
         try {
-          await saveMediaNoteRecord({ id: d.id, title, description, attachments, type, existingCreatedAt: null });
+          if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = ar ? "جارٍ الحفظ..." : "Saving..."; }
+          await saveMediaNoteRecord({ id: d.id, title, description, category, attachments, type, existingCreatedAt: existing?.createdAt || existing?.created_at || null, favorite: Boolean(d.favorite) });
+          if (d.id && existing) {
+            const finalKeys = new Set((attachments || []).map((a) => String(a.localKey || "")).filter(Boolean));
+            for (const att of noteAttachments(existing)) {
+              const k = String(att?.localKey || "");
+              if (k && !finalKeys.has(k)) { try { await deleteMediaBlob(k); } catch {} }
+            }
+          }
           closeMediaEditor();
           showToast(ar ? "تم حفظ ملاحظة الوسائط." : "Media note saved.");
         } catch (e) {
           if (errEl) errEl.textContent = e?.message || (ar ? "تعذر حفظ الملاحظة." : "Could not save note.");
+          const statusEl2 = document.getElementById("media-editor-status");
+          if (statusEl2) statusEl2.textContent = "";
+          if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = ar ? "حفظ ملاحظة الوسائط" : "Save Media Note"; }
         }
       }
+    } else if (target.matches('[data-action="media-add"]')) {
+      void openMediaNotePicker();
+    } else if (target.matches('[data-action="media-export"]')) {
+      void exportMediaLibrary();
+    } else if (target.matches('[data-action="media-import"]')) {
+      const mediaImportInput = document.createElement("input");
+      mediaImportInput.type = "file";
+      mediaImportInput.accept = "application/json,.json";
+      mediaImportInput.style.display = "none";
+      document.body.appendChild(mediaImportInput);
+      mediaImportInput.addEventListener(
+        "change",
+        async () => {
+          const file = mediaImportInput.files && mediaImportInput.files[0];
+          mediaImportInput.remove();
+          if (!file) return;
+          try {
+            const imported = await importMediaLibrary(file);
+            showToast(
+              appLanguage === "ar"
+                ? `تم استيراد ${imported} ملف وسائط.`
+                : `Imported ${imported} media files.`,
+            );
+          } catch (error) {
+            showToast(
+              `${appLanguage === "ar" ? "تعذر استيراد" : "Could not import"} ${
+                appLanguage === "ar" ? "ملف الوسائط" : "media backup"
+              }: ${error?.message || ""}`,
+            );
+          }
+        },
+        { once: true },
+      );
+      mediaImportInput.click();
+    } else if (target.matches('[data-action="media-clear"]')) {
+      void clearMediaLibrary();
+    } else if (target.matches('[data-action="media-favorite"]')) {
+      await toggleMediaFavorite(target.dataset.id);
     } else if (target.matches('[data-action="note-add"]')) {
       const templateKey =
         document.getElementById("note-template")?.value || "blank";
       openNoteEditor(null, templateKey);
-    } else if (
-      target.matches('[data-action="note-open"], [data-action="note-edit"]')
-    ) {
-      const n = notes.find((x) => String(x.id) === String(target.dataset.id));
-      if (n && isMediaNote(n)) {
-        void openMediaNoteViewer(target.dataset.id);
-      } else {
-        openNoteEditor(target.dataset.id);
-      }
+    } else if (target.matches('[data-action="note-open"]')) {
+      const n = findMediaNoteById(target.dataset.id);
+      if (n && isMediaNote(n)) void openMediaNoteViewer(target.dataset.id);
+      else openNoteEditor(target.dataset.id);
+    } else if (target.matches('[data-action="note-edit"]')) {
+      const n = findMediaNoteById(target.dataset.id);
+      if (n && isMediaNote(n)) void openMediaNoteEditor(target.dataset.id);
+      else openNoteEditor(target.dataset.id);
     } else if (target.matches('[data-action="note-pin"]')) {
       await toggleNotePin(target.dataset.id);
     } else if (target.matches('[data-action="note-delete"]')) {
@@ -15544,6 +17380,9 @@
     } else if (target.matches('[data-action="notification-sound-preview"]')) {
       const soundSelect = document.getElementById("task-sound-select");
       void previewAlertSound(soundSelect?.value || "task-reminder");
+      return;
+    } else if (target.matches('[data-action="clock-notification-settings"]')) {
+      await openClockNotificationSettings();
       return;
     } else if (target.matches('[data-action="test-notification"]')) {
       // Send a real notification through the same channel/sound the app uses
@@ -16217,6 +18056,8 @@
       });
       if (window.StudyZoneNotifications?.syncTaskReminders)
         window.StudyZoneNotifications.syncTaskReminders(tasks, examResults);
+    } else if (target?.name === "clock_notification") {
+      void applyClockNotificationSetting(Boolean(target.checked));
     } else if (target?.name === "vibration_enabled") {
       notificationPrefs.vibration_enabled = target.checked;
       localStorage.setItem(notificationPrefsKey, JSON.stringify(notificationPrefs));
@@ -16424,7 +18265,13 @@
   });
   window.addEventListener("scroll", updateScrollProgress, { passive: true });
   window.addEventListener("resize", updateScrollProgress, { passive: true });
-  window.addEventListener("online", updateOfflineStatus);
+  window.addEventListener("online", () => {
+    updateOfflineStatus();
+    void flushPendingVoiceNotes();
+    void flushPendingMediaNotes();
+    void window.StudyZoneApp?.syncWidgets?.();
+    void reconcileClockNotificationState();
+  });
   window.addEventListener("offline", updateOfflineStatus);
   document.addEventListener("visibilitychange", () => {
     document.documentElement.dataset.motionPaused = String(document.hidden);
@@ -16677,6 +18524,7 @@
   updateUserUi();
   void loadFocusData();
   restoreSession();
+  void reconcileClockNotificationState();
   document
     .getElementById("pwa-install")
     .addEventListener("click", () => void handlePwaInstall());

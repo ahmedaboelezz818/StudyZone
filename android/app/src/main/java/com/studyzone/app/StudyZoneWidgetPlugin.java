@@ -35,6 +35,7 @@ public class StudyZoneWidgetPlugin extends Plugin {
         editor.apply();
 
         StudyZoneWidgetProvider.updateAll(context);
+        StudyZoneClockWidget.updateAll(context);
         call.resolve();
     }
 

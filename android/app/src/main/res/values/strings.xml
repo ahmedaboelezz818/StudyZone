@@ -30,4 +30,12 @@
     <string name="widget_description_contributions_small">Activity Heatmap - View your annual study activity map</string>
     <string name="widget_description_contributions_medium">Activity Heatmap - View your study activity weeks</string>
     <string name="widget_description_contributions_large">Activity Heatmap - View your full-year study activity map</string>
+    <string name="widget_clock">Flip Clock</string>
+    <string name="widget_description_clock">Flip Clock - Live clock on your home screen, updated by Android</string>
+    <string name="clock_channel_name">Study Zone clock</string>
+    <string name="clock_channel_description">Optional persistent clock shown in the notification shade</string>
+    <string name="clock_notification_title">Study Zone clock · %1$s</string>
+    <string name="clock_notification_text">Live 24-hour clock. Tap to open Focus, or turn it off with the button below.</string>
+    <string name="clock_notification_open">Open clock</string>
+    <string name="clock_notification_stop">Turn off</string>
 </resources>

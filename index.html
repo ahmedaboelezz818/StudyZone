@@ -118,6 +118,9 @@
           <a class="nav-link" href="#notes" data-page="notes"
             ><span class="nav-icon">✎</span>Notes</a
           >
+          <a class="nav-link" href="#media" data-page="media"
+            ><span class="nav-icon">◇</span>Media notes</a
+          >
           <a class="nav-link" href="#voice" data-page="voice"
             ><span class="nav-icon">◉</span>Voice notes</a
           >
@@ -713,6 +716,15 @@
             Maximum recording length is 10 minutes.
           </p>
           <div class="form-error" id="voice-error" role="alert"></div>
+          <button
+            class="button button-secondary button-small voice-open-settings"
+            type="button"
+            data-action="voice-open-settings"
+            id="voice-open-settings"
+            hidden
+          >
+            Open app settings
+          </button>
           <div class="modal-actions voice-modal-actions">
             <button
               class="button button-secondary"

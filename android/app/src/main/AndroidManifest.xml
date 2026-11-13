@@ -160,13 +160,53 @@
                 android:resource="@xml/widget_info_contributions_large" />
         </receiver>
 
+        <!-- Native live clock widget. TextClock ticks itself in the launcher;
+             no background service and no per-second app wake-ups. -->
+        <receiver
+            android:name=".StudyZoneClockWidget"
+            android:label="@string/widget_clock"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.studyzone.app.action.REFRESH_CLOCK_WIDGET" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.LOCALE_CHANGED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_clock" />
+        </receiver>
+
+        <!-- Restores the clock notification after reboot and implements its
+             "Turn off" action. -->
+        <receiver
+            android:name=".StudyZoneBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="com.studyzone.app.action.DISABLE_CLOCK_NOTIFICATION" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Voice notes: WebView getUserMedia() requires the manifest permission and
+         Capacitor's WebChromeClient requests it at runtime on first use. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- No foreground service is used: the persistent clock notification is a
+         normal ongoing notification driven by the system chronometer. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />

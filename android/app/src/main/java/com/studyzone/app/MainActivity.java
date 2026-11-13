@@ -35,6 +35,8 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(StudyZoneIconPlugin.class);
         registerPlugin(StudyZoneWidgetPlugin.class);
+        registerPlugin(StudyZonePermissionsPlugin.class);
+        registerPlugin(StudyZoneClockPlugin.class);
         super.onCreate(savedInstanceState);
 
         handleOpenPage(getIntent());
@@ -69,6 +71,16 @@ public class MainActivity extends BridgeActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         handleOpenPage(intent);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // Re-sync the native clock surfaces with the real system time and the
+        // currently selected theme. TextClock updates itself, but a reboot,
+        // resize or theme change still needs one refresh.
+        StudyZoneClockWidget.updateAll(this);
+        StudyZoneClockNotification.sync(this);
     }
 
     private void handleOpenPage(Intent intent) {
