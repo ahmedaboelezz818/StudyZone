@@ -644,6 +644,11 @@
   let noteSaveTimer = null;
   let noteSaveStatus = "idle";
   let noteEditorElement = null;
+  // Mobile keyboards (Gboard and other Android IMEs) compose Arabic text in
+  // several input events. Autosave and any DOM rewrite must wait until the
+  // composition is committed, otherwise the caret jumps and letters repeat.
+  let noteEditorComposing = false;
+  let noteSaveDeferred = false;
   let taskSectionState = {
     overdue: true,
     today: true,
@@ -1378,6 +1383,21 @@
   let teamsError = "";
   let teamInvites = [];
   let teamJoinRequests = [];
+  let teamProfiles = {};
+  let teamTaskAssignees = [];
+  let teamTaskSubtasks = [];
+  let teamTaskActivity = [];
+  let teamTaskSystemSupported = true;
+  let teamTaskSystemChecked = false;
+  let teamTaskFilter = "all";
+  let teamTaskView = "tasks";
+  let teamTasksScope = "all";
+  let teamTaskModalTaskId = null;
+  let teamTaskDetailId = null;
+  let teamSubtaskModalTaskId = null;
+  let teamSubtaskModalId = null;
+  let teamMemberProfileUserId = null;
+  const teamProfilesStorageKey = "studyzone.team-profiles.v1";
 
   let voiceNotes = [];
   let voiceNotesLoading = false;
@@ -2658,9 +2678,14 @@
       document.body,
       NodeFilter.SHOW_TEXT,
     );
+    // Never rewrite text the user is editing or text that belongs to a note.
+    // Mutating a contenteditable text node during IME composition moves the
+    // caret, duplicates Arabic letters, or closes the Android keyboard.
+    const noTranslateSelector =
+      "script,style,textarea,[data-sz-no-translate],[contenteditable]:not([contenteditable='false'])";
     let node;
     while ((node = walker.nextNode())) {
-      if (node.parentElement?.closest("script,style,textarea,[data-sz-no-translate]"))
+      if (node.parentElement?.closest(noTranslateSelector))
         continue;
       if (!originalTextNodes.has(node))
         originalTextNodes.set(node, node.nodeValue);
@@ -2678,7 +2703,7 @@
         "input[placeholder],textarea[placeholder],[aria-label],[title]",
       )
       .forEach((element) => {
-        if (element.closest("[data-sz-no-translate]")) return;
+        if (element.closest(noTranslateSelector)) return;
         if (!originalAttributes.has(element))
           originalAttributes.set(element, new Map());
         const originals = originalAttributes.get(element);
@@ -5808,8 +5833,8 @@
       return `<article class="note-card" style="--note-color:${escapeHtml(noteColor(note))}" data-note-id="${escapeHtml(note.id)}">
         <button class="note-card-main" data-action="note-open" data-id="${escapeHtml(note.id)}" aria-label="${escapeHtml(appLanguage === "ar" ? `فتح ${note.title}` : `Open ${note.title}`)}">
           <span class="note-card-subject">${escapeHtml(subject || (appLanguage === "ar" ? "بلا مادة" : "No subject"))}</span>
-          <h3 dir="auto">${escapeHtml(note.title || (appLanguage === "ar" ? "ملاحظة بدون عنوان" : "Untitled note"))}</h3>
-          <p class="note-card-preview" dir="auto">${escapeHtml(preview || (appLanguage === "ar" ? "ملاحظة فارغة" : "Empty note"))}</p>
+          <h3 dir="auto" data-sz-no-translate>${escapeHtml(note.title || (appLanguage === "ar" ? "ملاحظة بدون عنوان" : "Untitled note"))}</h3>
+          <p class="note-card-preview" dir="auto" data-sz-no-translate>${escapeHtml(preview || (appLanguage === "ar" ? "ملاحظة فارغة" : "Empty note"))}</p>
           <span class="note-card-date">${escapeHtml(updated)}</span>
         </button>
         <div class="note-card-actions">
@@ -6078,8 +6103,8 @@
         <button class="note-card-main" data-action="note-open" data-id="${escapeHtml(note.id)}" aria-label="${escapeHtml(ar?`فتح ${note.title||'ملاحظة وسائط'}`:`Open ${note.title||'media note'}`)}">
           ${thumb}
           <span class="note-card-subject">${escapeHtml(mediaTypeLabel(kind))}</span>
-          <h3 dir="auto">${escapeHtml(note.title || (ar ? 'ملاحظة وسائط' : 'Media note'))}</h3>
-          <p class="note-card-preview" dir="auto">${escapeHtml(String(note.description||'').slice(0,120) || meta)}</p>
+          <h3 dir="auto" data-sz-no-translate>${escapeHtml(note.title || (ar ? 'ملاحظة وسائط' : 'Media note'))}</h3>
+          <p class="note-card-preview" dir="auto" data-sz-no-translate>${escapeHtml(String(note.description||'').slice(0,120) || meta)}</p>
           <span class="note-card-date">${escapeHtml(updated || meta)}</span>
         </button>
         <div class="note-card-actions">
@@ -6887,7 +6912,7 @@
         <header class="note-editor-head">
           <div class="note-editor-title-wrap">
             <p class="eyebrow" id="note-editor-kicker">${isNew ? (appLanguage === "ar" ? "ملاحظة جديدة" : "NEW NOTE") : appLanguage === "ar" ? "تعديل الملاحظة" : "EDIT NOTE"}</p>
-            <input id="note-editor-title" class="note-title-input" dir="auto" maxlength="180" value="${escapeHtml(title)}" placeholder="${appLanguage === "ar" ? "عنوان الملاحظة" : "Note title"}" aria-label="${appLanguage === "ar" ? "عنوان الملاحظة" : "Note title"}" />
+            <input id="note-editor-title" class="note-title-input" dir="auto" lang="${appLanguage === "ar" ? "ar" : "en"}" maxlength="180" value="${escapeHtml(title)}" placeholder="${appLanguage === "ar" ? "عنوان الملاحظة" : "Note title"}" aria-label="${appLanguage === "ar" ? "عنوان الملاحظة" : "Note title"}" />
           </div>
           <button class="modal-close" type="button" data-action="note-close" aria-label="${appLanguage === "ar" ? "إغلاق" : "Close"}">×</button>
         </header>
@@ -6959,7 +6984,7 @@
             ${toolButton("removeFormat", appLanguage === "ar" ? "مسح التنسيق" : "Clear formatting", "⌫")}
           </div>
         </div>
-        <div class="rt-editor" id="note-editor" contenteditable="true" dir="auto" role="textbox" aria-multiline="true" aria-label="${appLanguage === "ar" ? "محتوى الملاحظة" : "Note content"}" spellcheck="true">${content}</div>
+        <div class="rt-editor" id="note-editor" contenteditable="true" dir="auto" lang="${appLanguage === "ar" ? "ar" : "en"}" data-sz-no-translate role="textbox" aria-multiline="true" aria-label="${appLanguage === "ar" ? "محتوى الملاحظة" : "Note content"}" spellcheck="true">${content}</div>
         <footer class="note-editor-foot">
           <span id="note-word-count"></span>
           <div class="note-editor-actions">
@@ -7001,10 +7026,28 @@
 
   function scheduleNoteSave() {
     setNoteSaveStatus("dirty");
+    if (noteEditorComposing) {
+      // Never autosave while an IME is composing Arabic characters.
+      noteSaveDeferred = true;
+      return;
+    }
     if (noteSaveTimer) window.clearTimeout(noteSaveTimer);
     noteSaveTimer = window.setTimeout(() => {
+      noteSaveTimer = null;
       void saveNoteNow({ silent: true });
     }, 900);
+  }
+
+  function flushNoteEditorComposition() {
+    if (!noteEditorComposing) return false;
+    const composingEditor = document.getElementById("note-editor");
+    try {
+      composingEditor?.blur();
+    } catch (error) {
+      // IME engines commit the composition buffer on blur; ignore failures.
+    }
+    noteEditorComposing = false;
+    return true;
   }
 
   async function saveNoteNow({ silent = false } = {}) {
@@ -7013,6 +7056,15 @@
     if (noteSaveTimer) {
       window.clearTimeout(noteSaveTimer);
       noteSaveTimer = null;
+    }
+    if (noteEditorComposing) {
+      // Autosave waits for the IME composition to commit so the final Arabic
+      // text is captured; an explicit save flushes the composition first.
+      if (silent) {
+        noteSaveDeferred = true;
+        return;
+      }
+      flushNoteEditorComposition();
     }
     const titleInput = document.getElementById("note-editor-title");
     const editor = document.getElementById("note-editor");
@@ -7134,6 +7186,9 @@
       window.clearTimeout(noteSaveTimer);
       noteSaveTimer = null;
     }
+    // Committing an in-flight mobile IME composition before persisting keeps
+    // the Arabic buffer and the saved content consistent.
+    flushNoteEditorComposition();
     const modal = document.getElementById("note-modal");
     if (!modal) return;
     const hasContent =
@@ -7175,6 +7230,8 @@
       color: note?.color || "",
       savedTitle: note?.title || "",
     };
+    noteEditorComposing = false;
+    noteSaveDeferred = false;
     attachNoteEditorListeners();
     openModal(document.getElementById("note-modal"));
     updateNoteWordCount();
@@ -7228,6 +7285,7 @@
       }
       const highlightButton = event.target.closest("[data-rt-highlight]");
       if (highlightButton) {
+        if (noteEditorComposing) return;
         event.preventDefault();
         editor.focus();
         document.execCommand("styleWithCSS", false, true);
@@ -7243,11 +7301,41 @@
       if (event.target.closest(".rt-button, .rt-swatch"))
         event.preventDefault();
     });
-    editor.addEventListener("input", () => {
+    editor.addEventListener("input", (event) => {
       updateNoteWordCount();
+      if (noteEditorComposing || event?.isComposing) {
+        // IME composition: keep the buffer untouched, only count words and
+        // defer the autosave until compositionend.
+        noteSaveDeferred = true;
+        return;
+      }
       scheduleNoteSave();
     });
-    title.addEventListener("input", scheduleNoteSave);
+    editor.addEventListener("compositionstart", () => {
+      noteEditorComposing = true;
+    });
+    editor.addEventListener("compositionend", () => {
+      noteEditorComposing = false;
+      updateNoteWordCount();
+      if (noteSaveDeferred) {
+        noteSaveDeferred = false;
+        scheduleNoteSave();
+      }
+    });
+    title.addEventListener("compositionstart", () => {
+      noteEditorComposing = true;
+    });
+    title.addEventListener("compositionend", () => {
+      noteEditorComposing = false;
+      scheduleNoteSave();
+    });
+    title.addEventListener("input", (event) => {
+      if (noteEditorComposing || event?.isComposing) {
+        noteSaveDeferred = true;
+        return;
+      }
+      scheduleNoteSave();
+    });
     document
       .getElementById("note-editor-subject")
       .addEventListener("change", scheduleNoteSave);
@@ -7295,6 +7383,7 @@
       scheduleNoteSave();
     });
     editor.addEventListener("paste", (event) => {
+      if (noteEditorComposing) return;
       const html = event.clipboardData?.getData("text/html");
       if (!html) return;
       event.preventDefault();
@@ -7306,6 +7395,10 @@
   function runRichTextCommand(command) {
     const editor = document.getElementById("note-editor");
     if (!editor) return;
+    if (noteEditorComposing) {
+      // Toolbar commands never interrupt an active IME composition.
+      return;
+    }
     editor.focus();
     document.execCommand("styleWithCSS", false, true);
     if (command === "checklist") {
@@ -7878,6 +7971,22 @@
           accountProfile.avatar_url,
           session.user.id,
         );
+        teamProfiles[session.user.id] = {
+          ...(teamProfiles[session.user.id] || {}),
+          id: session.user.id,
+          display_name:
+            accountProfile.display_name ||
+            session.user.user_metadata?.full_name ||
+            session.user.email?.split("@")[0] ||
+            "",
+          avatar_url: accountProfile.avatar_url || "",
+          avatar_display_url: accountProfile.avatar_display_url || "",
+          avatar_signed_at: accountProfile.avatar_display_url ? Date.now() : 0,
+          avatar_url_signed: accountProfile.avatar_url || "",
+          role: teamProfiles[session.user.id]?.role || "member",
+        };
+        saveTeamProfileCache();
+        if (teamsLoaded) void loadTeams({ silent: true });
       }
       await loadAccountWorkspace();
       closeModal(document.getElementById("feature-modal"));
@@ -9039,12 +9148,220 @@
     ).length;
   }
 
-  async function loadTeams() {
+  function readTeamProfileCache() {
+    try {
+      const value = JSON.parse(localStorage.getItem(teamProfilesStorageKey) || "null");
+      return value && typeof value === "object" ? value : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function saveTeamProfileCache() {
+    try {
+      const clean = {};
+      for (const [userId, profile] of Object.entries(teamProfiles || {})) {
+        if (!profile) continue;
+        clean[userId] = {
+          id: profile.id || userId,
+          team_id: profile.team_id || null,
+          display_name: profile.display_name || "",
+          avatar_url: profile.avatar_url || "",
+          avatar_display_url: profile.avatar_display_url || "",
+          avatar_signed_at: profile.avatar_signed_at || 0,
+          avatar_url_signed: profile.avatar_url_signed || "",
+          role: profile.role || "member",
+          joined_at: profile.joined_at || null,
+        };
+      }
+      localStorage.setItem(teamProfilesStorageKey, JSON.stringify(clean));
+    } catch {
+      /* storage is optional */
+    }
+  }
+
+  async function loadTeamProfiles(teamIds) {
+    if (!session) return;
+    const cached = readTeamProfileCache();
+    if (cached) teamProfiles = { ...cached, ...teamProfiles };
+    const self = accountProfile
+      ? {
+          id: session.user.id,
+          display_name:
+            accountProfile.display_name ||
+            session.user.user_metadata?.full_name ||
+            session.user.email?.split("@")[0] ||
+            "",
+          avatar_url: accountProfile.avatar_url || "",
+          avatar_display_url: accountProfile.avatar_display_url || "",
+          avatar_signed_at: accountProfile.avatar_display_url ? Date.now() : 0,
+          avatar_url_signed: accountProfile.avatar_url || "",
+          role: teamProfiles[session.user.id]?.role || "member",
+        }
+      : teamProfiles[session.user.id];
+    if (self) teamProfiles[session.user.id] = { ...teamProfiles[session.user.id], ...self };
+
+    const memberIds = [
+      ...new Set(
+        teamMembers
+          .filter((member) => !teamIds || teamIds.includes(member.team_id))
+          .map((member) => String(member.user_id || ""))
+          .filter(Boolean),
+      ),
+    ];
+
+    let rows = [];
+    if (supabase && navigator.onLine) {
+      const { data, error } = await supabase.rpc("team_profiles", {
+        p_team_id: null,
+      });
+      if (!error && Array.isArray(data)) {
+        rows = data;
+      } else if (error && !isMissingRelation(error)) {
+        console.warn("Could not load the team roster; using profile fallback.", error);
+      }
+    }
+
+    if (!rows.length && memberIds.length && supabase && navigator.onLine) {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id,display_name,avatar_url")
+        .in("id", memberIds);
+      if (!error && data) rows = data;
+    }
+
+    for (const row of rows) {
+      const userId = String(row.user_id || row.id || "");
+      if (!userId) continue;
+      const membership = teamMembers.find(
+        (member) => String(member.user_id) === userId,
+      );
+      teamProfiles[userId] = {
+        ...(teamProfiles[userId] || {}),
+        ...row,
+        id: userId,
+        role: row.role || membership?.role || teamProfiles[userId]?.role || "member",
+      };
+    }
+
+    for (const member of teamMembers) {
+      const userId = String(member.user_id || "");
+      if (!userId) continue;
+      teamProfiles[userId] = {
+        ...(teamProfiles[userId] || {
+          id: userId,
+          display_name: "",
+          avatar_url: "",
+        }),
+        role: teamProfiles[userId]?.role || member.role || "member",
+        joined_at: teamProfiles[userId]?.joined_at || member.joined_at || null,
+        team_id: teamProfiles[userId]?.team_id || member.team_id || null,
+      };
+    }
+
+    await Promise.all(
+      Object.values(teamProfiles).map(async (profile) => {
+        if (!profile) return;
+        if (!profile.avatar_url) {
+          profile.avatar_display_url = "";
+          profile.avatar_signed_at = 0;
+          return;
+        }
+        const fresh =
+          profile.avatar_display_url &&
+          profile.avatar_url_signed === profile.avatar_url &&
+          Number(profile.avatar_signed_at || 0) &&
+          Date.now() - Number(profile.avatar_signed_at) < 12 * 60 * 60 * 1000;
+        if (fresh) return;
+        profile.avatar_display_url = await resolveProfileAvatarUrl(
+          profile.avatar_url,
+          profile.id,
+          { silent: true },
+        );
+        profile.avatar_signed_at = profile.avatar_display_url ? Date.now() : 0;
+        profile.avatar_url_signed = profile.avatar_url || "";
+      }),
+    );
+
+    saveTeamProfileCache();
+  }
+
+  async function loadTeamTaskDetails(taskIds) {
+    if (!session || !taskIds.length) {
+      teamTaskAssignees = [];
+      teamTaskSubtasks = [];
+      teamTaskActivity = [];
+      return;
+    }
+    const [assigneeResult, subtaskResult, activityResult] = await Promise.all([
+      supabase
+        .from("team_task_assignees")
+        .select("id,task_id,user_id,added_by,created_at")
+        .in("task_id", taskIds),
+      supabase
+        .from("team_task_subtasks")
+        .select(
+          "id,task_id,title,description,assignee_id,due_at,priority,status,progress,estimated_minutes,position,created_by,created_at,updated_at,completed_at",
+        )
+        .in("task_id", taskIds)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("team_task_activity")
+        .select("id,team_id,task_id,subtask_id,actor_id,action,details,created_at")
+        .in("task_id", taskIds)
+        .order("created_at", { ascending: false })
+        .limit(300),
+    ]);
+
+    if (assigneeResult.error && !isMissingRelation(assigneeResult.error)) {
+      console.warn("Could not load task participants.", assigneeResult.error);
+    }
+    if (subtaskResult.error && !isMissingRelation(subtaskResult.error)) {
+      console.warn("Could not load subtasks.", subtaskResult.error);
+    }
+    if (activityResult.error && !isMissingRelation(activityResult.error)) {
+      console.warn("Could not load team activity.", activityResult.error);
+    }
+
+    teamTaskAssignees = assigneeResult.error ? [] : assigneeResult.data || [];
+    teamTaskSubtasks = subtaskResult.error ? [] : subtaskResult.data || [];
+    teamTaskActivity = activityResult.error ? [] : activityResult.data || [];
+
+    // Older tasks only have assigned_to. Expose them through the participant
+    // list without rewriting or duplicating any stored row.
+    const known = new Set(
+      teamTaskAssignees.map(
+        (row) => `${row.task_id}:${row.user_id}`,
+      ),
+    );
+    for (const task of teamTasks) {
+      if (!task.assigned_to) continue;
+      const key = `${task.id}:${task.assigned_to}`;
+      if (known.has(key)) continue;
+      known.add(key);
+      teamTaskAssignees.push({
+        id: `legacy-${task.id}-${task.assigned_to}`,
+        task_id: task.id,
+        user_id: task.assigned_to,
+        added_by: task.created_by || null,
+        created_at: task.created_at || null,
+        legacy: true,
+      });
+    }
+  }
+
+  async function loadTeams({ silent = false } = {}) {
     if (!supabase || !session || teamsLoading) return;
     teamsLoading = true;
-    teamsError = "";
-    scheduleRender();
+    if (!silent) {
+      teamsError = "";
+      scheduleRender();
+    }
     try {
+      const cachedProfiles = readTeamProfileCache();
+      if (cachedProfiles) teamProfiles = { ...cachedProfiles, ...teamProfiles };
+
       const { data, error } = await supabase
         .from("teams")
         .select("id,name,description,join_code,owner_id,created_at")
@@ -9056,28 +9373,88 @@
       }
       if (teams.length) {
         const ids = teams.map((team) => team.id);
-        const [memberResult, taskResult] = await Promise.all([
-          supabase
-            .from("team_members")
-            .select("team_id,user_id,role,joined_at")
-            .in("team_id", ids),
-          supabase
-            .from("team_tasks")
-            .select(
-              "id,team_id,created_by,assigned_to,title,description,status,priority,due_at,created_at",
-            )
-            .in("team_id", ids)
-            .order("due_at", { ascending: true, nullsFirst: false }),
-        ]);
+        const memberResult = await supabase
+          .from("team_members")
+          .select("team_id,user_id,role,joined_at")
+          .in("team_id", ids);
         if (memberResult.error && !isMissingRelation(memberResult.error))
           console.error("Could not load team members.", memberResult.error);
+        teamMembers = memberResult.error ? [] : memberResult.data || [];
+        if (!memberResult.error) {
+          for (const team of teams) {
+            if (!team.owner_id) continue;
+            const hasOwner = teamMembers.some(
+              (member) =>
+                String(member.team_id) === String(team.id) &&
+                String(member.user_id) === String(team.owner_id),
+            );
+            if (!hasOwner) {
+              teamMembers.push({
+                team_id: team.id,
+                user_id: team.owner_id,
+                role: "owner",
+                joined_at: team.created_at || null,
+                synthetic: true,
+              });
+            }
+          }
+        }
+
+        await loadTeamProfiles(ids);
+
+        const baseTaskColumns =
+          "id,team_id,created_by,assigned_to,title,description,status,priority,due_at,created_at";
+        const fullTaskColumns = `${baseTaskColumns},task_type,leader_id,starts_at,estimated_minutes,progress,completed_at,updated_at,allow_override_complete`;
+        let taskResult = await supabase
+          .from("team_tasks")
+          .select(fullTaskColumns)
+          .in("team_id", ids)
+          .order("due_at", { ascending: true, nullsFirst: false });
+        if (taskResult.error) {
+          const message = String(taskResult.error.message || "");
+          const code = String(taskResult.error.code || "");
+          if (
+            isMissingColumnError(taskResult.error) ||
+            /task_type|leader_id|starts_at|estimated_minutes|progress|completed_at|allow_override_complete/i.test(
+              message,
+            ) ||
+            code === "42703" ||
+            code === "PGRST204"
+          ) {
+            teamTaskSystemSupported = false;
+            taskResult = await supabase
+              .from("team_tasks")
+              .select(baseTaskColumns)
+              .in("team_id", ids)
+              .order("due_at", { ascending: true, nullsFirst: false });
+          }
+        } else {
+          teamTaskSystemSupported = true;
+        }
+        teamTaskSystemChecked = true;
         if (taskResult.error && !isMissingRelation(taskResult.error))
           console.error("Could not load team tasks.", taskResult.error);
-        teamMembers = memberResult.error ? [] : memberResult.data || [];
-        teamTasks = taskResult.error ? [] : taskResult.data || [];
+        teamTasks = (taskResult.error ? [] : taskResult.data || []).map((task) => ({
+          task_type: "individual",
+          leader_id: null,
+          starts_at: null,
+          estimated_minutes: null,
+          progress: task.status === "completed" ? 100 : 0,
+          completed_at: task.status === "completed" ? task.created_at : null,
+          updated_at: task.created_at,
+          allow_override_complete: false,
+          ...task,
+        }));
+
+        await loadTeamTaskDetails(teamTasks.map((task) => task.id));
       } else {
         teamMembers = [];
         teamTasks = [];
+        teamTaskAssignees = [];
+        teamTaskSubtasks = [];
+        teamTaskActivity = [];
+        teamTaskSystemSupported = true;
+        teamTaskSystemChecked = true;
       }
       if (selectedTeamId) {
         const [inviteResult, requestResult] = await Promise.all([
@@ -9100,11 +9477,26 @@
         teamJoinRequests = requestResult.error ? [] : requestResult.data || [];
       }
       teamsSupported = true;
+      if (navigator.onLine) {
+        void supabase
+          .rpc("generate_team_task_notifications")
+          .then(({ error: notificationError }) => {
+            if (notificationError && !isMissingRelation(notificationError)) {
+              console.warn(
+                "Could not generate team deadline notifications.",
+                notificationError,
+              );
+            }
+          });
+      }
     } catch (error) {
       console.error("Could not load teams.", error);
       teams = [];
       teamMembers = [];
       teamTasks = [];
+      teamTaskAssignees = [];
+      teamTaskSubtasks = [];
+      teamTaskActivity = [];
       if (isMissingRelation(error)) {
         teamsSupported = false;
       } else {
@@ -9117,49 +9509,318 @@
     }
   }
 
+  function teamText(en, ar) {
+    return appLanguage === "ar" ? ar : en;
+  }
+
+  function teamProfile(userId) {
+    const id = String(userId || "");
+    if (!id) return null;
+    return teamProfiles[id] || null;
+  }
+
+  function teamMemberName(userId, { you = false } = {}) {
+    const id = String(userId || "");
+    if (!id) return teamText("Unassigned", "غير مسند");
+    const profile = teamProfiles[id];
+    const name =
+      profile?.display_name ||
+      (id === session?.user?.id
+        ? accountProfile?.display_name ||
+          session?.user?.user_metadata?.full_name ||
+          session?.user?.email?.split("@")[0]
+        : "") ||
+      `${teamText("Member", "عضو")} ${id.slice(0, 6)}`;
+    if (you && id === session?.user?.id) {
+      return `${name} ${teamText("(you)", "(أنت)")}`;
+    }
+    return name;
+  }
+
+  function teamInitials(userId) {
+    return initials(teamMemberName(userId));
+  }
+
+  function teamAvatar(userId, { size = "", className = "", title = "" } = {}) {
+    const id = String(userId || "");
+    if (!id) {
+      return `<span class="team-avatar team-avatar-empty ${size} ${className}" aria-hidden="true">?</span>`;
+    }
+    const profile = teamProfiles[id];
+    const name = teamMemberName(id);
+    const url = profile?.avatar_display_url || "";
+    const label = escapeHtml(name || teamInitials(id));
+    return `<span class="team-avatar ${size} ${className}" data-team-avatar="${escapeHtml(id)}" title="${escapeHtml(title || name)}" aria-label="${label}">${
+      url
+        ? `<img src="${escapeHtml(url)}" alt="${label}" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-team-avatar-img />`
+        : `<span data-team-avatar-initials>${escapeHtml(teamInitials(id))}</span>`
+    }</span>`;
+  }
+
+  function teamTaskAssigneeIds(task) {
+    if (!task) return [];
+    const ids = teamTaskAssignees
+      .filter((row) => String(row.task_id) === String(task.id))
+      .map((row) => String(row.user_id))
+      .filter(Boolean);
+    if (task.leader_id) ids.push(String(task.leader_id));
+    if (ids.length) return [...new Set(ids)];
+    return task.assigned_to ? [String(task.assigned_to)] : [];
+  }
+
+  function teamTaskSubtasksFor(taskId) {
+    return teamTaskSubtasks
+      .filter((subtask) => String(subtask.task_id) === String(taskId))
+      .sort((a, b) => {
+        const position = Number(a.position || 0) - Number(b.position || 0);
+        if (position) return position;
+        return String(a.created_at || "").localeCompare(String(b.created_at || ""));
+      });
+  }
+
+  function teamTaskProgressInfo(task) {
+    const subtasks = teamTaskSubtasksFor(task.id);
+    if (!subtasks.length) {
+      const completed = task.status === "completed";
+      return {
+        total: 0,
+        done: completed ? 1 : 0,
+        remaining: completed ? 0 : 0,
+        overdue: 0,
+        percent: completed ? 100 : Math.max(0, Math.min(100, Number(task.progress) || 0)),
+        subtasks,
+      };
+    }
+    const done = subtasks.filter((subtask) => subtask.status === "completed").length;
+    const overdue = subtasks.filter(
+      (subtask) =>
+        subtask.status !== "completed" &&
+        subtask.due_at &&
+        new Date(subtask.due_at).getTime() < Date.now(),
+    ).length;
+    return {
+      total: subtasks.length,
+      done,
+      remaining: subtasks.length - done,
+      overdue,
+      percent: Math.round((done / subtasks.length) * 100),
+      subtasks,
+    };
+  }
+
+  function teamStatusLabel(status) {
+    const labels = {
+      not_started: teamText("Not started", "لم تبدأ"),
+      in_progress: teamText("In progress", "قيد التنفيذ"),
+      blocked: teamText("Blocked", "متوقفة"),
+      completed: teamText("Completed", "مكتملة"),
+    };
+    return labels[status] || labels.not_started;
+  }
+
+  function teamPriorityLabel(priority) {
+    const labels = {
+      low: teamText("Low", "منخفضة"),
+      medium: teamText("Medium", "متوسطة"),
+      high: teamText("High", "عالية"),
+      urgent: teamText("Urgent", "عاجلة"),
+    };
+    return labels[priority] || labels.medium;
+  }
+
+  function teamDateLabel(value, { time = false } = {}) {
+    if (!value) return teamText("No date", "بلا تاريخ");
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return teamText("No date", "بلا تاريخ");
+    return new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", {
+      dateStyle: "medium",
+      ...(time ? { timeStyle: "short" } : {}),
+    }).format(date);
+  }
+
+  function teamIsOverdue(task) {
+    return Boolean(
+      task?.due_at &&
+        task.status !== "completed" &&
+        new Date(task.due_at).getTime() < Date.now(),
+    );
+  }
+
+  function teamTaskIsMine(task) {
+    return teamTaskAssigneeIds(task).includes(String(session?.user?.id || ""));
+  }
+
+  function teamCanManageTeam(team) {
+    if (!team || !session) return false;
+    if (String(team.owner_id) === String(session.user.id)) return true;
+    const membership = teamMembers.find(
+      (member) =>
+        String(member.team_id) === String(team.id) &&
+        String(member.user_id) === String(session.user.id),
+    );
+    return ["owner", "admin"].includes(String(membership?.role || ""));
+  }
+
+  function teamCanEditTask(task, team) {
+    return teamCanManageTeam(team);
+  }
+
+  function teamCanUpdateTaskStatus(task) {
+    return teamCanManageTeam(
+      teams.find((team) => String(team.id) === String(task.team_id)),
+    ) || teamTaskIsMine(task);
+  }
+
+  function teamTaskAssigneeMarkup(task, { max = 4 } = {}) {
+    const ids = teamTaskAssigneeIds(task);
+    if (!ids.length) {
+      return `<span class="team-task-assignee team-task-assignee-empty">${teamText("Unassigned", "غير مسند")}</span>`;
+    }
+    const isGroup = task.task_type === "group" || ids.length > 1;
+    if (!isGroup) {
+      return `<button type="button" class="team-task-assignee" data-action="team-task-participants" data-id="${escapeHtml(task.id)}">
+        ${teamAvatar(ids[0], { size: "team-avatar-xs" })}
+        <span dir="auto">${escapeHtml(teamMemberName(ids[0], { you: false }))}</span>
+      </button>`;
+    }
+    const visible = ids.slice(0, max);
+    const overflow = ids.length - visible.length;
+    return `<button type="button" class="team-task-assignee team-task-assignee-group" data-action="team-task-participants" data-id="${escapeHtml(task.id)}" aria-label="${teamText("Show everyone on this task", "عرض جميع المشاركين في المهمة")}">
+      <span class="team-avatar-stack">
+        ${visible
+          .map((userId) => teamAvatar(userId, { size: "team-avatar-xs" }))
+          .join("")}
+        ${overflow > 0 ? `<span class="team-avatar team-avatar-xs team-avatar-overflow">+${overflow}</span>` : ""}
+      </span>
+      <span class="team-assignee-names" dir="auto">${escapeHtml(
+        visible
+          .map((userId) => teamMemberName(userId))
+          .join(teamText(", ", "، ")),
+      )}${overflow > 0 ? escapeHtml(teamText(` +${overflow} more`, ` +${overflow} آخرين`)) : ""}</span>
+    </button>`;
+  }
   function teamMemberLabel(member) {
-    if (!member) return "Member";
-    if (member.user_id === session?.user?.id)
-      return appLanguage === "ar" ? "أنت" : "You";
-    return `${appLanguage === "ar" ? "عضو" : "Member"} ${String(member.user_id || "").slice(0, 6)}`;
+    if (!member) return teamText("Member", "عضو");
+    return teamMemberName(member.user_id, { you: true });
   }
 
   function teamTaskRow(task, team) {
     const completed = task.status === "completed";
-    const mine = task.created_by === session?.user?.id;
-    const owner = team.owner_id === session?.user?.id;
-    const due = task.due_at
-      ? taskDueLabel({ due_at: task.due_at }, { includeDate: true })
-      : "";
-    return `<div class="team-task-row ${completed ? "completed" : ""}">
-      <button class="task-check ${completed ? "checked" : ""}" data-action="team-task-toggle" data-id="${escapeHtml(task.id)}" aria-label="${completed ? "Reopen" : "Complete"} ${escapeHtml(task.title)}">${completed ? "✓" : ""}</button>
-      <div class="team-task-main">
-        <strong dir="auto">${escapeHtml(task.title)}</strong>
-        <small dir="auto">${escapeHtml(due || (appLanguage === "ar" ? "بلا موعد" : "No due date"))}${task.assigned_to === session?.user?.id ? (appLanguage === "ar" ? " · مُسندة إليك" : " · assigned to you") : ""}</small>
+    const overdue = teamIsOverdue(task);
+    const progress = teamTaskProgressInfo(task);
+    const isGroup = task.task_type === "group" || teamTaskAssigneeIds(task).length > 1;
+    const statusControl = teamCanUpdateTaskStatus(task)
+      ? `<button class="task-check ${completed ? "checked" : ""}" data-action="team-task-toggle" data-id="${escapeHtml(task.id)}" aria-label="${completed ? teamText("Reopen", "إعادة فتح") : teamText("Complete", "إكمال")} ${escapeHtml(task.title)}">${completed ? "✓" : ""}</button>`
+      : `<span class="task-check ${completed ? "checked" : ""}" aria-hidden="true">${completed ? "✓" : ""}</span>`;
+    const canManage = teamCanEditTask(task, team);
+    const dueLabel = task.due_at
+      ? teamDateLabel(task.due_at)
+      : teamText("No due date", "بلا موعد");
+    const meta = [
+      dueLabel,
+      task.estimated_minutes
+        ? `${task.estimated_minutes} ${teamText("min", "دقيقة")}`
+        : "",
+      isGroup
+        ? `${progress.done}/${progress.total} ${teamText("subtasks", "مهام فرعية")}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return `<article class="team-task-card ${completed ? "completed" : ""} ${overdue ? "overdue" : ""}" data-task-id="${escapeHtml(task.id)}">
+      <div class="team-task-header">
+        ${statusControl}
+        <button type="button" class="team-task-title" data-action="team-task-detail" data-id="${escapeHtml(task.id)}">
+          <strong dir="auto">${escapeHtml(task.title)}</strong>
+          <span class="team-task-badges">
+            <span class="team-type-badge ${isGroup ? "group" : "individual"}">${isGroup ? teamText("Group", "جماعية") : teamText("Individual", "فردية")}</span>
+            <span class="priority ${escapeHtml(task.priority || "medium")}">${escapeHtml(teamPriorityLabel(task.priority))}</span>
+            <span class="team-status-badge status-${escapeHtml(task.status || "not_started")}">${escapeHtml(teamStatusLabel(task.status))}</span>
+            ${overdue ? `<span class="team-status-badge overdue-badge">${teamText("Overdue", "متأخرة")}</span>` : ""}
+          </span>
+        </button>
+        <div class="team-task-actions">
+          <button class="task-icon" type="button" data-action="team-task-detail" data-id="${escapeHtml(task.id)}" aria-label="${teamText("Open task details", "فتح تفاصيل المهمة")}">›</button>
+          ${
+            canManage
+              ? `<button class="task-icon" type="button" data-action="team-task-edit" data-id="${escapeHtml(task.id)}" aria-label="${teamText("Edit task", "تعديل المهمة")}">✎</button>
+                 <button class="task-icon danger" type="button" data-action="team-task-delete" data-id="${escapeHtml(task.id)}" aria-label="${teamText("Delete team task", "حذف مهمة الفريق")}">×</button>`
+              : ""
+          }
+        </div>
       </div>
-      <span class="priority ${escapeHtml(task.priority || "medium")}">${escapeHtml(deadlineText[appLanguage][task.priority] || "medium")}</span>
-      ${mine || owner ? `<button class="task-icon danger" data-action="team-task-delete" data-id="${escapeHtml(task.id)}" aria-label="${appLanguage === "ar" ? "حذف مهمة الفريق" : "Delete team task"}">×</button>` : ""}
-    </div>`;
+      <div class="team-task-people">
+        ${teamTaskAssigneeMarkup(task)}
+      </div>
+      <div class="team-task-meta" dir="auto">
+        <span>${escapeHtml(meta)}</span>
+      </div>
+      ${
+        isGroup
+          ? `<div class="team-progress" role="progressbar" aria-label="${teamText("Task progress", "تقدم المهمة")}" aria-valuenow="${progress.percent}" aria-valuemin="0" aria-valuemax="100">
+              <div class="team-progress-track"><span style="width:${progress.percent}%"></span></div>
+              <small>${progress.done}/${progress.total} ${teamText("done", "مكتملة")}${progress.overdue ? ` · ${progress.overdue} ${teamText("overdue", "متأخرة")}` : ""}</small>
+            </div>`
+          : ""
+      }
+    </article>`;
+  }
+
+  function teamTasksForSelected() {
+    return teamTasks.filter(
+      (task) => String(task.team_id) === String(selectedTeamId),
+    );
+  }
+
+  function teamFilteredTasks(tasks) {
+    const now = Date.now();
+    return tasks.filter((task) => {
+      if (teamTaskFilter === "open") return task.status !== "completed";
+      if (teamTaskFilter === "completed") return task.status === "completed";
+      if (teamTaskFilter === "overdue") {
+        return (
+          task.status !== "completed" &&
+          task.due_at &&
+          new Date(task.due_at).getTime() < now
+        );
+      }
+      return true;
+    });
+  }
+
+  function teamFilterChips() {
+    const filters = [
+      ["all", teamText("All", "الكل")],
+      ["open", teamText("Open", "مفتوحة")],
+      ["overdue", teamText("Overdue", "متأخرة")],
+      ["completed", teamText("Completed", "مكتملة")],
+    ];
+    return `<div class="team-filter-chips" role="group" aria-label="${teamText("Filter team tasks", "تصفية مهام الفريق")}">${filters
+      .map(
+        ([value, label]) =>
+          `<button type="button" class="team-filter-chip ${teamTaskFilter === value ? "selected" : ""}" data-action="team-filter" data-filter="${value}" aria-pressed="${teamTaskFilter === value}">${escapeHtml(label)}</button>`,
+      )
+      .join("")}</div>`;
   }
 
   function teamsPage() {
     if (!session) {
-      return `${pageHeading("STUDY TOGETHER", appLanguage === "ar" ? "الفرق" : "Teams", appLanguage === "ar" ? "شارك المهام مع مجموعتك الدراسية." : "Share tasks and momentum with your study group.", "")}
-        <section class="panel teams-empty"><div class="empty-state"><strong>${appLanguage === "ar" ? "سجّل الدخول لإنشاء فريق" : "Sign in to create a team"}</strong><p>${appLanguage === "ar" ? "الفرق الخاصة آمنة ومرتبطة بحسابك." : "Private teams are tied to your account and protected by row-level security."}</p><button class="button button-primary button-small" id="open-auth">${appLanguage === "ar" ? "تسجيل الدخول" : "Sign in"}</button></div></section>`;
+      return `${pageHeading("STUDY TOGETHER", teamText("Teams", "الفرق"), teamText("Share tasks and momentum with your study group.", "شارك المهام مع مجموعتك الدراسية."), "")}
+        <section class="panel teams-empty"><div class="empty-state"><strong>${teamText("Sign in to create a team", "سجّل الدخول لإنشاء فريق")}</strong><p>${teamText("Private teams are tied to your account and protected by row-level security.", "الفرق الخاصة آمنة ومرتبطة بحسابك.")}</p><button class="button button-primary button-small" id="open-auth">${teamText("Sign in", "تسجيل الدخول")}</button></div></section>`;
     }
-    const actions = `<div class="teams-heading-actions"><button class="button button-secondary" data-action="team-join">${appLanguage === "ar" ? "الانضمام إلى فريق" : "Join team"}</button><button class="button button-primary" data-action="team-create">＋ ${appLanguage === "ar" ? "فريق جديد" : "New team"}</button></div>`;
+    const actions = `<div class="teams-heading-actions"><button class="button button-secondary" data-action="team-join">${teamText("Join team", "الانضمام إلى فريق")}</button><button class="button button-secondary" data-action="team-tasks-open">${teamText("My team tasks", "مهامي في الفريق")}</button><button class="button button-primary" data-action="team-create">＋ ${teamText("New team", "فريق جديد")}</button></div>`;
     if (teamsLoading && !teamsLoaded) {
-      return `${pageHeading("STUDY TOGETHER", appLanguage === "ar" ? "الفرق" : "Teams", appLanguage === "ar" ? "شارك المهام مع مجموعتك الدراسية." : "Share tasks and momentum with your study group.", actions)}<section class="panel"><div class="empty-state" role="status">${appLanguage === "ar" ? "جارٍ تحميل الفرق…" : "Loading teams…"}</div></section>`;
+      return `${pageHeading("STUDY TOGETHER", teamText("Teams", "الفرق"), teamText("Share tasks and momentum with your study group.", "شارك المهام مع مجموعتك الدراسية."), actions)}<section class="panel"><div class="empty-state" role="status">${teamText("Loading teams…", "جارٍ تحميل الفرق…")}</div></section>`;
     }
     if (!teamsSupported) {
-      return `${pageHeading("STUDY TOGETHER", appLanguage === "ar" ? "الفرق" : "Teams", appLanguage === "ar" ? "شارك المهام مع مجموعتك الدراسية." : "Share tasks and momentum with your study group.", actions)}<section class="panel"><div class="empty-state"><strong>${appLanguage === "ar" ? "ميزة الفرق غير مهيأة بعد" : "Teams are not enabled yet"}</strong><p>${appLanguage === "ar" ? "طبّق ملف الترحيل 001_studyzone_enhancements.sql في Supabase لتفعيل الفرق." : "Apply supabase/migrations/001_studyzone_enhancements.sql in Supabase to enable private teams."}</p></div></section>`;
+      return `${pageHeading("STUDY TOGETHER", teamText("Teams", "الفرق"), teamText("Share tasks and momentum with your study group.", "شارك المهام مع مجموعتك الدراسية."), actions)}<section class="panel"><div class="empty-state"><strong>${teamText("Teams are not enabled yet", "ميزة الفرق غير مهيأة بعد")}</strong><p>${teamText("Apply supabase/migrations/001_studyzone_enhancements.sql in Supabase to enable private teams.", "طبّق ملف الترحيل 001_studyzone_enhancements.sql في Supabase لتفعيل الفرق.")}</p></div></section>`;
     }
     if (teamsError) {
-      return `${pageHeading("STUDY TOGETHER", appLanguage === "ar" ? "الفرق" : "Teams", appLanguage === "ar" ? "شارك المهام مع مجموعتك الدراسية." : "Share tasks and momentum with your study group.", actions)}<section class="panel"><div class="empty-state"><strong>${appLanguage === "ar" ? "تعذر تحميل الفرق" : "Could not load teams"}</strong><p>${escapeHtml(teamsError)}</p><button class="button button-secondary button-small" data-action="teams-retry">${appLanguage === "ar" ? "إعادة المحاولة" : "Try again"}</button></div></section>`;
+      return `${pageHeading("STUDY TOGETHER", teamText("Teams", "الفرق"), teamText("Share tasks and momentum with your study group.", "شارك المهام مع مجموعتك الدراسية."), actions)}<section class="panel"><div class="empty-state"><strong>${teamText("Could not load teams", "تعذر تحميل الفرق")}</strong><p>${escapeHtml(teamsError)}</p><button class="button button-secondary button-small" data-action="teams-retry">${teamText("Try again", "إعادة المحاولة")}</button></div></section>`;
     }
     if (!teams.length) {
-      return `${pageHeading("STUDY TOGETHER", appLanguage === "ar" ? "الفرق" : "Teams", appLanguage === "ar" ? "شارك المهام مع مجموعتك الدراسية." : "Share tasks and momentum with your study group.", actions)}
-        <section class="panel teams-empty"><div class="empty-state"><strong>${appLanguage === "ar" ? "ابدأ فريقك الأول" : "Start your first team"}</strong><p>${appLanguage === "ar" ? "أنشئ فريقًا أو انضم بكود من زميل." : "Create a team, or join one with a short code from a classmate."}</p><div class="teams-empty-actions"><button class="button button-secondary button-small" data-action="team-join">${appLanguage === "ar" ? "الانضمام إلى فريق" : "Join team"}</button><button class="button button-primary button-small" data-action="team-create">＋ ${appLanguage === "ar" ? "فريق جديد" : "New team"}</button></div></div></section>`;
+      return `${pageHeading("STUDY TOGETHER", teamText("Teams", "الفرق"), teamText("Share tasks and momentum with your study group.", "شارك المهام مع مجموعتك الدراسية."), actions)}
+        <section class="panel teams-empty"><div class="empty-state"><strong>${teamText("Start your first team", "ابدأ فريقك الأول")}</strong><p>${teamText("Create a team, or join one with a short code from a classmate.", "أنشئ فريقًا أو انضم بكود من زميل.")}</p><div class="teams-empty-actions"><button class="button button-secondary button-small" data-action="team-join">${teamText("Join team", "الانضمام إلى فريق")}</button><button class="button button-primary button-small" data-action="team-create">＋ ${teamText("New team", "فريق جديد")}</button></div></div></section>`;
     }
     const selected =
       teams.find((team) => String(team.id) === String(selectedTeamId)) ||
@@ -9167,93 +9828,130 @@
     const members = teamMembers.filter(
       (member) => String(member.team_id) === String(selected.id),
     );
-    const owner = selected.owner_id === session.user.id;
+    const owner = String(selected.owner_id) === String(session.user.id);
     const myMembership = members.find(
       (member) => String(member.user_id) === String(session.user.id),
     );
-    const canManage = owner || myMembership?.role === "admin";
+    const canManage = teamCanManageTeam(selected);
     const memberRows =
       members
-        .map(
-          (member) => {
-            const memberLabelText = teamMemberLabel(member);
-            const memberRole = member.role || "member";
-            const memberActions = canManage
-              ? `<span class="task-actions">
-                  <button class="task-icon" data-action="team-member-role" data-team-id="${escapeHtml(selected.id)}" data-user-id="${escapeHtml(member.user_id)}" data-role="${escapeHtml(memberRole === "owner" ? "member" : "admin")}" aria-label="${appLanguage === "ar" ? "تعديل الصلاحية" : "Change role"}">✎</button>
-                  ${memberRole === "owner" ? "" : `<button class="task-icon danger" data-action="team-member-remove" data-team-id="${escapeHtml(selected.id)}" data-user-id="${escapeHtml(member.user_id)}" aria-label="${appLanguage === "ar" ? "إزالة العضو" : "Remove member"}">×</button>`}
-                </span>`
-              : "";
-            return `<div class="team-member">
-              <span class="team-member-avatar">${escapeHtml(initials(teamMemberLabel(member)))}</span>
-              <div><strong>${escapeHtml(memberLabelText)}</strong><small>${escapeHtml(member.role === "owner" ? (appLanguage === "ar" ? "مالك الفريق" : "Team owner") : member.role === "admin" ? (appLanguage === "ar" ? "مسؤول مساعد" : "Assistant admin") : (appLanguage === "ar" ? "عضو" : "Member"))}</small>${memberActions ? `<div class="task-actions">${memberActions}</div>` : ""}</div>
-            </div>`;
-          },
-        )
+        .map((member) => {
+          const memberRole = member.role || "member";
+          const memberActions = canManage && !member.synthetic
+            ? `<span class="task-actions">
+                <button class="task-icon" type="button" data-action="team-member-role" data-team-id="${escapeHtml(selected.id)}" data-user-id="${escapeHtml(member.user_id)}" data-role="${escapeHtml(memberRole === "owner" ? "member" : "admin")}" aria-label="${teamText("Change role", "تعديل الصلاحية")}">✎</button>
+                ${memberRole === "owner" ? "" : `<button class="task-icon danger" type="button" data-action="team-member-remove" data-team-id="${escapeHtml(selected.id)}" data-user-id="${escapeHtml(member.user_id)}" aria-label="${teamText("Remove member", "إزالة العضو")}">×</button>`}
+              </span>`
+            : "";
+          const roleLabel =
+            memberRole === "owner"
+              ? teamText("Team owner", "مالك الفريق")
+              : memberRole === "admin"
+                ? teamText("Assistant admin", "مسؤول مساعد")
+                : teamText("Member", "عضو");
+          return `<div class="team-member">
+            <button type="button" class="team-member-profile" data-action="team-member-profile" data-user-id="${escapeHtml(member.user_id)}" aria-label="${teamText("Open member profile", "فتح ملف العضو")}">
+              ${teamAvatar(member.user_id, { size: "team-avatar-sm" })}
+              <span class="team-member-copy"><strong dir="auto">${escapeHtml(teamMemberName(member.user_id, { you: true }))}</strong><small>${escapeHtml(roleLabel)}</small></span>
+            </button>
+            ${memberActions ? `<div class="task-actions">${memberActions}</div>` : ""}
+          </div>`;
+        })
         .join("") ||
-      `<p class="data-caption">${appLanguage === "ar" ? "لا أعضاء بعد." : "No members yet."}</p>`;
+      `<p class="data-caption">${teamText("No members yet.", "لا أعضاء بعد.")}</p>`;
     const pendingRequests = teamJoinRequests.filter(
       (request) => String(request.team_id) === String(selected.id),
     );
-    const tasks = teamTasks.filter(
-      (task) => String(task.team_id) === String(selected.id),
-    );
+    const tasks = teamTasksForSelected();
     const openTasks = tasks.filter((task) => task.status !== "completed");
     const doneTasks = tasks.filter((task) => task.status === "completed");
-    const taskList = `${openTasks.length ? openTasks.map((task) => teamTaskRow(task, selected)).join("") : `<div class="empty-state"><strong>${appLanguage === "ar" ? "لا مهام للفريق" : "No team tasks yet"}</strong><p>${appLanguage === "ar" ? "أضف أول مهمة مشتركة." : "Add the first shared task below."}</p></div>`}
-      ${doneTasks.length ? `<details class="team-done"><summary>${appLanguage === "ar" ? "المكتملة" : "Completed"} (${doneTasks.length})</summary>${doneTasks.map((task) => teamTaskRow(task, selected)).join("")}</details>` : ""}`;
-    const pendingRequestsPanel = canManage && selected.join_mode === "approval"
-      ? `<section class="panel">
-          ${panelHeading(appLanguage === "ar" ? "طلبات الانضمام" : "Join requests", appLanguage === "ar" ? `${pendingRequests.length} في انتظار المراجعة` : `${pendingRequests.length} awaiting review`)}
-          <div class="team-task-list">${pendingRequests.length ? pendingRequests.map((request) => {
-            const requester = teamMembers.find(
-              (member) => String(member.user_id) === String(request.user_id),
-            );
-            const requesterLabel = requester
-              ? teamMemberLabel(requester)
-              : `${appLanguage === "ar" ? "عضو" : "Member"} ${String(request.user_id || "").slice(0, 6)}`;
-            return `<div class="team-task-row">
+    const filtered = teamFilteredTasks(tasks);
+    const taskList = filtered.length
+      ? filtered
+          .sort((a, b) => {
+            const aDone = a.status === "completed" ? 1 : 0;
+            const bDone = b.status === "completed" ? 1 : 0;
+            if (aDone !== bDone) return aDone - bDone;
+            const aDue = a.due_at ? new Date(a.due_at).getTime() : Infinity;
+            const bDue = b.due_at ? new Date(b.due_at).getTime() : Infinity;
+            return aDue - bDue;
+          })
+          .map((task) => teamTaskRow(task, selected))
+          .join("")
+      : `<div class="empty-state"><strong>${teamText("No team tasks in this view", "لا مهام في هذا العرض")}</strong><p>${canManage ? teamText("Create the first task for your team.", "أنشئ أول مهمة لفريقك.") : teamText("Your team manager has not assigned tasks here yet.", "لم يسند مدير الفريق مهامًا هنا بعد.")}</p></div>`;
+    const pendingRequestsPanel =
+      canManage && selected.join_mode === "approval"
+        ? `<section class="panel">
+          ${panelHeading(teamText("Join requests", "طلبات الانضمام"), teamText(`${pendingRequests.length} awaiting review`, `${pendingRequests.length} في انتظار المراجعة`))}
+          <div class="team-task-list">${
+            pendingRequests.length
+              ? pendingRequests
+                  .map((request) => {
+                    const requesterLabel = teamMemberName(request.user_id);
+                    return `<div class="team-task-row">
               <div class="team-task-main"><strong dir="auto">${escapeHtml(requesterLabel)}</strong><small dir="auto">${escapeHtml(String(request.note || "").slice(0, 80))}</small></div>
               <span class="priority">${escapeHtml(request.status || "pending")}</span>
               <span class="task-actions">
-                <button class="task-icon" data-action="team-join-review" data-id="${escapeHtml(request.id)}" data-approve="true" aria-label="${appLanguage === "ar" ? "قبول" : "Approve"}">✓</button>
-                <button class="task-icon danger" data-action="team-join-review" data-id="${escapeHtml(request.id)}" data-approve="false" aria-label="${appLanguage === "ar" ? "رفض" : "Reject"}">×</button>
+                <button class="task-icon" type="button" data-action="team-join-review" data-id="${escapeHtml(request.id)}" data-approve="true" aria-label="${teamText("Approve", "قبول")}">✓</button>
+                <button class="task-icon danger" type="button" data-action="team-join-review" data-id="${escapeHtml(request.id)}" data-approve="false" aria-label="${teamText("Reject", "رفض")}">×</button>
               </span>
             </div>`;
-          }).join("") : `<div class="empty-state"><strong>${appLanguage === "ar" ? "لا طلبات انضمام." : "No pending join requests."}</strong></div>`}</div>
+                  })
+                  .join("")
+              : `<div class="empty-state"><strong>${teamText("No pending join requests.", "لا طلبات انضمام.")}</strong></div>`
+          }</div>
         </section>`
+        : "";
+    const migrationNotice = !teamTaskSystemSupported
+      ? `<section class="panel team-migration-notice"><strong>${teamText("Team task upgrades need the latest migration", "تحتاج ميزات مهام الفريق إلى أحدث ترحيل")}</strong><p>${teamText("Apply supabase/migrations/004_team_task_system.sql in Supabase to enable group tasks, subtasks, avatars and progress. Existing tasks keep working.", "طبّق supabase/migrations/004_team_task_system.sql في Supabase لتفعيل المهام الجماعية والمهام الفرعية والصور والتقدم. المهام الحالية تعمل كما هي.")}</p></section>`
       : "";
-    return `${pageHeading("STUDY TOGETHER", appLanguage === "ar" ? "الفرق" : "Teams", appLanguage === "ar" ? "شارك المهام مع مجموعتك الدراسية." : "Share tasks and momentum with your study group.", actions)}
-      <div class="team-switcher" role="tablist" aria-label="${appLanguage === "ar" ? "فرقك" : "Your teams"}">${teams.map((team) => `<button class="team-chip ${String(team.id) === String(selected.id) ? "selected" : ""}" data-action="team-select" data-id="${escapeHtml(team.id)}" role="tab" aria-selected="${String(team.id) === String(selected.id)}">${escapeHtml(team.name)}<small>${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(teamMemberCount(team.id))}</small></button>`).join("")}</div>
+    return `${pageHeading("STUDY TOGETHER", teamText("Teams", "الفرق"), teamText("Share tasks and momentum with your study group.", "شارك المهام مع مجموعتك الدراسية."), actions)}
+      <div class="team-switcher" role="tablist" aria-label="${teamText("Your teams", "فرقك")}">${teams
+        .map(
+          (team) =>
+            `<button class="team-chip ${String(team.id) === String(selected.id) ? "selected" : ""}" data-action="team-select" data-id="${escapeHtml(team.id)}" role="tab" aria-selected="${String(team.id) === String(selected.id)}">${escapeHtml(team.name)}<small>${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(teamMemberCount(team.id))}</small></button>`,
+        )
+        .join("")}</div>
+      ${migrationNotice}
       <div class="grid team-layout">
-        <section class="panel">
-          <div class="team-heading"><div><p class="eyebrow">${owner ? (appLanguage === "ar" ? "أنت المالك" : "YOU OWN THIS TEAM") : appLanguage === "ar" ? "عضو" : "MEMBER"}</p><h2>${escapeHtml(selected.name)}</h2><p class="panel-copy">${escapeHtml(selected.description || (appLanguage === "ar" ? "لا وصف بعد." : "No description yet."))}</p></div><div class="team-code"><span>${appLanguage === "ar" ? "كود الانضمام" : "Join code"}</span><strong dir="ltr">${escapeHtml(selected.join_code || "—")}</strong></div></div>
+        <section class="panel team-members-panel">
+          <div class="team-heading"><div><p class="eyebrow">${owner ? teamText("YOU OWN THIS TEAM", "أنت المالك") : myMembership?.role === "admin" ? teamText("TEAM MANAGER", "مدير الفريق") : teamText("MEMBER", "عضو")}</p><h2>${escapeHtml(selected.name)}</h2><p class="panel-copy">${escapeHtml(selected.description || teamText("No description yet.", "لا وصف بعد."))}</p></div><div class="team-code"><span>${teamText("Join code", "كود الانضمام")}</span><strong dir="ltr">${escapeHtml(selected.join_code || "—")}</strong></div></div>
           <div class="team-members">${memberRows}</div>
           <div class="team-actions-row">
-            <button class="button button-secondary button-small" data-action="team-refresh">${appLanguage === "ar" ? "تحديث" : "Refresh"}</button>
-            <button class="button button-secondary button-small" data-action="team-invite" data-team-id="${escapeHtml(selected.id)}">${appLanguage === "ar" ? "دعوة عضو" : "Invite member"}</button>
-            <button class="button button-secondary button-small" data-action="team-request-join" data-team-id="${escapeHtml(selected.id)}">${appLanguage === "ar" ? "طلب انضمام" : "Request to join"}</button>
+            <button class="button button-secondary button-small" data-action="team-refresh">${teamText("Refresh", "تحديث")}</button>
+            <button class="button button-secondary button-small" data-action="team-invite" data-team-id="${escapeHtml(selected.id)}">${teamText("Invite member", "دعوة عضو")}</button>
+            ${
+              canManage
+                ? `<button class="button button-secondary button-small" data-action="team-member-add" data-team-id="${escapeHtml(selected.id)}">＋ ${teamText("Add member", "إضافة عضو")}</button>`
+                : `<button class="button button-secondary button-small" data-action="team-request-join" data-team-id="${escapeHtml(selected.id)}">${teamText("Request to join", "طلب انضمام")}</button>`
+            }
             ${
               owner
-                ? `<button class="button button-quiet button-small danger-text" data-action="team-delete">${appLanguage === "ar" ? "حذف الفريق" : "Delete team"}</button>`
-                : `<button class="button button-quiet button-small danger-text" data-action="team-leave">${appLanguage === "ar" ? "مغادرة الفريق" : "Leave team"}</button>`
+                ? `<button class="button button-quiet button-small danger-text" data-action="team-delete">${teamText("Delete team", "حذف الفريق")}</button>`
+                : `<button class="button button-quiet button-small danger-text" data-action="team-leave">${teamText("Leave team", "مغادرة الفريق")}</button>`
             }
           </div>
         </section>
-        <section class="panel">
-          ${panelHeading(appLanguage === "ar" ? "مهام الفريق" : "Team tasks", appLanguage === "ar" ? `${openTasks.length} مفتوحة · ${doneTasks.length} مكتملة` : `${openTasks.length} open · ${doneTasks.length} done`)}
-          <form id="team-task-form" class="team-task-form">
-            <input name="title" dir="auto" required maxlength="180" placeholder="${appLanguage === "ar" ? "أضف مهمة مشتركة" : "Add a shared task"}" aria-label="${appLanguage === "ar" ? "عنوان مهمة الفريق" : "Team task title"}" />
-            <input name="due_date" type="date" aria-label="${appLanguage === "ar" ? "تاريخ الاستحقاق" : "Due date"}" />
-            <input name="due_time" type="time" aria-label="${appLanguage === "ar" ? "وقت الاستحقاق" : "Due time"}" />
-            <select name="priority" aria-label="${appLanguage === "ar" ? "الأولوية" : "Priority"}"><option value="medium">${appLanguage === "ar" ? "متوسطة" : "Medium"}</option><option value="low">${appLanguage === "ar" ? "منخفضة" : "Low"}</option><option value="high">${appLanguage === "ar" ? "عالية" : "High"}</option><option value="urgent">${appLanguage === "ar" ? "عاجلة" : "Urgent"}</option></select>
-            <button class="button button-primary button-small" type="submit">＋</button>
-          </form>
-          <div class="team-task-list">${taskList}</div>
+        <section class="panel team-tasks-panel">
+          ${panelHeading(teamText("Team tasks", "مهام الفريق"), teamText(`${openTasks.length} open · ${doneTasks.length} done`, `${openTasks.length} مفتوحة · ${doneTasks.length} مكتملة`), canManage ? `<button class="button button-primary button-small" data-action="team-task-create">＋ ${teamText("New task", "مهمة جديدة")}</button>` : "")}
+          <div class="team-task-toolbar">
+            ${teamFilterChips()}
+            <button class="team-filter-chip ${teamTaskView === "mine" ? "selected" : ""}" type="button" data-action="team-view-mine" aria-pressed="${teamTaskView === "mine"}">${teamText("Assigned to me", "المسندة إليّ")}</button>
+          </div>
+          <div class="team-task-list team-task-card-list">${
+            teamTaskView === "mine"
+              ? (() => {
+                  const mine = filtered.filter((task) => teamTaskIsMine(task));
+                  return mine.length
+                    ? mine.map((task) => teamTaskRow(task, selected)).join("")
+                    : `<div class="empty-state"><strong>${teamText("No tasks assigned to you here", "لا مهام مسندة إليك هنا")}</strong><p>${teamText("Open My team tasks to see work across all your teams.", "افتح مهامي في الفريق لرؤية عملك في كل فرقك.")}</p></div>`;
+                })()
+              : taskList
+          }</div>
+          <p class="data-caption">${teamText("Task assignees use the real profile photo from each member's account.", "تستخدم صور المسؤولين الصورة الحقيقية من حساب كل عضو.")}</p>
         </section>
       </div>
-      ${pendingRequestsPanel}
-      <p class="data-caption">${appLanguage === "ar" ? "مهام الفريق مرئية لأعضاء الفريق فقط بفضل سياسات RLS." : "Team tasks are visible only to members of this team through row-level security."}</p>`;
+      ${pendingRequestsPanel}`;
   }
 
   function openTeamModal() {
@@ -9505,60 +10203,501 @@
     await loadTeams();
   }
 
-  async function addTeamTask(formData) {
+  function teamUuid() {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      return `team-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+  }
+
+  function teamDateFromInputs(dateValue, timeValue) {
+    if (!dateValue) return null;
+    const value = `${dateValue}T${timeValue || "23:59"}:00`;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      throw new Error(teamText("Choose a valid date.", "اختر تاريخًا صالحًا."));
+    }
+    return date.toISOString();
+  }
+
+  function teamDateInputValue(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  function teamTimeInputValue(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+
+  function teamTaskById(id) {
+    return teamTasks.find((task) => String(task.id) === String(id)) || null;
+  }
+
+  function teamTaskParticipants(taskId) {
+    const ids = [
+      ...new Set(
+        teamTaskAssignees
+          .filter((row) => String(row.task_id) === String(taskId))
+          .map((row) => String(row.user_id))
+          .filter(Boolean),
+      ),
+    ];
+    const task = teamTaskById(taskId);
+    if (task?.leader_id && !ids.includes(String(task.leader_id))) {
+      ids.push(String(task.leader_id));
+    }
+    if (ids.length) return ids;
+    return task?.assigned_to ? [String(task.assigned_to)] : [];
+  }
+
+  function teamTaskMemberOptions(teamId, selectedId = "") {
+    const members = teamMembers.filter(
+      (member) => String(member.team_id) === String(teamId),
+    );
+    const unique = [];
+    const seen = new Set();
+    for (const member of members) {
+      const id = String(member.user_id);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      unique.push(id);
+    }
+    return unique
+      .map(
+        (userId) =>
+          `<option value="${escapeHtml(userId)}" ${String(selectedId) === userId ? "selected" : ""}>${escapeHtml(teamMemberName(userId, { you: true }))}</option>`,
+      )
+      .join("");
+  }
+
+  function teamTaskMemberCheckboxes(teamId, selectedIds = []) {
+    const selected = new Set((selectedIds || []).map(String));
+    return teamMembers
+      .filter((member) => String(member.team_id) === String(teamId))
+      .filter(
+        (member, index, list) =>
+          list.findIndex(
+            (item) => String(item.user_id) === String(member.user_id),
+          ) === index,
+      )
+      .map(
+        (member) => `<label class="team-member-choice">
+          <input type="checkbox" name="assignee_ids" value="${escapeHtml(member.user_id)}" ${selected.has(String(member.user_id)) ? "checked" : ""} />
+          ${teamAvatar(member.user_id, { size: "team-avatar-xs" })}
+          <span dir="auto">${escapeHtml(teamMemberName(member.user_id, { you: true }))}</span>
+        </label>`,
+      )
+      .join("");
+  }
+
+  function teamSubtaskDraftRow(teamId, subtask = {}) {
+    return `<div class="team-subtask-draft-row" data-subtask-row>
+      <input name="subtask_title" dir="auto" maxlength="180" placeholder="${teamText("Subtask title", "عنوان المهمة الفرعية")}" value="${escapeHtml(subtask.title || "")}" />
+      <select name="subtask_assignee" aria-label="${teamText("Responsible member", "العضو المسؤول")}">
+        <option value="">${teamText("Choose member", "اختر عضوًا")}</option>
+        ${teamTaskMemberOptions(teamId, subtask.assignee_id || "")}
+      </select>
+      <input type="date" name="subtask_due_date" value="${escapeHtml(subtask.due_date || "")}" aria-label="${teamText("Due date", "تاريخ التسليم")}" />
+      <select name="subtask_priority" aria-label="${teamText("Priority", "الأولوية")}">
+        <option value="low" ${subtask.priority === "low" ? "selected" : ""}>${teamText("Low", "منخفضة")}</option>
+        <option value="medium" ${!subtask.priority || subtask.priority === "medium" ? "selected" : ""}>${teamText("Medium", "متوسطة")}</option>
+        <option value="high" ${subtask.priority === "high" ? "selected" : ""}>${teamText("High", "عالية")}</option>
+        <option value="urgent" ${subtask.priority === "urgent" ? "selected" : ""}>${teamText("Urgent", "عاجلة")}</option>
+      </select>
+      <button class="task-icon danger" type="button" data-action="team-subtask-remove-row" aria-label="${teamText("Remove subtask", "حذف المهمة الفرعية")}">×</button>
+    </div>`;
+  }
+
+  function updateTeamTaskModalVisibility() {
+    const form = document.getElementById("team-task-modal-form");
+    if (!form) return;
+    const type = form.querySelector('[name="task_type"]:checked')?.value || "individual";
+    const groupFields = document.getElementById("team-group-fields");
+    const individualField = document.getElementById("team-individual-assignee-field");
+    const overrideField = document.getElementById("team-override-field");
+    if (groupFields) groupFields.hidden = type !== "group";
+    if (individualField) individualField.hidden = type === "group";
+    if (overrideField) overrideField.hidden = type !== "group";
+    const builder = form.querySelector(".team-subtask-builder");
+    if (builder) builder.hidden = Boolean(teamTaskModalTaskId);
+  }
+
+  function openTeamTaskModal(taskId = null) {
+    if (!session) {
+      document.getElementById("open-auth")?.click();
+      return;
+    }
     const team = teams.find(
       (item) => String(item.id) === String(selectedTeamId),
     );
-    if (!team) throw new Error("Choose a team first.");
+    if (!team || !teamCanManageTeam(team)) {
+      showToast(teamText("Only a team manager can create tasks.", "يمكن لمدير الفريق فقط إنشاء المهام."));
+      return;
+    }
+    if (!teamTaskSystemSupported) {
+      showToast(teamText("Apply supabase/migrations/004_team_task_system.sql to enable team tasks.", "طبّق الترحيل 004_team_task_system.sql لتفعيل مهام الفريق."));
+      return;
+    }
+    const form = document.getElementById("team-task-modal-form");
+    if (!form) return;
+    form.reset();
+    teamTaskModalTaskId = taskId || null;
+    const task = taskId ? teamTaskById(taskId) : null;
+    const title = document.getElementById("team-task-modal-title");
+    const subtitle = document.getElementById("team-task-modal-subtitle");
+    if (title) {
+      title.textContent = task ? teamText("Edit team task", "تعديل مهمة الفريق") : teamText("Add a team task", "إضافة مهمة لفريقك");
+    }
+    if (subtitle) {
+      subtitle.textContent = teamText(
+        "Choose one owner for an individual task, or several members for a group task.",
+        "اختر مسؤولًا واحدًا للمهمة الفردية، أو عدة أعضاء للمهمة الجماعية.",
+      );
+    }
+    const assigneeSelect = document.getElementById("team-task-assignee");
+    if (assigneeSelect) {
+      assigneeSelect.innerHTML = `<option value="">${teamText("Choose member", "اختر عضوًا")}</option>${teamTaskMemberOptions(team.id, task?.assigned_to || "")}`;
+    }
+    const leaderSelect = document.getElementById("team-task-leader");
+    if (leaderSelect) {
+      leaderSelect.innerHTML = `<option value="">${teamText("Choose leader", "اختر قائدًا")}</option>${teamTaskMemberOptions(team.id, task?.leader_id || "")}`;
+    }
+    const memberOptions = document.getElementById("team-task-member-options");
+    if (memberOptions) {
+      memberOptions.innerHTML = teamTaskMemberCheckboxes(
+        team.id,
+        task ? teamTaskParticipants(task.id) : [],
+      );
+    }
+    const draftRows = document.getElementById("team-subtask-draft-rows");
+    if (draftRows) draftRows.innerHTML = "";
+    form.elements.task_id.value = task?.id || "";
+    if (task) {
+      form.elements.title.value = task.title || "";
+      form.elements.description.value = task.description || "";
+      form.elements.start_date.value = teamDateInputValue(task.starts_at);
+      form.elements.due_date.value = teamDateInputValue(task.due_at);
+      form.elements.due_time.value = teamTimeInputValue(task.due_at) || "23:59";
+      form.elements.priority.value = task.priority || "medium";
+      form.elements.status.value = task.status || "not_started";
+      form.elements.estimated_minutes.value = task.estimated_minutes || "";
+      form.elements.allow_override_complete.checked = Boolean(task.allow_override_complete);
+      const typeInput = form.querySelector(
+        `[name="task_type"][value="${task.task_type === "group" ? "group" : "individual"}"]`,
+      );
+      if (typeInput) typeInput.checked = true;
+    }
+    document.getElementById("team-task-modal-error").textContent = "";
+    updateTeamTaskModalVisibility();
+    openModal(document.getElementById("team-task-modal"));
+    form.elements.title.focus();
+  }
+
+  async function setTeamTaskAssignees(taskId, userIds) {
+    const wanted = [...new Set((userIds || []).map(String).filter(Boolean))];
+    const existing = teamTaskAssignees.filter(
+      (row) => String(row.task_id) === String(taskId),
+    );
+    const existingIds = new Set(existing.map((row) => String(row.user_id)));
+    const wantedSet = new Set(wanted);
+
+    for (const row of existing) {
+      if (row.legacy || wantedSet.has(String(row.user_id))) continue;
+      const { error } = await supabase
+        .from("team_task_assignees")
+        .delete()
+        .eq("task_id", taskId)
+        .eq("user_id", row.user_id);
+      if (error) throw error;
+      teamTaskAssignees = teamTaskAssignees.filter(
+        (item) => String(item.id) !== String(row.id),
+      );
+    }
+
+    for (const userId of wanted) {
+      const alreadyLocal = existing.some(
+        (row) => String(row.user_id) === String(userId),
+      );
+      if (alreadyLocal) continue;
+      const row = {
+        id: teamUuid(),
+        task_id: taskId,
+        user_id: userId,
+        added_by: session.user.id,
+      };
+      const { data, error } = await supabase
+        .from("team_task_assignees")
+        .insert(row)
+        .select("id,task_id,user_id,added_by,created_at")
+        .single();
+      if (error) {
+        if (String(error.code) === "23505") continue;
+        throw error;
+      }
+      if (data) teamTaskAssignees.push(data);
+      else teamTaskAssignees.push(row);
+    }
+  }
+
+  async function createTeamTaskSubtasks(taskId, drafts) {
+    for (let index = 0; index < drafts.length; index += 1) {
+      const draft = drafts[index];
+      if (!String(draft.title || "").trim()) continue;
+      const row = {
+        id: teamUuid(),
+        task_id: taskId,
+        title: String(draft.title).trim(),
+        description: null,
+        assignee_id: draft.assignee_id || null,
+        due_at: draft.due_at || null,
+        priority: draft.priority || "medium",
+        status: "not_started",
+        progress: 0,
+        position: index,
+        created_by: session.user.id,
+      };
+      const { data, error } = await supabase
+        .from("team_task_subtasks")
+        .insert(row)
+        .select(
+          "id,task_id,title,description,assignee_id,due_at,priority,status,progress,estimated_minutes,position,created_by,created_at,updated_at,completed_at",
+        )
+        .single();
+      if (error) throw error;
+      if (data) teamTaskSubtasks.push(data);
+      else teamTaskSubtasks.push(row);
+    }
+  }
+
+  async function saveTeamTaskModal(formData) {
+    if (!supabase || !session) throw new Error(teamText("Sign in first.", "سجّل الدخول أولًا."));
+    if (!teamTaskSystemSupported) {
+      throw new Error(teamText("Apply supabase/migrations/004_team_task_system.sql first.", "طبّق الترحيل 004_team_task_system.sql أولًا."));
+    }
+    const team = teams.find(
+      (item) => String(item.id) === String(selectedTeamId),
+    );
+    if (!team) throw new Error(teamText("Choose a team first.", "اختر فريقًا أولًا."));
+    if (!teamCanManageTeam(team)) {
+      throw new Error(teamText("Only a team manager can save tasks.", "يمكن لمدير الفريق فقط حفظ المهام."));
+    }
+    const taskId = String(formData.get("task_id") || "");
+    const type = String(formData.get("task_type") || "individual") === "group" ? "group" : "individual";
     const title = String(formData.get("title") || "").trim();
-    if (!title) throw new Error("Enter a task title.");
-    const dateValue = String(formData.get("due_date") || "");
-    const timeValue = String(formData.get("due_time") || "") || "23:59";
-    const dueAt = dateValue ? new Date(`${dateValue}T${timeValue}:00`) : null;
-    if (dueAt && Number.isNaN(dueAt.getTime()))
-      throw new Error("Choose a valid due date.");
-    const { data, error } = await supabase
-      .from("team_tasks")
-      .insert({
+    if (!title) throw new Error(teamText("Enter a task title.", "أدخل عنوان المهمة."));
+    const assignees =
+      type === "group"
+        ? [...new Set(formData.getAll("assignee_ids").map(String).filter(Boolean))]
+        : [String(formData.get("assignee_id") || "")].filter(Boolean);
+    if (!assignees.length) {
+      throw new Error(teamText("Choose who is responsible for the task.", "اختر المسؤول عن المهمة."));
+    }
+    if (type === "group" && assignees.length < 2) {
+      throw new Error(teamText("A group task needs at least two members.", "المهمة الجماعية تحتاج إلى عضوين على الأقل."));
+    }
+    let leaderId = type === "group" ? String(formData.get("leader_id") || "") || null : null;
+    if (leaderId && !assignees.includes(leaderId)) assignees.push(leaderId);
+    const startsAt = teamDateFromInputs(
+      String(formData.get("start_date") || ""),
+      "00:00",
+    );
+    const dueAt = teamDateFromInputs(
+      String(formData.get("due_date") || ""),
+      String(formData.get("due_time") || "23:59"),
+    );
+    const status = String(formData.get("status") || "not_started");
+    const estimated = Number(formData.get("estimated_minutes") || 0) || null;
+    const allowOverride = Boolean(formData.get("allow_override_complete"));
+    const existingTask = taskId ? teamTaskById(taskId) : null;
+    const existingProgress = existingTask
+      ? teamTaskProgressInfo(existingTask)
+      : { total: 0, percent: 0 };
+    const payload = {
+      title,
+      description: String(formData.get("description") || "").trim() || null,
+      task_type: type,
+      leader_id: leaderId,
+      assigned_to: type === "individual" ? assignees[0] : null,
+      starts_at: startsAt,
+      due_at: dueAt,
+      priority: String(formData.get("priority") || "medium"),
+      status,
+      estimated_minutes: estimated,
+      allow_override_complete: allowOverride,
+      progress:
+        status === "completed"
+          ? 100
+          : existingProgress.total
+            ? existingProgress.percent
+            : 0,
+      completed_at:
+        status === "completed"
+          ? existingTask?.completed_at || new Date().toISOString()
+          : null,
+      updated_at: new Date().toISOString(),
+    };
+
+    let saved = null;
+    if (taskId) {
+      const { data, error } = await supabase
+        .from("team_tasks")
+        .update(payload)
+        .eq("id", taskId)
+        .select(
+          "id,team_id,created_by,assigned_to,title,description,status,priority,due_at,created_at,task_type,leader_id,starts_at,estimated_minutes,progress,completed_at,updated_at,allow_override_complete",
+        )
+        .single();
+      if (error) throw error;
+      saved = data;
+      teamTasks = teamTasks.map((task) =>
+        String(task.id) === String(taskId) ? { ...task, ...data } : task,
+      );
+    } else {
+      const row = {
+        id: teamUuid(),
         team_id: team.id,
         created_by: session.user.id,
-        title,
-        description: null,
-        priority: String(formData.get("priority") || "medium"),
-        due_at: dueAt ? dueAt.toISOString() : null,
-      })
-      .select(
-        "id,team_id,created_by,assigned_to,title,description,status,priority,due_at,created_at",
-      )
-      .single();
-    if (error) throw error;
-    teamTasks.unshift(data);
-    render();
+        ...payload,
+      };
+      const { data, error } = await supabase
+        .from("team_tasks")
+        .insert(row)
+        .select(
+          "id,team_id,created_by,assigned_to,title,description,status,priority,due_at,created_at,task_type,leader_id,starts_at,estimated_minutes,progress,completed_at,updated_at,allow_override_complete",
+        )
+        .single();
+      if (error) throw error;
+      saved = data || row;
+      teamTasks.unshift(saved);
+    }
+
+    await setTeamTaskAssignees(saved.id, assignees);
+
+    if (!taskId && type === "group") {
+      const form = document.getElementById("team-task-modal-form");
+      const drafts = [...form.querySelectorAll("[data-subtask-row]")]
+        .map((row, index) => ({
+          title: row.querySelector('[name="subtask_title"]')?.value || "",
+          assignee_id: row.querySelector('[name="subtask_assignee"]')?.value || null,
+          due_at: teamDateFromInputs(
+            row.querySelector('[name="subtask_due_date"]')?.value || "",
+            "23:59",
+          ),
+          priority: row.querySelector('[name="subtask_priority"]')?.value || "medium",
+          position: index,
+        }))
+        .filter((draft) => draft.title.trim());
+      if (drafts.length) await createTeamTaskSubtasks(saved.id, drafts);
+    }
+
+    closeModal(document.getElementById("team-task-modal"));
+    teamTaskModalTaskId = null;
     showToast(
-      appLanguage === "ar" ? "تمت إضافة مهمة الفريق." : "Team task added.",
+      taskId
+        ? teamText("Team task updated.", "تم تحديث مهمة الفريق.")
+        : teamText("Team task added.", "تمت إضافة مهمة الفريق."),
     );
+    await loadTeams({ silent: true });
+    if (teamTaskDetailId) renderTeamTaskDetailBody();
   }
 
   async function toggleTeamTask(id) {
-    const task = teamTasks.find((item) => String(item.id) === String(id));
+    const task = teamTaskById(id);
     if (!task) return;
-    const next = task.status === "completed" ? "not_started" : "completed";
+    const info = teamTaskProgressInfo(task);
+    const completed = task.status === "completed";
+    if (!completed && info.total && info.done < info.total) {
+      const team = teams.find((item) => String(item.id) === String(task.team_id));
+      if (teamCanManageTeam(team)) {
+        showToast(
+          teamText(
+            "Finish the subtasks first, or use Force complete in the task details.",
+            "أكمل المهام الفرعية أولًا، أو استخدم الإكمال الإجباري من تفاصيل المهمة.",
+          ),
+        );
+        openTeamTaskDetail(id);
+      } else {
+        showToast(
+          teamText(
+            "The task is complete when all required subtasks are done.",
+            "تُعد المهمة مكتملة عندما تكتمل جميع المهام الفرعية المطلوبة.",
+          ),
+        );
+      }
+      return;
+    }
+    const next = completed ? (info.done > 0 ? "in_progress" : "not_started") : "completed";
+    const nextProgress = next === "completed" ? 100 : info.percent;
     const { error } = await supabase
       .from("team_tasks")
-      .update({ status: next })
+      .update({
+        status: next,
+        progress: nextProgress,
+        completed_at: next === "completed" ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", id);
     if (error) {
       showToast(error.message);
       return;
     }
     task.status = next;
+    task.progress = nextProgress;
+    task.completed_at = next === "completed" ? new Date().toISOString() : null;
     render();
+    void loadTeams({ silent: true });
+  }
+
+  async function forceCompleteTeamTask(id) {
+    const task = teamTaskById(id);
+    if (!task) return;
+    const team = teams.find((item) => String(item.id) === String(task.team_id));
+    if (!teamCanManageTeam(team)) return;
+    if (
+      !window.confirm(
+        teamText(
+          "Complete this group task even though some subtasks are still open?",
+          "إكمال هذه المهمة الجماعية رغم وجود مهام فرعية غير مكتملة؟",
+        ),
+      )
+    )
+      return;
+    const { error } = await supabase
+      .from("team_tasks")
+      .update({
+        status: "completed",
+        progress: 100,
+        completed_at: new Date().toISOString(),
+        allow_override_complete: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+    if (error) {
+      showToast(error.message);
+      return;
+    }
+    task.status = "completed";
+    task.progress = 100;
+    task.allow_override_complete = true;
+    task.completed_at = new Date().toISOString();
+    showToast(teamText("Task force-completed.", "تم إكمال المهمة إجباريًا."));
+    await loadTeams({ silent: true });
+    if (teamTaskDetailId) renderTeamTaskDetailBody();
   }
 
   async function deleteTeamTask(id) {
     if (
       !window.confirm(
-        appLanguage === "ar" ? "حذف مهمة الفريق؟" : "Delete this team task?",
+        teamText("Delete this team task?", "حذف مهمة الفريق؟"),
       )
     )
       return;
@@ -9568,7 +10707,609 @@
       return;
     }
     teamTasks = teamTasks.filter((task) => String(task.id) !== String(id));
+    teamTaskAssignees = teamTaskAssignees.filter(
+      (row) => String(row.task_id) !== String(id),
+    );
+    teamTaskSubtasks = teamTaskSubtasks.filter(
+      (row) => String(row.task_id) !== String(id),
+    );
+    teamTaskActivity = teamTaskActivity.filter(
+      (row) => String(row.task_id) !== String(id),
+    );
+    if (String(teamTaskDetailId) === String(id)) {
+      teamTaskDetailId = null;
+      closeModal(document.getElementById("team-task-detail-modal"));
+    }
     render();
+    showToast(teamText("Team task deleted.", "تم حذف مهمة الفريق."));
+  }
+
+  async function toggleTeamSubtask(id) {
+    const subtask = teamTaskSubtasks.find(
+      (item) => String(item.id) === String(id),
+    );
+    if (!subtask) return;
+    const next = subtask.status === "completed" ? "not_started" : "completed";
+    const { error } = await supabase
+      .from("team_task_subtasks")
+      .update({
+        status: next,
+        progress: next === "completed" ? 100 : 0,
+        completed_at: next === "completed" ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+    if (error) {
+      showToast(error.message);
+      return;
+    }
+    subtask.status = next;
+    subtask.progress = next === "completed" ? 100 : 0;
+    subtask.completed_at = next === "completed" ? new Date().toISOString() : null;
+    syncTeamTaskProgressLocal(subtask.task_id);
+    render();
+    await loadTeams({ silent: true });
+    if (teamTaskDetailId) renderTeamTaskDetailBody();
+  }
+
+  function syncTeamTaskProgressLocal(taskId) {
+    const task = teamTaskById(taskId);
+    if (!task) return;
+    const info = teamTaskProgressInfo(task);
+    task.progress = info.percent;
+    if (info.total) {
+      task.status =
+        info.done === info.total
+          ? "completed"
+          : info.done > 0
+            ? "in_progress"
+            : task.allow_override_complete
+              ? task.status
+              : "not_started";
+      task.completed_at =
+        task.status === "completed" ? task.completed_at || new Date().toISOString() : null;
+    }
+  }
+
+  async function deleteTeamSubtask(id) {
+    const subtask = teamTaskSubtasks.find(
+      (item) => String(item.id) === String(id),
+    );
+    if (!subtask) return;
+    if (
+      !window.confirm(
+        teamText("Delete this subtask?", "حذف هذه المهمة الفرعية؟"),
+      )
+    )
+      return;
+    const { error } = await supabase
+      .from("team_task_subtasks")
+      .delete()
+      .eq("id", id);
+    if (error) {
+      showToast(error.message);
+      return;
+    }
+    teamTaskSubtasks = teamTaskSubtasks.filter(
+      (item) => String(item.id) !== String(id),
+    );
+    syncTeamTaskProgressLocal(subtask.task_id);
+    await loadTeams({ silent: true });
+    if (teamTaskDetailId) renderTeamTaskDetailBody();
+    showToast(teamText("Subtask deleted.", "تم حذف المهمة الفرعية."));
+  }
+
+  function openTeamSubtaskModal(taskId, subtaskId = null) {
+    if (!teamTaskSystemSupported) {
+      showToast(
+        teamText(
+          "Apply supabase/migrations/004_team_task_system.sql to enable subtasks.",
+          "طبّق الترحيل 004_team_task_system.sql لتفعيل المهام الفرعية.",
+        ),
+      );
+      return;
+    }
+    const task = teamTaskById(taskId);
+    const team = teams.find((item) => String(item.id) === String(task?.team_id));
+    if (!task || !team || !teamCanManageTeam(team)) {
+      showToast(teamText("Only a team manager can change subtasks.", "يمكن لمدير الفريق فقط تعديل المهام الفرعية."));
+      return;
+    }
+    const form = document.getElementById("team-subtask-form");
+    if (!form) return;
+    form.reset();
+    teamSubtaskModalTaskId = taskId;
+    teamSubtaskModalId = subtaskId || null;
+    const subtask = subtaskId
+      ? teamTaskSubtasks.find((item) => String(item.id) === String(subtaskId))
+      : null;
+    form.elements.task_id.value = taskId;
+    form.elements.subtask_id.value = subtask?.id || "";
+    form.elements.title.value = subtask?.title || "";
+    form.elements.description.value = subtask?.description || "";
+    form.elements.due_date.value = teamDateInputValue(subtask?.due_at);
+    form.elements.due_time.value = teamTimeInputValue(subtask?.due_at) || "23:59";
+    form.elements.priority.value = subtask?.priority || "medium";
+    form.elements.status.value = subtask?.status || "not_started";
+    const assignee = document.getElementById("team-subtask-assignee");
+    if (assignee) {
+      assignee.innerHTML = `<option value="">${teamText("Choose member", "اختر عضوًا")}</option>${teamTaskMemberOptions(team.id, subtask?.assignee_id || "")}`;
+    }
+    const heading = document.getElementById("team-subtask-modal-title");
+    if (heading) {
+      heading.textContent = subtask
+        ? teamText("Edit subtask", "تعديل المهمة الفرعية")
+        : teamText("Add a subtask", "إضافة مهمة فرعية");
+    }
+    document.getElementById("team-subtask-error").textContent = "";
+    openModal(document.getElementById("team-subtask-modal"));
+    form.elements.title.focus();
+  }
+
+  async function saveTeamSubtask(formData) {
+    const taskId = String(formData.get("task_id") || "");
+    const subtaskId = String(formData.get("subtask_id") || "");
+    const task = teamTaskById(taskId);
+    const team = teams.find((item) => String(item.id) === String(task?.team_id));
+    if (!task || !team || !teamCanManageTeam(team)) {
+      throw new Error(teamText("Only a team manager can save subtasks.", "يمكن لمدير الفريق فقط حفظ المهام الفرعية."));
+    }
+    const title = String(formData.get("title") || "").trim();
+    if (!title) throw new Error(teamText("Enter a subtask title.", "أدخل عنوان المهمة الفرعية."));
+    const assigneeId = String(formData.get("assignee_id") || "") || null;
+    if (!assigneeId) throw new Error(teamText("Choose a responsible member.", "اختر العضو المسؤول."));
+    const dueAt = teamDateFromInputs(
+      String(formData.get("due_date") || ""),
+      String(formData.get("due_time") || "23:59"),
+    );
+    const status = String(formData.get("status") || "not_started");
+    const payload = {
+      title,
+      description: String(formData.get("description") || "").trim() || null,
+      assignee_id: assigneeId,
+      due_at: dueAt,
+      priority: String(formData.get("priority") || "medium"),
+      status,
+      progress: status === "completed" ? 100 : 0,
+      completed_at: status === "completed" ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    };
+    if (subtaskId) {
+      const { data, error } = await supabase
+        .from("team_task_subtasks")
+        .update(payload)
+        .eq("id", subtaskId)
+        .select(
+          "id,task_id,title,description,assignee_id,due_at,priority,status,progress,estimated_minutes,position,created_by,created_at,updated_at,completed_at",
+        )
+        .single();
+      if (error) throw error;
+      teamTaskSubtasks = teamTaskSubtasks.map((item) =>
+        String(item.id) === String(subtaskId) ? { ...item, ...data } : item,
+      );
+    } else {
+      const row = {
+        id: teamUuid(),
+        task_id: taskId,
+        created_by: session.user.id,
+        position: teamTaskSubtasksFor(taskId).length,
+        ...payload,
+      };
+      const { data, error } = await supabase
+        .from("team_task_subtasks")
+        .insert(row)
+        .select(
+          "id,task_id,title,description,assignee_id,due_at,priority,status,progress,estimated_minutes,position,created_by,created_at,updated_at,completed_at",
+        )
+        .single();
+      if (error) throw error;
+      teamTaskSubtasks.push(data || row);
+    }
+    syncTeamTaskProgressLocal(taskId);
+    closeModal(document.getElementById("team-subtask-modal"));
+    teamSubtaskModalTaskId = null;
+    teamSubtaskModalId = null;
+    showToast(
+      subtaskId
+        ? teamText("Subtask updated.", "تم تحديث المهمة الفرعية.")
+        : teamText("Subtask added.", "تمت إضافة المهمة الفرعية."),
+    );
+    await loadTeams({ silent: true });
+    if (teamTaskDetailId) renderTeamTaskDetailBody();
+  }
+
+  function teamTaskTaskActions(task, team) {
+    if (!teamCanManageTeam(team)) return "";
+    return `<div class="team-detail-actions">
+      <button class="button button-secondary button-small" type="button" data-action="team-task-edit" data-id="${escapeHtml(task.id)}">${teamText("Edit task", "تعديل المهمة")}</button>
+      <button class="button button-secondary button-small" type="button" data-action="team-task-force-complete" data-id="${escapeHtml(task.id)}">${teamText("Force complete", "إكمال إجباري")}</button>
+      <button class="button button-quiet button-small danger-text" type="button" data-action="team-task-delete" data-id="${escapeHtml(task.id)}">${teamText("Delete task", "حذف المهمة")}</button>
+    </div>`;
+  }
+
+  function teamActivityText(entry, task) {
+    const title = entry.details?.title || task?.title || "";
+    switch (entry.action) {
+      case "task_created":
+        return teamText(`created the ${entry.details?.task_type === "group" ? "group" : "individual"} task`, "أنشأ المهمة");
+      case "task_status_changed":
+        return teamText(
+          `changed the status from ${teamStatusLabel(entry.details?.from)} to ${teamStatusLabel(entry.details?.to)}`,
+          `غيّر الحالة من ${teamStatusLabel(entry.details?.from)} إلى ${teamStatusLabel(entry.details?.to)}`,
+        );
+      case "task_due_changed":
+        return teamText("changed the task deadline", "غيّر موعد تسليم المهمة");
+      case "member_added":
+        return teamText(
+          `added ${entry.details?.display_name || teamMemberName(entry.details?.user_id)} to the task`,
+          `أضاف ${entry.details?.display_name || teamMemberName(entry.details?.user_id)} إلى المهمة`,
+        );
+      case "member_removed":
+        return teamText("removed a participant from the task", "أزال مشاركًا من المهمة");
+      case "subtask_created":
+        return teamText(`created the subtask “${title}”`, `أنشأ المهمة الفرعية «${title}»`);
+      case "subtask_status_changed":
+        return teamText(
+          `moved “${title}” to ${teamStatusLabel(entry.details?.to)}`,
+          `حدّث «${title}» إلى ${teamStatusLabel(entry.details?.to)}`,
+        );
+      case "subtask_assignee_changed":
+        return teamText(
+          `reassigned the subtask “${title}”`,
+          `أعاد إسناد المهمة الفرعية «${title}»`,
+        );
+      case "subtask_due_changed":
+        return teamText(
+          `changed the deadline of “${title}”`,
+          `غيّر موعد تسليم «${title}»`,
+        );
+      case "subtask_deleted":
+        return teamText(`deleted the subtask “${title}”`, `حذف المهمة الفرعية «${title}»`);
+      case "member_added_to_team":
+        return teamText("added a member to the team", "أضاف عضوًا إلى الفريق");
+      default:
+        return teamText("updated the task", "حدّث المهمة");
+    }
+  }
+
+  function teamTaskActivityMarkup(taskId) {
+    const rows = teamTaskActivity
+      .filter((entry) => String(entry.task_id) === String(taskId))
+      .slice(0, 20);
+    if (!rows.length) {
+      return `<p class="data-caption">${teamText("No activity recorded yet.", "لا يوجد سجل نشاط بعد.")}</p>`;
+    }
+    const task = teamTaskById(taskId);
+    return `<div class="team-activity-list">${rows
+      .map(
+        (entry) => `<div class="team-activity-row">
+          ${teamAvatar(entry.actor_id, { size: "team-avatar-xs" })}
+          <div class="team-activity-copy">
+            <p dir="auto"><strong>${escapeHtml(teamMemberName(entry.actor_id))}</strong> ${escapeHtml(teamActivityText(entry, task))}</p>
+            <time dir="auto">${escapeHtml(teamDateLabel(entry.created_at, { time: true }))}</time>
+          </div>
+        </div>`,
+      )
+      .join("")}</div>`;
+  }
+
+  function teamSubtaskRowMarkup(subtask, taskId) {
+    const task = teamTaskById(taskId);
+    const team = teams.find((item) => String(item.id) === String(task?.team_id));
+    const canManage = teamCanManageTeam(team);
+    const mine = String(subtask.assignee_id) === String(session?.user?.id);
+    const canToggle = canManage || mine;
+    const completed = subtask.status === "completed";
+    const overdue =
+      !completed &&
+      subtask.due_at &&
+      new Date(subtask.due_at).getTime() < Date.now();
+    return `<div class="team-subtask-row ${completed ? "completed" : ""} ${overdue ? "overdue" : ""}">
+      <button class="task-check ${completed ? "checked" : ""}" type="button" data-action="team-subtask-toggle" data-id="${escapeHtml(subtask.id)}" ${canToggle ? "" : "disabled"} aria-label="${completed ? teamText("Reopen subtask", "إعادة فتح المهمة الفرعية") : teamText("Complete subtask", "إكمال المهمة الفرعية")} ${escapeHtml(subtask.title)}">${completed ? "✓" : ""}</button>
+      <div class="team-subtask-main">
+        <strong dir="auto">${escapeHtml(subtask.title)}</strong>
+        <div class="team-subtask-person">
+          ${teamAvatar(subtask.assignee_id, { size: "team-avatar-xxs" })}
+          <span dir="auto">${escapeHtml(teamMemberName(subtask.assignee_id))}</span>
+        </div>
+        <small dir="auto">${escapeHtml(teamDateLabel(subtask.due_at))} · ${escapeHtml(teamPriorityLabel(subtask.priority))} · ${escapeHtml(teamStatusLabel(subtask.status))}${overdue ? ` · ${teamText("Overdue", "متأخرة")}` : ""}</small>
+      </div>
+      <div class="team-subtask-actions">
+        ${canManage ? `<button class="task-icon" type="button" data-action="team-subtask-edit" data-task-id="${escapeHtml(taskId)}" data-id="${escapeHtml(subtask.id)}" aria-label="${teamText("Edit subtask", "تعديل المهمة الفرعية")}">✎</button><button class="task-icon danger" type="button" data-action="team-subtask-delete" data-id="${escapeHtml(subtask.id)}" aria-label="${teamText("Delete subtask", "حذف المهمة الفرعية")}">×</button>` : ""}
+      </div>
+    </div>`;
+  }
+
+  function renderTeamTaskDetailBody() {
+    const body = document.getElementById("team-task-detail-body");
+    if (!body) return;
+    const task = teamTaskById(teamTaskDetailId);
+    if (!task) {
+      body.innerHTML = `<div class="empty-state"><strong>${teamText("Task not found", "المهمة غير موجودة")}</strong></div>`;
+      return;
+    }
+    const team = teams.find((item) => String(item.id) === String(task.team_id));
+    const participants = teamTaskParticipants(task.id);
+    const progress = teamTaskProgressInfo(task);
+    const isGroup = task.task_type === "group";
+    const canManage = teamCanManageTeam(team);
+    const leader = task.leader_id ? teamMemberName(task.leader_id) : "";
+    body.innerHTML = `<p class="eyebrow">${teamText("TEAM TASK", "مهمة فريق")}</p>
+      <h2 id="team-task-detail-title" dir="auto">${escapeHtml(task.title)}</h2>
+      <p class="team-detail-subtitle">${escapeHtml(team?.name || "")} · ${isGroup ? teamText("Group task", "مهمة جماعية") : teamText("Individual task", "مهمة فردية")}</p>
+      <div class="team-detail-badges">
+        <span class="priority ${escapeHtml(task.priority || "medium")}">${escapeHtml(teamPriorityLabel(task.priority))}</span>
+        <span class="team-status-badge status-${escapeHtml(task.status || "not_started")}">${escapeHtml(teamStatusLabel(task.status))}</span>
+        ${teamIsOverdue(task) ? `<span class="team-status-badge overdue-badge">${teamText("Overdue", "متأخرة")}</span>` : ""}
+      </div>
+      ${task.description ? `<p class="team-detail-description" dir="auto">${escapeHtml(task.description)}</p>` : ""}
+      <div class="team-detail-facts">
+        <div><small>${teamText("Start", "البداية")}</small><strong>${escapeHtml(teamDateLabel(task.starts_at))}</strong></div>
+        <div><small>${teamText("Due", "التسليم")}</small><strong>${escapeHtml(teamDateLabel(task.due_at))}</strong></div>
+        <div><small>${teamText("Estimated", "الوقت المتوقع")}</small><strong>${task.estimated_minutes ? `${task.estimated_minutes} ${teamText("min", "دقيقة")}` : "—"}</strong></div>
+        ${isGroup ? `<div><small>${teamText("Leader", "القائد")}</small><strong>${escapeHtml(leader || "—")}</strong></div>` : ""}
+      </div>
+      <section class="team-detail-section">
+        <h3>${teamText("Participants", "المشاركون")} <span>(${participants.length})</span></h3>
+        <div class="team-participant-grid">${participants
+          .map(
+            (userId) => `<button type="button" class="team-participant-chip" data-action="team-task-participants" data-id="${escapeHtml(task.id)}">
+              ${teamAvatar(userId, { size: "team-avatar-sm" })}
+              <span dir="auto">${escapeHtml(teamMemberName(userId))}</span>
+              ${String(userId) === String(task.leader_id) ? `<small>${teamText("Leader", "القائد")}</small>` : ""}
+            </button>`,
+          )
+          .join("")}</div>
+      </section>
+      ${
+        isGroup
+          ? `<section class="team-detail-section">
+        <h3>${teamText("Progress", "التقدم")}</h3>
+        <div class="team-progress team-progress-large" role="progressbar" aria-valuenow="${progress.percent}" aria-valuemin="0" aria-valuemax="100">
+          <div class="team-progress-track"><span style="width:${progress.percent}%"></span></div>
+          <small>${progress.percent}% · ${progress.done}/${progress.total} ${teamText("subtasks complete", "مهام فرعية مكتملة")}${progress.remaining ? ` · ${progress.remaining} ${teamText("remaining", "متبقية")}` : ""}${progress.overdue ? ` · ${progress.overdue} ${teamText("overdue", "متأخرة")}` : ""}</small>
+        </div>
+      </section>`
+          : ""
+      }
+      <section class="team-detail-section">
+        <div class="team-detail-section-head">
+          <h3>${teamText("Subtasks", "المهام الفرعية")} <span>(${progress.total})</span></h3>
+          ${canManage && teamTaskSystemSupported ? `<button class="button button-secondary button-small" type="button" data-action="team-subtask-create" data-task-id="${escapeHtml(task.id)}">＋ ${teamText("Add subtask", "إضافة مهمة فرعية")}</button>` : ""}
+        </div>
+        <div class="team-subtask-list">${
+          progress.subtasks.length
+            ? progress.subtasks.map((subtask) => teamSubtaskRowMarkup(subtask, task.id)).join("")
+            : `<p class="data-caption">${teamText("No subtasks yet.", "لا مهام فرعية بعد.")}</p>`
+        }</div>
+      </section>
+      <section class="team-detail-section">
+        <h3>${teamText("Activity", "سجل النشاطات")}</h3>
+        ${teamTaskActivityMarkup(task.id)}
+      </section>
+      ${teamTaskTaskActions(task, team)}`;
+  }
+
+  function openTeamTaskDetail(taskId) {
+    if (!taskId) return;
+    teamTaskDetailId = String(taskId);
+    renderTeamTaskDetailBody();
+    openModal(document.getElementById("team-task-detail-modal"));
+  }
+
+  function openTeamParticipantsModal(taskId) {
+    const task = teamTaskById(taskId);
+    if (!task) return;
+    const participants = teamTaskParticipants(taskId);
+    const title = document.getElementById("team-participants-title");
+    const subtitle = document.getElementById("team-participants-subtitle");
+    const body = document.getElementById("team-participants-body");
+    if (title) title.textContent = task.title;
+    if (subtitle) {
+      subtitle.textContent = teamText(
+        "Every member responsible for this task, with the real profile photo from their account.",
+        "كل عضو مسؤول عن هذه المهمة، مع الصورة الحقيقية من حسابه.",
+      );
+    }
+    if (body) {
+      body.innerHTML = participants.length
+        ? participants
+            .map(
+              (userId) => `<div class="team-participant-row">
+                ${teamAvatar(userId, { size: "team-avatar-md" })}
+                <div><strong dir="auto">${escapeHtml(teamMemberName(userId))}</strong><small>${String(userId) === String(task.leader_id) ? teamText("Group leader", "قائد المجموعة") : teamText("Task participant", "مشارك في المهمة")}</small></div>
+              </div>`,
+            )
+            .join("")
+        : `<p class="data-caption">${teamText("No participants yet.", "لا مشاركين بعد.")}</p>`;
+    }
+    openModal(document.getElementById("team-participants-modal"));
+  }
+
+  function openTeamAddMemberModal(teamId) {
+    const form = document.getElementById("team-add-member-form");
+    if (!form) return;
+    form.reset();
+    form.elements.team_id.value = teamId || selectedTeamId || "";
+    document.getElementById("team-add-member-error").textContent = "";
+    openModal(document.getElementById("team-add-member-modal"));
+    form.elements.email.focus();
+  }
+
+  async function saveTeamAddMember(formData) {
+    const teamId = String(formData.get("team_id") || selectedTeamId || "");
+    const email = String(formData.get("email") || "").trim();
+    if (!teamId || !email) {
+      throw new Error(teamText("Enter the account email.", "أدخل بريد الحساب."));
+    }
+    const { data, error } = await supabase.rpc("team_add_member_by_email", {
+      p_team_id: teamId,
+      p_email: email,
+    });
+    if (error) throw error;
+    const result = Array.isArray(data) ? data[0] : data;
+    closeModal(document.getElementById("team-add-member-modal"));
+    showToast(
+      result?.added
+        ? teamText("Member added to the team.", "تمت إضافة العضو إلى الفريق.")
+        : teamText("This account is already in the team.", "هذا الحساب موجود في الفريق بالفعل."),
+    );
+    await loadTeams({ silent: true });
+  }
+
+  function openTeamMemberProfile(userId) {
+    const profile = teamProfile(userId);
+    const body = document.getElementById("team-member-profile-body");
+    const title = document.getElementById("team-member-profile-title");
+    if (!body) return;
+    if (title) title.textContent = teamMemberName(userId, { you: true });
+    const membership = teamMembers.find(
+      (member) =>
+        String(member.team_id) === String(selectedTeamId) &&
+        String(member.user_id) === String(userId),
+    );
+    const role = membership?.role || profile?.role || "member";
+    body.innerHTML = `<div class="team-member-profile-head">
+      ${teamAvatar(userId, { size: "team-avatar-lg" })}
+      <div><h3 dir="auto">${escapeHtml(teamMemberName(userId, { you: true }))}</h3><p>${escapeHtml(
+        role === "owner"
+          ? teamText("Team owner", "مالك الفريق")
+          : role === "admin"
+            ? teamText("Assistant admin", "مسؤول مساعد")
+            : teamText("Team member", "عضو في الفريق"),
+      )}</p></div>
+    </div>
+    <div class="team-detail-facts">
+      <div><small>${teamText("Joined", "تاريخ الانضمام")}</small><strong>${escapeHtml(teamDateLabel(profile?.joined_at))}</strong></div>
+      <div><small>${teamText("Profile photo", "الصورة الشخصية")}</small><strong>${profile?.avatar_url ? teamText("From their account", "من حسابهم") : teamText("Initials fallback", "الأحرف الأولى")}</strong></div>
+    </div>`;
+    openModal(document.getElementById("team-member-profile-modal"));
+  }
+
+  async function openMyTeamTasks() {
+    navigate("team-tasks");
+  }
+
+  function teamTasksScopeMatches(task) {
+    return (
+      teamTasksScope === "all" ||
+      String(task?.team_id) === String(teamTasksScope)
+    );
+  }
+
+  function myTeamTasksPage() {
+    const headingActions = `<div class="teams-heading-actions"><button class="button button-secondary" data-action="team-tasks-open-teams">${teamText("Open teams", "فتح الفرق")}</button><button class="button button-secondary" data-action="team-refresh">${teamText("Refresh", "تحديث")}</button></div>`;
+    const heading = pageHeading(
+      teamText("MY TEAM WORK", "عملي الجماعي"),
+      teamText("My team tasks", "مهامي في الفريق"),
+      teamText(
+        "Everything assigned to you across your teams: individual tasks and group subtasks.",
+        "كل ما هو مسند إليك في فرقك: المهام الفردية والمهام الفرعية الجماعية.",
+      ),
+      session ? headingActions : "",
+    );
+
+    if (!session) {
+      return `${heading}<section class="panel teams-empty"><div class="empty-state"><strong>${teamText("Sign in to see your team tasks", "سجّل الدخول لعرض مهام فريقك")}</strong><p>${teamText("Your assignments are tied to your account.", "مهامك مرتبطة بحسابك.")}</p><button class="button button-primary button-small" id="open-auth">${teamText("Sign in", "تسجيل الدخول")}</button></div></section>`;
+    }
+    if (teamsLoading && !teamsLoaded) {
+      return `${heading}<section class="panel"><div class="empty-state" role="status">${teamText("Loading your team work…", "جارٍ تحميل مهام فريقك…")}</div></section>`;
+    }
+    if (!teamsSupported) {
+      return `${heading}<section class="panel"><div class="empty-state"><strong>${teamText("Teams are not enabled yet", "ميزة الفرق غير مهيأة بعد")}</strong><p>${teamText("Apply supabase/migrations/001_studyzone_enhancements.sql in Supabase to enable private teams.", "طبّق ملف الترحيل 001_studyzone_enhancements.sql في Supabase لتفعيل الفرق.")}</p></div></section>`;
+    }
+    if (!teams.length) {
+      return `${heading}<section class="panel teams-empty"><div class="empty-state"><strong>${teamText("You are not in a team yet", "لست في فريق بعد")}</strong><p>${teamText("Create a team or join one with a code, then your assigned work appears here.", "أنشئ فريقًا أو انضم بكود، وستظهر مهامك المسندة هنا.")}</p><button class="button button-primary button-small" data-action="team-tasks-open-teams">${teamText("Open teams", "فتح الفرق")}</button></div></section>`;
+    }
+
+    const uid = String(session.user.id);
+    const scopeChips = `<div class="team-filter-chips team-scope-chips" role="group" aria-label="${teamText("Team scope", "نطاق الفريق")}">
+      <button type="button" class="team-filter-chip ${teamTasksScope === "all" ? "selected" : ""}" data-action="team-tasks-scope" data-scope="all" aria-pressed="${teamTasksScope === "all"}">${teamText("All teams", "كل الفرق")}</button>
+      ${teams
+        .map(
+          (team) =>
+            `<button type="button" class="team-filter-chip ${String(teamTasksScope) === String(team.id) ? "selected" : ""}" data-action="team-tasks-scope" data-scope="${escapeHtml(team.id)}" aria-pressed="${String(teamTasksScope) === String(team.id)}">${escapeHtml(team.name)}</button>`,
+        )
+        .join("")}
+    </div>`;
+
+    const mineTasks = teamTasks.filter(
+      (task) =>
+        teamTasksScopeMatches(task) && teamTaskAssigneeIds(task).includes(uid),
+    );
+    const mineSubtasks = teamTaskSubtasks.filter((subtask) => {
+      if (String(subtask.assignee_id) !== uid) return false;
+      const parent = teamTaskById(subtask.task_id);
+      return parent && teamTasksScopeMatches(parent);
+    });
+
+    const overdueTasks = mineTasks.filter((task) => teamIsOverdue(task));
+    const openTasks = mineTasks.filter(
+      (task) => task.status !== "completed" && !teamIsOverdue(task),
+    );
+    const doneTasks = mineTasks.filter((task) => task.status === "completed");
+    const overdueSubtasks = mineSubtasks.filter(
+      (subtask) =>
+        subtask.status !== "completed" &&
+        subtask.due_at &&
+        new Date(subtask.due_at).getTime() < Date.now(),
+    );
+    const openSubtasks = mineSubtasks.filter(
+      (subtask) =>
+        subtask.status !== "completed" &&
+        !(
+          subtask.due_at && new Date(subtask.due_at).getTime() < Date.now()
+        ),
+    );
+    const doneSubtasks = mineSubtasks.filter(
+      (subtask) => subtask.status === "completed",
+    );
+
+    const taskCard = (task) => {
+      const team = teams.find((item) => String(item.id) === String(task.team_id));
+      return team ? teamTaskRow(task, team) : "";
+    };
+    const subtaskCard = (subtask) => {
+      const parent = teamTaskById(subtask.task_id);
+      return `<div class="team-my-subtask">
+        <button type="button" class="team-my-subtask-parent" data-action="team-task-detail" data-id="${escapeHtml(subtask.task_id)}">
+          ${teamText("Group task", "مهمة جماعية")}: <strong dir="auto">${escapeHtml(parent?.title || "")}</strong>
+        </button>
+        ${teamSubtaskRowMarkup(subtask, subtask.task_id)}
+      </div>`;
+    };
+
+    const section = (title, items, kind) => {
+      if (!items.length) return "";
+      return `<section class="panel team-my-section">
+        ${panelHeading(title, new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(items.length))}
+        <div class="team-task-list team-task-card-list">${
+          kind === "task" ? items.map(taskCard).join("") : items.map(subtaskCard).join("")
+        }</div>
+      </section>`;
+    };
+
+    const totalOpen = overdueTasks.length + openTasks.length + overdueSubtasks.length + openSubtasks.length;
+    if (!mineTasks.length && !mineSubtasks.length) {
+      return `${heading}
+        ${scopeChips}
+        <section class="panel teams-empty"><div class="empty-state"><strong>${teamText("Nothing assigned to you yet", "لا شيء مسند إليك بعد")}</strong><p>${teamText("When a team manager assigns you a task or a subtask, it appears here.", "عندما يسند إليك مدير الفريق مهمة أو مهمة فرعية، ستظهر هنا.")}</p></div></section>`;
+    }
+
+    return `${heading}
+      <div class="team-my-summary">
+        <span class="team-my-summary-pill">${teamText("Open", "مفتوحة")}: <strong>${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(totalOpen)}</strong></span>
+        <span class="team-my-summary-pill overdue">${teamText("Overdue", "متأخرة")}: <strong>${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(overdueTasks.length + overdueSubtasks.length)}</strong></span>
+        <span class="team-my-summary-pill done">${teamText("Completed", "مكتملة")}: <strong>${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(doneTasks.length + doneSubtasks.length)}</strong></span>
+      </div>
+      ${scopeChips}
+      ${section(teamText("Overdue", "متأخرة"), overdueTasks, "task")}
+      ${section(teamText("Overdue subtasks", "مهام فرعية متأخرة"), overdueSubtasks, "subtask")}
+      ${section(teamText("Upcoming and open", "القادمة والمفتوحة"), openTasks, "task")}
+      ${section(teamText("Open subtasks", "مهام فرعية مفتوحة"), openSubtasks, "subtask")}
+      ${section(teamText("Completed tasks", "مهام مكتملة"), doneTasks, "task")}
+      ${section(teamText("Completed subtasks", "مهام فرعية مكتملة"), doneSubtasks, "subtask")}
+      <p class="data-caption">${teamText("Each card shows the real profile photo of the responsible member. You can only change work assigned to you unless you manage the team.", "تعرض كل بطاقة الصورة الحقيقية للعضو المسؤول. لا يمكنك تغيير حالة إلا العمل المسند إليك، إلا إذا كنت مدير الفريق.")}</p>`;
   }
 
   function computeTeamXpRows(teamId) {
@@ -9581,7 +11322,7 @@
         const linkedTasks = tasks.filter(
           (task) =>
             String(task.created_by) === String(member.user_id) ||
-            String(task.assigned_to) === String(member.user_id),
+            teamTaskAssigneeIds(task).includes(String(member.user_id)),
         );
         const completedTasks = linkedTasks.filter(
           (task) => task.status === "completed",
@@ -9594,7 +11335,7 @@
               (task) =>
                 String(task.id) === String(record.task_id) &&
                 (String(task.created_by) === String(member.user_id) ||
-                  String(task.assigned_to) === String(member.user_id)),
+                  teamTaskAssigneeIds(task).includes(String(member.user_id))),
             ),
         );
         const focusMinutes = focusRows.reduce(
@@ -12798,7 +14539,9 @@
     voice: voicePage,
     media: mediaNotesPage,
     teams: teamsPage,
+    "team-tasks": myTeamTasksPage,
     teamLeaderboard: teamLeaderboardPage,
+    "team-leaderboard": teamLeaderboardPage,
     focus: focusPage,
     analytics: analyticsPage,
     goals: goalsPage,
@@ -12821,7 +14564,9 @@
     voice: "Voice notes",
     media: "Media notes",
     teams: "Teams",
+    "team-tasks": "My team tasks",
     teamLeaderboard: "Team leaderboard",
+    "team-leaderboard": "Team leaderboard",
     focus: "Focus timer",
     analytics: "Analytics",
     goals: "Goals",
@@ -13057,7 +14802,12 @@
           render();
         });
     }
-    if (currentPage === "teams" && session && !teamsLoaded && !teamsLoading) {
+    if (
+      (currentPage === "teams" || currentPage === "team-tasks") &&
+      session &&
+      !teamsLoaded &&
+      !teamsLoading
+    ) {
       void loadTeams();
     }
     if (
@@ -13696,7 +15446,11 @@
     }
   }
 
-  async function resolveProfileAvatarUrl(avatarPath, userId) {
+  async function resolveProfileAvatarUrl(
+    avatarPath,
+    userId,
+    { silent = false } = {},
+  ) {
     if (!avatarPath) return "";
     const cached = await getCachedAvatarObjectUrl(userId, avatarPath);
     if (avatarPath.startsWith(`${userId}/`)) {
@@ -13716,9 +15470,13 @@
           return signedUrl;
         }
       } catch (error) {
-        console.error("Could not create a private profile photo URL.", error);
+        if (!silent) {
+          console.error("Could not create a private profile photo URL.", error);
+        } else {
+          console.warn("Could not create a teammate profile photo URL.", error);
+        }
         if (cached) return cached;
-        showToast(`Could not load profile photo: ${error.message}`);
+        if (!silent) showToast(`Could not load profile photo: ${error.message}`);
         return "";
       }
       return cached;
@@ -13727,7 +15485,7 @@
       const url = new URL(avatarPath);
       if (url.protocol === "https:") return url.href;
     } catch (error) {
-      console.error("The profile photo reference is invalid.", error);
+      if (!silent) console.error("The profile photo reference is invalid.", error);
     }
     return cached;
   }
@@ -17132,6 +18890,49 @@
       await toggleTeamTask(target.dataset.id);
     } else if (target.matches('[data-action="team-task-delete"]')) {
       await deleteTeamTask(target.dataset.id);
+    } else if (target.matches('[data-action="team-tasks-open"]')) {
+      await openMyTeamTasks();
+    } else if (target.matches('[data-action="team-tasks-open-teams"]')) {
+      navigate("teams");
+    } else if (target.matches('[data-action="team-tasks-scope"]')) {
+      teamTasksScope = target.dataset.scope || "all";
+      render();
+    } else if (target.matches('[data-action="team-filter"]')) {
+      teamTaskFilter = target.dataset.filter || "all";
+      render();
+    } else if (target.matches('[data-action="team-view-mine"]')) {
+      teamTaskView = teamTaskView === "mine" ? "all" : "mine";
+      render();
+    } else if (target.matches('[data-action="team-task-create"]')) {
+      openTeamTaskModal();
+    } else if (target.matches('[data-action="team-task-edit"]')) {
+      openTeamTaskModal(target.dataset.id);
+    } else if (target.matches('[data-action="team-task-detail"]')) {
+      openTeamTaskDetail(target.dataset.id);
+    } else if (target.matches('[data-action="team-task-participants"]')) {
+      openTeamParticipantsModal(target.dataset.id);
+    } else if (target.matches('[data-action="team-task-force-complete"]')) {
+      await forceCompleteTeamTask(target.dataset.id);
+    } else if (target.matches('[data-action="team-subtask-toggle"]')) {
+      await toggleTeamSubtask(target.dataset.id);
+    } else if (target.matches('[data-action="team-subtask-create"]')) {
+      openTeamSubtaskModal(target.dataset.taskId);
+    } else if (target.matches('[data-action="team-subtask-edit"]')) {
+      openTeamSubtaskModal(target.dataset.taskId, target.dataset.id);
+    } else if (target.matches('[data-action="team-subtask-delete"]')) {
+      await deleteTeamSubtask(target.dataset.id);
+    } else if (target.matches('[data-action="team-subtask-add-row"]')) {
+      const form = document.getElementById("team-task-modal-form");
+      const rows = document.getElementById("team-subtask-draft-rows");
+      const team = teams.find((item) => String(item.id) === String(selectedTeamId));
+      if (rows && team) rows.insertAdjacentHTML("beforeend", teamSubtaskDraftRow(team.id));
+      if (form) form.querySelector(".team-subtask-builder")?.setAttribute("open", "");
+    } else if (target.matches('[data-action="team-subtask-remove-row"]')) {
+      target.closest("[data-subtask-row]")?.remove();
+    } else if (target.matches('[data-action="team-member-add"]')) {
+      openTeamAddMemberModal(target.dataset.teamId);
+    } else if (target.matches('[data-action="team-member-profile"]')) {
+      openTeamMemberProfile(target.dataset.userId);
     } else if (target.matches('[data-action="team-member-role"]')) {
       const teamId = target.dataset.teamId;
       const userId = target.dataset.userId;
@@ -18180,19 +19981,56 @@
       }
       return;
     }
-    if (event.target.id !== "team-task-form") return;
-    event.preventDefault();
-    const form = event.target;
-    const button = form.querySelector('button[type="submit"]');
-    button.disabled = true;
-    try {
-      await addTeamTask(new FormData(form));
-      form.reset();
-    } catch (reason) {
-      showToast(reason?.message || "Could not add the team task.");
-      console.error("Team task creation failed.", reason);
-    } finally {
-      button.disabled = false;
+    if (event.target.id === "team-task-modal-form") {
+      event.preventDefault();
+      const form = event.target;
+      const button = form.querySelector('button[type="submit"]');
+      const error = document.getElementById("team-task-modal-error");
+      if (button) button.disabled = true;
+      if (error) error.textContent = "";
+      try {
+        await saveTeamTaskModal(new FormData(form));
+      } catch (reason) {
+        if (error) error.textContent = reason?.message || "Could not save the team task.";
+        console.error("Team task save failed.", reason);
+      } finally {
+        if (button) button.disabled = false;
+      }
+      return;
+    }
+    if (event.target.id === "team-subtask-form") {
+      event.preventDefault();
+      const form = event.target;
+      const button = form.querySelector('button[type="submit"]');
+      const error = document.getElementById("team-subtask-error");
+      if (button) button.disabled = true;
+      if (error) error.textContent = "";
+      try {
+        await saveTeamSubtask(new FormData(form));
+      } catch (reason) {
+        if (error) error.textContent = reason?.message || "Could not save the subtask.";
+        console.error("Subtask save failed.", reason);
+      } finally {
+        if (button) button.disabled = false;
+      }
+      return;
+    }
+    if (event.target.id === "team-add-member-form") {
+      event.preventDefault();
+      const form = event.target;
+      const button = form.querySelector('button[type="submit"]');
+      const error = document.getElementById("team-add-member-error");
+      if (button) button.disabled = true;
+      if (error) error.textContent = "";
+      try {
+        await saveTeamAddMember(new FormData(form));
+      } catch (reason) {
+        if (error) error.textContent = reason?.message || "Could not add the member.";
+        console.error("Team member add failed.", reason);
+      } finally {
+        if (button) button.disabled = false;
+      }
+      return;
     }
   });
 
@@ -18218,6 +20056,39 @@
         button.innerHTML = `${deadlineText[appLanguage].save} <span>→</span>`;
       }
     });
+
+  document
+    .getElementById("team-task-modal-form")
+    ?.addEventListener("change", (event) => {
+      if (event.target?.name === "task_type") updateTeamTaskModalVisibility();
+    });
+
+  document.addEventListener(
+    "error",
+    (event) => {
+      const img = event.target;
+      if (!(img instanceof HTMLImageElement)) return;
+      if (!img.matches("[data-team-avatar-img]")) return;
+      const holder = img.closest("[data-team-avatar]");
+      const userId = holder?.dataset.teamAvatar || "";
+      try {
+        img.remove();
+      } catch {
+        /* ignore */
+      }
+      if (
+        holder &&
+        userId &&
+        !holder.querySelector("[data-team-avatar-initials]")
+      ) {
+        const fallback = document.createElement("span");
+        fallback.dataset.teamAvatarInitials = "";
+        fallback.textContent = initials(teamMemberName(userId));
+        holder.appendChild(fallback);
+      }
+    },
+    true,
+  );
 
   document
     .getElementById("auth-form")

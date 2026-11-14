@@ -36,9 +36,14 @@
   const SYNC_INTERVAL_MS = 30_000;
   const REQUEST_TIMEOUT_MS = 25_000;
 
-  // Only user-owned, text-first tables can be replayed safely. Storage-backed
-  // features (files, voice notes) and team collaboration stay online-only and
-  // show an honest message instead of pretending the write succeeded.
+  // Team task tables are member-scoped, so every queued row is re-authorized
+  // by PostgreSQL and RLS when it replays. Team/team_members creation stays
+  // online-only because it must resolve an owner first.
+  const TEAM_TABLES = new Set([
+    "team_tasks",
+    "team_task_assignees",
+    "team_task_subtasks",
+  ]);
   const OFFLINE_TABLES = new Set([
     "tasks",
     "notes",
@@ -56,6 +61,7 @@
     "user_settings",
     "user_notification_preferences",
     "daily_reminder_preferences",
+    ...TEAM_TABLES,
   ]);
   const OFFLINE_RPC = new RegExp(
     "^(start_focus_session|resume_focus_session|pause_focus_session|finish_focus_session|cancel_focus_session|increment_goal_progress)$",
@@ -354,7 +360,7 @@
     return new Response(null, { status });
   }
 
-  function normalizeRow(row, userId, { insert = false } = {}) {
+  function normalizeRow(row, userId, { insert = false, table = "" } = {}) {
     const now = new Date().toISOString();
     const next = { ...(row && typeof row === "object" ? row : {}) };
     if (insert) {
@@ -362,7 +368,9 @@
       if (!next.created_at) next.created_at = now;
     }
     if (!next.updated_at) next.updated_at = now;
-    if (userId && !next.user_id) next.user_id = userId;
+    if (userId && !next.user_id && !TEAM_TABLES.has(table)) {
+      next.user_id = userId;
+    }
     return next;
   }
 
@@ -442,6 +450,7 @@
         if (kind === "insert" || kind === "upsert") {
           const row = normalizeRow(serverRow || payload, userId, {
             insert: true,
+            table,
           });
           const index = rows.findIndex(
             (item) => String(item.id) === String(row.id),
@@ -464,7 +473,7 @@
         entry.data = rows;
       } else if (data && typeof data === "object") {
         if (kind === "update") entry.data = mergeRow(data, serverRow || payload);
-        else if (kind === "insert") entry.data = normalizeRow(serverRow || payload, userId, { insert: true });
+        else if (kind === "insert") entry.data = normalizeRow(serverRow || payload, userId, { insert: true, table });
       }
       entry.updatedAt = Date.now();
       await putOne(CACHE_STORE, entry);
@@ -588,7 +597,7 @@
       return emptyResponse(201);
     }
     if (kind === "insert" || kind === "upsert") {
-      const row = normalizeRow(payload, userId, { insert: true });
+      const row = normalizeRow(payload, userId, { insert: true, table });
       return jsonResponse(single ? row : [row], 201);
     }
     if (kind === "update") {
@@ -596,6 +605,7 @@
       const row = normalizeRow(
         { ...(payload || {}), ...(id ? { id } : {}) },
         userId,
+        { table },
       );
       return jsonResponse(single ? row : [row], 200);
     }

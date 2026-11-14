@@ -435,6 +435,25 @@ canvas {
   padding-bottom: 6px;
 }
 
+/* Note editor: keep it full-height and comfortably scrollable above the mobile
+ * keyboard, so the focused contenteditable never scrolls out of reach and IME
+ * caret positioning is not disturbed by layout jumps. */
+.keyboard-open .note-backdrop {
+  align-items: stretch;
+  padding-bottom: 0;
+}
+.keyboard-open .modal.note-modal {
+  height: calc(100dvh - 12px);
+  max-height: calc(100dvh - 12px);
+}
+.note-modal .rt-editor {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.note-modal .note-editor-foot {
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+}
+
 /* Respect notches and rounded display corners. */
 @supports (padding: max(0px)) {
   .sidebar,

@@ -19,6 +19,14 @@ const migration3Path = "supabase/migrations/003_android_offline_notifications.sq
 const migration3 = existsSync(join(root, migration3Path))
   ? read(migration3Path)
   : "";
+const migration4Path = "supabase/migrations/004_team_task_system.sql";
+const migration4 = existsSync(join(root, migration4Path))
+  ? read(migration4Path)
+  : "";
+const migration5Path = "supabase/migrations/005_fix_notification_type_enum.sql";
+const migration5 = existsSync(join(root, migration5Path))
+  ? read(migration5Path)
+  : "";
 
 let passed = 0;
 const failures = [];
@@ -46,6 +54,11 @@ check("Local-day helper exists", app.includes("function parseLocalDateKey("));
 check("Task date buckets exist", app.includes("buckets.overdue") && app.includes("buckets.nodate"));
 check("Rich text sanitizer exists", app.includes("function sanitizeRichText("));
 check("Autosave exists", app.includes("function scheduleNoteSave(") && app.includes("function saveNoteNow("));
+check("Note editor content is excluded from UI translation", /contenteditable\]:not\(\[contenteditable='false'\]\)/.test(app) && app.includes("data-sz-no-translate"));
+check("Note editor tracks IME composition safely", app.includes("let noteEditorComposing = false") && app.includes("compositionstart") && app.includes("compositionend"));
+check("Note editor defers autosave until composition ends", app.includes("noteSaveDeferred") && /if \(noteEditorComposing/.test(app));
+check("Note editor keeps auto text direction", app.includes('id="note-editor" contenteditable="true" dir="auto"'));
+check("Editor CSS does not force bidi plaintext on the editable", !/unicode-bidi:\s*plaintext\s*;/.test(css) && /unicode-bidi:\s*normal/.test(css) && /text-align:\s*start/.test(css));
 check("MediaRecorder recording exists", app.includes("new window.MediaRecorder("));
 check("Private voice upload exists", /\.from\(\s*["']voice-notes["']\s*\)\s*\.upload\(/.test(app));
 check("Notification sound exists", app.includes("function playNotificationSound("));
@@ -55,7 +68,7 @@ check("Notification preferences form exists", app.includes('id="notification-pre
 check("Team creation exists", /\.from\(\s*["']teams["']\s*\)\s*\.insert\(/.test(app));
 check("Team join RPC exists", app.includes('rpc("join_team"'));
 check("No service-role key assignment in browser files", !/service_role\s*[:=]/i.test(app + html + read("supabase-config.js")) && !/serviceRole/i.test(app + html + read("supabase-config.js")));
-check("Service worker cache was bumped", sw.includes("studyzone-shell-v25"));
+check("Service worker cache was bumped", sw.includes("studyzone-shell-v26"));
 
 check("Web app manifest keeps standalone display", /"display"\s*:\s*"standalone"/.test(manifest));
 check("Web app manifest has a start url and scope", /"start_url"\s*:/.test(manifest) && /"scope"\s*:/.test(manifest));
@@ -199,8 +212,97 @@ if (migration3) {
       /drop policy if exists/i.test(migration3),
   );
 } else {
-  check("Android/offline migration file is missing", false);
+  check("Android/offline migration is optional in this checkout", true);
 }
+
+if (migration4) {
+  check("Team task system migration exists", true);
+  for (const table of [
+    "team_task_assignees",
+    "team_task_subtasks",
+    "team_task_activity",
+  ]) {
+    check(`Migration 004 mentions ${table}`, migration4.includes(table));
+  }
+  check(
+    "Migration 004 enables RLS on the new team tables",
+    /alter table public\.team_task_assignees enable row level security/i.test(migration4) &&
+      /alter table public\.team_task_subtasks enable row level security/i.test(migration4) &&
+      /alter table public\.team_task_activity enable row level security/i.test(migration4),
+  );
+  check(
+    "Migration 004 guards permissions in the database",
+    /create trigger team_tasks_guard_trigger/i.test(migration4) &&
+      /Only a team manager can create team tasks/i.test(migration4),
+  );
+  check(
+    "Migration 004 scopes teammate profiles through a security-definer RPC",
+    /function public\.team_profiles/i.test(migration4) &&
+      /grant execute on function public\.team_profiles\(uuid\) to authenticated/i.test(migration4),
+  );
+  check(
+    "Migration 004 limits teammate avatars to the avatars folder",
+    /team members can read teammate avatars/i.test(migration4) &&
+      /name like '%\/avatars\/%'/i.test(migration4),
+  );
+  check(
+    "Migration 004 is additive",
+    !/\bdrop table\b|\btruncate\b|\bdrop column\b/i.test(migration4),
+  );
+  check(
+    "Migration 004 can be re-run safely",
+    /add column if not exists/i.test(migration4) &&
+      /create table if not exists/i.test(migration4) &&
+      /drop policy if exists/i.test(migration4),
+  );
+} else {
+  check("Team task system migration file is missing", false);
+}
+
+if (migration5) {
+  check("Notification enum fix migration exists", true);
+  check(
+    "Notification fix resolves enum labels from pg_enum",
+    migration5.includes("studyzone_notification_label") && migration5.includes("pg_enum"),
+  );
+  check(
+    "Notification insert casts to the existing enum type",
+    migration5.includes("$2::%s") && migration5.includes("insert into public.notifications"),
+  );
+  check(
+    "Notification fix is additive and keeps RLS enabled",
+    !/\bdrop table\b|\btruncate\b|\bdrop column\b/i.test(migration5) && !/disable row level security/i.test(migration5),
+  );
+} else {
+  check("Notification enum fix migration file is missing", false);
+}
+
+check(
+  "Team task cards render real assignee avatars",
+  app.includes("function teamTaskAssigneeMarkup(") &&
+    app.includes("function teamAvatar(") &&
+    app.includes("team-avatar-stack") &&
+    app.includes("team-avatar-overflow"),
+);
+check(
+  "Team detail supports participants, subtasks and activity",
+  app.includes("function renderTeamTaskDetailBody(") &&
+    app.includes("function teamTaskActivityMarkup(") &&
+    app.includes("function teamSubtaskRowMarkup("),
+);
+check(
+  "My team tasks page is registered",
+  app.includes('"team-tasks": myTeamTasksPage') &&
+    app.includes('"team-tasks": "My team tasks"') &&
+    html.includes('data-page="team-tasks"'),
+);
+check(
+  "Team task tables participate in the offline queue",
+  read("offline-sync.js").includes('"team_tasks"') &&
+    read("offline-sync.js").includes('"team_task_assignees"') &&
+    read("offline-sync.js").includes('"team_task_subtasks"') &&
+    read("offline-sync.js").includes("TEAM_TABLES"),
+);
 
 // Android / offline / theme platform checks.
 const offline = read("offline-sync.js");
