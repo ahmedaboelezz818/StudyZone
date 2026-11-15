@@ -32,7 +32,13 @@
     messages: [],
     messagesLoading: false,
     messagesError: "",
+    hasMoreMessages: true,
+    loadingOlder: false,
     reads: [],
+    reactions: new Map(),
+    reactionChannel: null,
+    reactionChannelId: null,
+    openReactionPickerMessageId: null,
     callInfo: new Map(),
     signed: new Map(),
     signedAt: new Map(),
@@ -75,6 +81,8 @@
     notificationAsked: false,
     pendingTaskId: null,
     pendingConversationId: null,
+    pendingDirectUserId: null,
+    chatFocus: false,
     destroyed: false,
   };
 
@@ -253,8 +261,34 @@
     return core ? core.unreadTotal(S.conversations) : 0;
   }
 
+  function normalizeConversationRow(row) {
+    if (!row || typeof row !== "object") return row;
+    const normalized = { ...row };
+    if (!normalized.conversation_id && normalized.id) normalized.conversation_id = normalized.id;
+    if (!normalized.id && normalized.conversation_id) normalized.id = normalized.conversation_id;
+    const uid = myId();
+    if (normalized.kind === "direct" && !normalized.participant_id) {
+      if (normalized.participant_a || normalized.participant_b) {
+        const a = String(normalized.participant_a || "");
+        const b = String(normalized.participant_b || "");
+        normalized.participant_id = a && a !== uid ? a : b && b !== uid ? b : a || b || null;
+      } else if (normalized.other_user_id || normalized.user_id) {
+        const other = String(normalized.other_user_id || normalized.user_id || "");
+        if (other && other !== uid) normalized.participant_id = other;
+      } else if (normalized.title && /^[0-9a-f-]{36}$/i.test(String(normalized.title))) {
+        const maybe = String(normalized.title);
+        if (maybe !== uid) normalized.participant_id = maybe;
+      }
+    }
+    return normalized;
+  }
+
   function conversationById(id) {
-    return S.conversations.find((row) => String(row.conversation_id) === String(id)) || null;
+    const key = String(id || "");
+    if (!key) return null;
+    return (
+      S.conversations.find((row) => String(row.conversation_id || row.id || "") === key) || null
+    );
   }
 
   function activeConversation() {
@@ -280,19 +314,31 @@
     if (!client || !user || !teamId) return;
     const seq = (S.conversationsSeq = (S.conversationsSeq || 0) + 1);
     S.conversationsLoading = true;
-    if (!silent) {
+    if (!silent && !S.conversationsLoaded) {
       S.conversationsError = "";
       renderSidebar();
+    } else if (S.conversationsError) {
+      S.conversationsError = "";
     }
     try {
       const rows = await rpc("team_chat_conversations", { p_team_id: teamId });
       if (seq !== S.conversationsSeq || String(S.teamId) !== String(teamId)) return;
-      S.conversations = Array.isArray(rows) ? rows : [];
+      S.conversations = (Array.isArray(rows) ? rows : []).map(normalizeConversationRow);
       S.migrationMissing = false;
       S.conversationsLoaded = true;
+      // Keep active chat open even if the conversation list is temporarily
+      // incomplete/mismatched; message loading uses the conversation id directly.
       if (S.activeId && !conversationById(S.activeId)) {
-        S.activeId = null;
-        S.chatRenderedFor = null;
+        S.conversations.unshift(
+          normalizeConversationRow({
+            conversation_id: S.activeId,
+            id: S.activeId,
+            team_id: teamId,
+            kind: S.pendingDirectUserId ? "direct" : "group",
+            participant_id: S.pendingDirectUserId || null,
+            title: null,
+          }),
+        );
       }
       updateLiveBadge();
     } catch (error) {
@@ -323,45 +369,77 @@
     }
   }
 
-  async function openConversation(id, { scroll = true } = {}) {
+  async function openConversation(id, { scroll = true, focus = true } = {}) {
     if (!id) return;
     S.activeId = String(id);
+    if (focus) S.chatFocus = true;
+    if (!conversationById(S.activeId)) {
+      S.conversations.unshift(
+        normalizeConversationRow({
+          conversation_id: S.activeId,
+          id: S.activeId,
+          team_id: S.teamId,
+          kind: S.pendingDirectUserId ? "direct" : "group",
+          participant_id: S.pendingDirectUserId || null,
+          title: null,
+        }),
+      );
+    }
     S.chatRenderedFor = null;
     S.search = "";
     S.replyTo = null;
     S.pendingFile = null;
     S.messages = [];
     S.messagesError = "";
+    S.hasMoreMessages = true;
+    S.loadingOlder = false;
+    S.reactions.clear();
+    S.openReactionPickerMessageId = null;
     syncChatSurface();
+    applyChatFocusState();
     if (scroll) scrollMessages(true);
     await loadMessages(S.activeId);
     await markConversationRead(S.activeId);
     subscribeReadState(S.activeId);
+    subscribeReactions(S.activeId);
     const searchInput = document.querySelector('[data-live-input="message-search"]');
     if (searchInput) searchInput.value = "";
   }
 
-  async function loadMessages(conversationId, { silent = false } = {}) {
+  async function loadMessages(conversationId, { silent = false, before = null, appendOlder = false } = {}) {
     const client = sb();
     if (!client || !conversationId) return;
-    S.messagesLoading = true;
-    if (!silent) S.messagesError = "";
+    if (appendOlder) S.loadingOlder = true;
+    else S.messagesLoading = true;
+    if (!silent && !appendOlder) S.messagesError = "";
     try {
-      const { data, error } = await client
+      let query = client
         .from("team_messages")
         .select(
           "id,conversation_id,team_id,sender_id,message_type,body,attachment_path,attachment_name,attachment_type,attachment_size,reply_to_id,call_id,created_at,edited_at,deleted_at,deleted_by",
         )
         .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true })
-        .limit(300);
+        .order("created_at", { ascending: false })
+        .limit(80);
+      if (before) query = query.lt("created_at", before);
+      const { data, error } = await query;
       if (error) throw error;
       if (String(conversationId) !== String(S.activeId)) return;
-      S.messages = (data || []).slice(-300);
+      const rows = (data || []).slice().reverse();
+      if (appendOlder) {
+        const existing = new Set(S.messages.map((m) => String(m.id)));
+        const older = rows.filter((m) => !existing.has(String(m.id)));
+        S.messages = older.concat(S.messages);
+        S.hasMoreMessages = rows.length >= 80;
+      } else {
+        S.messages = rows;
+        S.hasMoreMessages = rows.length >= 80;
+      }
       await loadCallInfoForMessages();
       await signAttachments();
-      renderMessages();
-      scrollMessages(!silent);
+      await loadReactionsForMessages(conversationId, rows.map((m) => m.id), { merge: appendOlder });
+      renderMessages(appendOlder ? { preserveTop: true } : {});
+      if (!appendOlder) scrollMessages(!silent);
     } catch (error) {
       if (isMissingRpc(error)) {
         S.migrationMissing = true;
@@ -372,6 +450,7 @@
       renderMessages();
     } finally {
       S.messagesLoading = false;
+      S.loadingOlder = false;
     }
   }
 
@@ -452,6 +531,222 @@
     } catch (error) {
       if (!isMissingRpc(error)) console.warn("Could not mark the conversation read.", error);
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Reactions
+  // -------------------------------------------------------------------------
+  const REACTION_EMOJIS = ["❤️", "😂", "😍", "👍", "👎", "😢", "🔥", "🎉", "🙏", "😮"];
+
+  function normalizeReactionRow(row) {
+    if (!row) return null;
+    return {
+      id: row.id ? String(row.id) : "",
+      message_id: String(row.message_id || ""),
+      conversation_id: String(row.conversation_id || ""),
+      user_id: String(row.user_id || ""),
+      emoji: String(row.emoji || ""),
+      created_at: row.created_at || null,
+    };
+  }
+
+  function setReactionsForMessages(messageIds, rows, { replace = true } = {}) {
+    const ids = new Set((messageIds || []).map((id) => String(id)));
+    if (replace) {
+      for (const id of ids) S.reactions.set(id, []);
+    }
+    for (const raw of rows || []) {
+      const row = normalizeReactionRow(raw);
+      if (!row || !row.message_id || !row.emoji || !row.user_id) continue;
+      if (ids.size && !ids.has(row.message_id)) continue;
+      const list = S.reactions.get(row.message_id) || [];
+      const exists = list.some(
+        (item) => item.user_id === row.user_id && item.emoji === row.emoji,
+      );
+      if (!exists) list.push(row);
+      S.reactions.set(row.message_id, list);
+    }
+  }
+
+  async function loadReactionsForMessages(conversationId, messageIds, { merge = false } = {}) {
+    const client = sb();
+    if (!client || !conversationId) return;
+    const ids = [...new Set((messageIds || []).filter(Boolean).map(String))];
+    if (!ids.length) {
+      if (!merge) S.reactions.clear();
+      return;
+    }
+    try {
+      const { data, error } = await client
+        .from("team_message_reactions")
+        .select("id,message_id,conversation_id,user_id,emoji,created_at")
+        .eq("conversation_id", conversationId)
+        .in("message_id", ids);
+      if (error) throw error;
+      setReactionsForMessages(ids, data || [], { replace: !merge });
+    } catch (error) {
+      // Table/migration may not be applied yet; keep chat functional.
+      if (!isMissingRpc(error)) console.warn("Could not load reactions.", error);
+    }
+  }
+
+  function reactionSummary(messageId) {
+    const rows = S.reactions.get(String(messageId)) || [];
+    const byEmoji = new Map();
+    for (const row of rows) {
+      const key = row.emoji;
+      if (!key) continue;
+      if (!byEmoji.has(key)) byEmoji.set(key, { emoji: key, users: [] });
+      byEmoji.get(key).users.push(row.user_id);
+    }
+    return [...byEmoji.values()].sort((a, b) => b.users.length - a.users.length || a.emoji.localeCompare(b.emoji));
+  }
+
+  async function toggleReaction(messageId, emoji) {
+    const client = sb();
+    const user = me();
+    const conversationId = S.activeId;
+    if (!client || !user || !conversationId || !messageId || !emoji) return;
+    const id = String(messageId);
+    const rows = S.reactions.get(id) || [];
+    const mine = rows.find((row) => row.user_id === String(user.id) && row.emoji === emoji);
+    try {
+      if (mine) {
+        const { error } = await client
+          .from("team_message_reactions")
+          .delete()
+          .eq("message_id", id)
+          .eq("user_id", user.id)
+          .eq("emoji", emoji);
+        if (error) throw error;
+        S.reactions.set(
+          id,
+          rows.filter((row) => !(row.user_id === String(user.id) && row.emoji === emoji)),
+        );
+      } else {
+        const { data, error } = await client
+          .from("team_message_reactions")
+          .insert({
+            message_id: id,
+            conversation_id: conversationId,
+            user_id: user.id,
+            emoji,
+          })
+          .select("id,message_id,conversation_id,user_id,emoji,created_at")
+          .single();
+        if (error) throw error;
+        const next = rows.slice();
+        const normalized = normalizeReactionRow(data);
+        if (normalized && !next.some((r) => r.user_id === normalized.user_id && r.emoji === normalized.emoji)) {
+          next.push(normalized);
+        }
+        S.reactions.set(id, next);
+      }
+      S.openReactionPickerMessageId = null;
+      renderMessages();
+    } catch (error) {
+      notifyError(t("Could not update reaction.", "تعذّر تحديث التفاعل."), error);
+    }
+  }
+
+  function handleReactionRealtime(payload) {
+    const row = normalizeReactionRow(payload?.new || payload?.old);
+    if (!row || !row.message_id) return;
+    if (S.activeId && row.conversation_id && String(row.conversation_id) !== String(S.activeId)) return;
+    const list = (S.reactions.get(row.message_id) || []).slice();
+    if (payload.eventType === "DELETE") {
+      S.reactions.set(
+        row.message_id,
+        list.filter((item) => !(item.user_id === row.user_id && item.emoji === row.emoji)),
+      );
+    } else {
+      if (!list.some((item) => item.user_id === row.user_id && item.emoji === row.emoji)) list.push(row);
+      S.reactions.set(row.message_id, list);
+    }
+    // Re-render only if messages for this conversation are shown.
+    if (S.messages.some((m) => String(m.id) === row.message_id)) renderMessages();
+  }
+
+  function subscribeReactions(conversationId) {
+    const client = sb();
+    if (!client || !conversationId) return;
+    if (S.reactionChannel && String(S.reactionChannelId) === String(conversationId)) return;
+    teardownReactionChannel();
+    S.reactionChannelId = String(conversationId);
+    try {
+      S.reactionChannel = client
+        .channel(`team-live-reactions-${conversationId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "team_message_reactions",
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          (payload) => handleReactionRealtime(payload),
+        )
+        .subscribe();
+    } catch (error) {
+      console.warn("Could not subscribe to reactions.", error);
+    }
+  }
+
+  function teardownReactionChannel() {
+    const client = sb();
+    if (S.reactionChannel && client) {
+      try {
+        client.removeChannel(S.reactionChannel);
+      } catch {
+        /* ignore */
+      }
+    }
+    S.reactionChannel = null;
+    S.reactionChannelId = null;
+  }
+
+  function memberAvatarSmall(userId) {
+    try {
+      if (deps && typeof deps.teamAvatar === "function") {
+        return deps.teamAvatar(userId, { size: "team-avatar-xxs live-reaction-avatar-el" });
+      }
+    } catch {
+      /* ignore */
+    }
+    const name = memberName(userId) || "?";
+    const initial = esc(String(name).trim().charAt(0).toUpperCase() || "?");
+    return `<span class="live-reaction-avatar initial">${initial}</span>`;
+  }
+
+  function reactionPickerMarkup(messageId) {
+    const open = String(S.openReactionPickerMessageId || "") === String(messageId);
+    if (!open) return "";
+    const buttons = REACTION_EMOJIS.map(
+      (emoji) =>
+        `<button type="button" class="live-reaction-emoji-btn" data-live-action="toggle-reaction" data-message-id="${esc(messageId)}" data-emoji="${esc(emoji)}" aria-label="${esc(emoji)}">${esc(emoji)}</button>`,
+    ).join("");
+    return `<div class="live-reaction-picker" role="dialog" aria-label="${esc(t("Add reaction", "إضافة تفاعل"))}">${buttons}</div>`;
+  }
+
+  function messageReactionsMarkup(messageId) {
+    const summary = reactionSummary(messageId);
+    const picker = reactionPickerMarkup(messageId);
+    const chips = summary
+      .map((item) => {
+        const mine = item.users.includes(myId());
+        const avatars = item.users
+          .slice(0, 3)
+          .map((uid) => memberAvatarSmall(uid))
+          .join("");
+        return `<button type="button" class="live-reaction-chip ${mine ? "mine" : ""}" data-live-action="toggle-reaction" data-message-id="${esc(messageId)}" data-emoji="${esc(item.emoji)}" title="${esc(String(item.users.length))}">
+          <span class="live-reaction-emoji">${esc(item.emoji)}</span>
+          <span class="live-reaction-count">${item.users.length}</span>
+          <span class="live-reaction-avatars" aria-hidden="true">${avatars}</span>
+        </button>`;
+      })
+      .join("");
+    if (!chips && !picker) return "";
+    return `<div class="live-reactions-row">${chips}${picker}</div>`;
   }
 
   async function loadReads(conversationId) {
@@ -643,6 +938,38 @@
       .join("")}</div>`;
   }
 
+  function applyChatFocusState() {
+    const shell = document.querySelector("[data-live-shell]");
+    if (!shell) return;
+    const focused = Boolean(S.chatFocus && S.activeId);
+    shell.classList.toggle("chat-focus", focused);
+    const page = shell.closest(".live-page");
+    if (page) page.classList.toggle("chat-focus-mode", focused);
+    document.documentElement.classList.toggle("team-live-chat-focus", focused);
+    document.body.classList.toggle("team-live-chat-focus", focused);
+  }
+
+  function focusChatView() {
+    S.chatFocus = true;
+    applyChatFocusState();
+  }
+
+  function closeChatView() {
+    S.chatFocus = false;
+    S.activeId = null;
+    S.chatRenderedFor = null;
+    S.pendingDirectUserId = null;
+    S.messages = [];
+    S.messagesError = "";
+    S.reactions.clear();
+    S.openReactionPickerMessageId = null;
+    teardownReadChannel();
+    teardownReactionChannel();
+    renderSidebar();
+    syncChatSurface();
+    applyChatFocusState();
+  }
+
   function renderPage() {
     const user = me();
     const heading = `<div class="live-page-head">
@@ -680,10 +1007,10 @@
       </section>`;
     }
 
-    return `<section class="panel live-page">
+    return `<section class="panel live-page ${S.chatFocus && S.activeId ? "chat-focus-mode" : ""}">
       ${heading}
       ${teamSwitcherMarkup()}
-      <div class="live-shell">
+      <div class="live-shell ${S.chatFocus && S.activeId ? "chat-focus" : ""}" data-live-shell>
         <aside class="live-sidebar" aria-label="${esc(t("Conversations", "المحادثات"))}">
           <label class="live-search">
             <span aria-hidden="true">⌕</span>
@@ -723,10 +1050,10 @@
         ),
       )}</p></div>`;
     }
-    if (S.conversationsLoading && !S.conversationsLoaded) {
+    if (S.conversationsLoading && !S.conversationsLoaded && !S.conversations.length) {
       return `<p class="live-loading" role="status">${esc(t("Loading conversations…", "جارٍ تحميل المحادثات…"))}</p>`;
     }
-    if (S.conversationsError) {
+    if (S.conversationsError && !S.conversations.length) {
       return `<div class="live-notice error"><strong>${esc(t("Could not load chat", "تعذّر تحميل المحادثة"))}</strong><p>${esc(S.conversationsError)}</p><button type="button" class="button button-secondary button-small" data-live-action="refresh-live">${esc(t("Try again", "إعادة المحاولة"))}</button></div>`;
     }
 
@@ -810,8 +1137,19 @@
   }
 
   function chatPanelMarkup() {
-    const conversation = activeConversation();
-    if (!S.activeId || !conversation) {
+    const conversation =
+      activeConversation() ||
+      (S.activeId
+        ? normalizeConversationRow({
+            conversation_id: S.activeId,
+            id: S.activeId,
+            team_id: S.teamId,
+            kind: S.pendingDirectUserId ? "direct" : "group",
+            participant_id: S.pendingDirectUserId || null,
+            title: null,
+          })
+        : null);
+    if (!S.activeId) {
       return `<div class="live-chat-empty">
         ${S.conversations.length || !S.conversationsLoaded ? "" : ""}
         <div class="live-chat-empty-icon" aria-hidden="true">💬</div>
@@ -831,6 +1169,9 @@
       : null;
     const members = teamMembersOf(S.teamId).length;
     return `<header class="live-chat-head">
+      <button type="button" class="live-icon-button live-chat-back" data-live-action="back-to-list" title="${esc(t("Back to team members", "الرجوع إلى أعضاء الفريق"))}" aria-label="${esc(t("Back to team members", "الرجوع إلى قائمة أعضاء الفريق"))}">
+        <span class="live-back-icon" aria-hidden="true"></span>
+      </button>
       <div class="live-chat-person">
         ${
           conversation.kind === "direct"
@@ -928,7 +1269,7 @@
   function autoGrow(textarea) {
     if (!textarea) return;
     textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(180, textarea.scrollHeight)}px`;
+    textarea.style.height = `${Math.min(140, textarea.scrollHeight)}px`;
   }
 
   function messageById(id) {
@@ -945,16 +1286,16 @@
   }
 
   function readStateFor(message) {
-    if (!message || String(message.sender_id) !== myId()) return "";
+    if (!message || String(message.sender_id) !== myId()) return { text: "", state: "", label: "" };
     const others = S.reads.filter((row) => String(row.user_id) !== myId());
-    if (!others.length) return t("Sent", "أُرسلت");
+    if (!others.length) return { text: "✓", state: "sent", label: t("Sent", "أُرسلت") };
     const readBy = others.filter(
       (row) => new Date(row.last_read_at).getTime() >= new Date(message.created_at).getTime(),
     ).length;
-    if (!readBy) return t("Delivered", "وصلت");
+    if (!readBy) return { text: "✓✓", state: "delivered", label: t("Delivered to chat", "تم التسليم") };
     const conversation = activeConversation();
-    if (conversation?.kind === "direct") return t("Read", "قُرئت");
-    return t(`Read by ${readBy}`, `قرأها ${readBy}`);
+    if (conversation?.kind === "direct") return { text: "✓✓", state: "read", label: t("Read", "قُرئت") };
+    return { text: "✓✓", state: "read", label: t(`Read by ${readBy}`, `قرأها ${readBy}`) };
   }
 
   function messageMarkup(message, groupedMessage) {
@@ -1012,14 +1353,17 @@
     return `<div class="live-message ${mine ? "mine" : ""} ${groupedMessage ? "grouped" : ""}" data-message-id="${esc(message.id)}">
       <div class="live-message-avatar">${memberAvatar(message.sender_id)}</div>
       <div class="live-message-body">
-        <div class="live-message-meta"><strong dir="auto">${esc(memberName(message.sender_id))}</strong><time>${esc(formatTime(message.created_at))}</time><span class="live-read-state">${esc(readStateFor(message))}</span></div>
+        <div class="live-message-meta"><strong dir="auto">${esc(memberName(message.sender_id))}</strong><time>${esc(formatTime(message.created_at))}</time>${(() => { const rs = readStateFor(message); return rs.text ? `<span class="live-read-state state-${esc(rs.state)}" title="${esc(rs.label || rs.text)}" aria-label="${esc(rs.label || rs.text)}">${esc(rs.text)}</span>` : ""; })()}</div>
         ${reply ? `<div class="live-reply-quote"><strong>${esc(memberName(reply.sender_id))}</strong><span dir="auto">${esc(String(reply.body || "").slice(0, 120) || t("Attachment", "مرفق"))}</span></div>` : ""}
         ${body}
         ${attachment}
+        ${!deleted ? messageReactionsMarkup(message.id) : ""}
         ${
           !deleted
             ? `<div class="live-message-actions">
+                <button type="button" class="live-icon-button live-icon-button-small" data-live-action="open-reaction-picker" data-message-id="${esc(message.id)}" title="${esc(t("React", "تفاعل"))}" aria-label="${esc(t("Add reaction", "إضافة تفاعل"))}">😊</button>
                 <button type="button" class="live-icon-button live-icon-button-small" data-live-action="reply-message" data-message-id="${esc(message.id)}" title="${esc(t("Reply", "رد"))}" aria-label="${esc(t("Reply", "رد"))}">↩</button>
+                <button type="button" class="live-icon-button live-icon-button-small" data-live-action="copy-message" data-message-id="${esc(message.id)}" title="${esc(t("Copy", "نسخ"))}" aria-label="${esc(t("Copy", "نسخ"))}">⧉</button>
                 ${canDelete ? `<button type="button" class="live-icon-button live-icon-button-small danger" data-live-action="delete-message" data-message-id="${esc(message.id)}" title="${esc(t("Delete", "حذف"))}" aria-label="${esc(t("Delete", "حذف"))}">×</button>` : ""}
               </div>`
             : ""
@@ -1028,7 +1372,7 @@
     </div>`;
   }
 
-  function renderMessages() {
+  function renderMessages(opts = {}) {
     const host = document.querySelector("[data-live-messages]");
     if (!host) return;
     if (S.messagesError) {
@@ -1051,11 +1395,16 @@
       return;
     }
 
+    const prevHeight = host.scrollHeight;
+    const prevTop = host.scrollTop;
+    const prevNearBottom = prevHeight - prevTop - host.clientHeight < 160;
+    const canLoadOlder = !S.search && S.hasMoreMessages && rows.length >= 40;
     let lastDay = "";
     let lastSender = "";
-    const prevTop = host.scrollTop;
-    const prevNearBottom = host.scrollHeight - prevTop - host.clientHeight < 160;
-    const html = rows
+    const loadOlderHtml = canLoadOlder
+      ? `<div class="live-load-older-wrap"><button type="button" class="button button-secondary button-small" data-live-action="load-older-messages" ${S.loadingOlder ? "disabled" : ""}>${esc(S.loadingOlder ? t("Loading…", "جارٍ التحميل…") : t("Load older messages", "تحميل رسائل أقدم"))}</button></div>`
+      : "";
+    const html = loadOlderHtml + rows
       .map((message) => {
         const day = formatDay(message.created_at);
         const dayHeader = day !== lastDay ? `<div class="live-day-separator"><span>${esc(day)}</span></div>` : "";
@@ -1066,7 +1415,13 @@
       })
       .join("");
     host.innerHTML = html;
-    host.scrollTop = prevNearBottom ? host.scrollHeight : prevTop;
+    if (opts.preserveTop) {
+      host.scrollTop = Math.max(0, host.scrollHeight - prevHeight + prevTop);
+    } else if (prevNearBottom) {
+      host.scrollTop = host.scrollHeight;
+    } else {
+      host.scrollTop = prevTop;
+    }
   }
 
   function scrollMessages(force) {
@@ -1194,13 +1549,23 @@
   async function deleteMessage(messageId) {
     const message = messageById(messageId);
     if (!message) return;
-    if (!window.confirm(t("Delete this message for everyone?", "حذف هذه الرسالة للجميع؟"))) return;
+    if (!window.confirm(t("Delete this message for everyone in this chat?", "حذف هذه الرسالة للجميع في هذه المحادثة؟"))) return;
     try {
       const { error } = await sb()
         .from("team_messages")
-        .update({ deleted_at: new Date().toISOString() })
+        .update({ deleted_at: new Date().toISOString(), body: null })
         .eq("id", messageId);
       if (error) throw error;
+      // Best-effort storage cleanup for attachments (requires storage delete policy/permission).
+      if (message.attachment_path) {
+        try {
+          await sb().storage.from("team-chat").remove([message.attachment_path]);
+          S.signed.delete(message.attachment_path);
+          S.signedAt.delete(message.attachment_path);
+        } catch (storageError) {
+          console.warn("Attachment storage cleanup failed (message soft-deleted).", storageError);
+        }
+      }
       message.deleted_at = new Date().toISOString();
       message.body = null;
       renderMessages();
@@ -1208,6 +1573,39 @@
     } catch (error) {
       notifyError(t("Could not delete the message.", "تعذّر حذف الرسالة."), error);
     }
+  }
+
+  async function copyMessage(messageId) {
+    const message = messageById(messageId);
+    if (!message || message.deleted_at) return;
+    const text = String(message.body || message.attachment_name || "").trim();
+    if (!text) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      toast(t("Copied.", "تم النسخ."));
+    } catch (error) {
+      console.warn("Copy failed.", error);
+      toast(t("Could not copy.", "تعذّر النسخ."));
+    }
+  }
+
+  async function loadOlderMessages() {
+    if (!S.activeId || S.loadingOlder || S.messagesLoading || !S.hasMoreMessages || S.search) return;
+    const oldest = S.messages[0];
+    if (!oldest || !oldest.created_at) return;
+    await loadMessages(S.activeId, { silent: true, before: oldest.created_at, appendOlder: true });
   }
 
   function openAttachment(url) {
@@ -1240,16 +1638,63 @@
 
   async function openDirect(userId) {
     if (!S.teamId || !userId) return;
+    const otherUserId = String(userId);
+    S.pendingDirectUserId = otherUserId;
+    console.info("[team-live] openDirect click", {
+      teamId: S.teamId,
+      otherUserId,
+      page: deps.getCurrentPage ? deps.getCurrentPage() : undefined,
+    });
     try {
-      const conversationId = await rpc("team_live_open_direct", {
+      const rpcResult = await rpc("team_live_open_direct", {
         p_team_id: S.teamId,
-        p_other_user_id: userId,
+        p_other_user_id: otherUserId,
       });
+      const conversationId = String(
+        (rpcResult && typeof rpcResult === "object" && (rpcResult.id || rpcResult.conversation_id)) ||
+          rpcResult ||
+          "",
+      );
+      console.info("[team-live] openDirect rpc result", {
+        teamId: S.teamId,
+        otherUserId,
+        rpcResult,
+        conversationId,
+      });
+      if (!conversationId) {
+        throw new Error(t("No conversation ID was returned.", "لم يتم إرجاع معرّف محادثة."));
+      }
+      // Ensure the chat surface is ready and visible before/while loading.
+      if (deps.getCurrentPage && deps.getCurrentPage() !== "team-live") {
+        deps.navigate("team-live");
+      }
       await loadConversations({ silent: true });
       await openConversation(conversationId);
       renderSidebar();
+      syncChatSurface();
+      // Defensive: force a rerender if the conversation panel stayed hidden.
+      const chatHost = document.querySelector("[data-live-chat]");
+      if (chatHost && !chatHost.querySelector(".live-chat-head") && S.activeId) {
+        S.chatRenderedFor = null;
+        syncChatSurface();
+      }
+      console.info("[team-live] openDirect completed", {
+        conversationId,
+        activeId: S.activeId,
+        found: Boolean(conversationById(conversationId)),
+      });
     } catch (error) {
+      console.error("[team-live] openDirect failed", {
+        teamId: S.teamId,
+        otherUserId,
+        error,
+      });
       notifyError(t("Could not open the direct chat.", "تعذّر فتح المحادثة المباشرة."), error);
+    } finally {
+      // Keep pending id only if active conversation is that direct chat.
+      if (!S.activeId || (activeConversation() && activeConversation().kind !== "direct")) {
+        S.pendingDirectUserId = null;
+      }
     }
   }
 
@@ -1440,11 +1885,29 @@
       case "pick-attachment":
         pickAttachment();
         return;
+      case "back-to-list":
+        closeChatView();
+        return;
+      case "open-reaction-picker": {
+        const id = String(target.dataset.messageId || "");
+        S.openReactionPickerMessageId = S.openReactionPickerMessageId === id ? null : id;
+        renderMessages();
+        return;
+      }
+      case "toggle-reaction":
+        void toggleReaction(target.dataset.messageId, target.dataset.emoji);
+        return;
       case "reply-message":
         replyToMessage(target.dataset.messageId);
         return;
+      case "copy-message":
+        void copyMessage(target.dataset.messageId);
+        return;
       case "delete-message":
         void deleteMessage(target.dataset.messageId);
+        return;
+      case "load-older-messages":
+        void loadOlderMessages();
         return;
       case "open-attachment":
         openAttachment(target.dataset.url);
@@ -1551,6 +2014,7 @@
     if (String(S.teamId) === String(teamId)) return;
     teardownTeamChannel();
     teardownReadChannel();
+    teardownReactionChannel();
     S.teamId = String(teamId);
     S.activeId = null;
     S.chatRenderedFor = null;
@@ -1580,6 +2044,7 @@
     ) {
       teardownTeamChannel();
       teardownReadChannel();
+      teardownReactionChannel();
       S.teamId = String(team.id);
       S.conversationsLoaded = false;
       S.activeId = null;
@@ -1724,6 +2189,19 @@
       void checkInvites();
     });
 
+    if (window.visualViewport) {
+      const keepComposerVisible = () => {
+        const active = document.activeElement;
+        if (active && active.matches && active.matches('[data-live-input="draft"]')) {
+          window.requestAnimationFrame(() => {
+            try { active.scrollIntoView({ block: "nearest", inline: "nearest" }); } catch {}
+          });
+        }
+      };
+      window.visualViewport.addEventListener("resize", keepComposerVisible);
+      window.visualViewport.addEventListener("scroll", keepComposerVisible);
+    }
+
     window.addEventListener("studyzone:incoming-call-action", (event) => {
       const detail = event?.detail || window.__studyZonePendingCallAction;
       if (!detail) return;
@@ -1743,6 +2221,7 @@
     S.destroyed = true;
     teardownTeamChannel();
     teardownReadChannel();
+    teardownReactionChannel();
     stopInviteWatcher();
     stopRing();
     if (S.call) void leaveCall({ silent: true });
@@ -1805,6 +2284,7 @@
     if (changed) {
       teardownTeamChannel();
       teardownReadChannel();
+      teardownReactionChannel();
       S.teamId = teamId;
       S.activeId = null;
       S.chatRenderedFor = null;
@@ -3131,14 +3611,26 @@
     </div>`;
   }
 
-  function tileMarkup(row) {
+  function tileMarkup(row, opts = {}) {
     const call = S.call;
     const id = String(row.user_id);
     const self = id === myId();
     const name = `${memberName(id)}${self ? ` ${t("(you)", "(أنت)")}` : ""}`;
     const cameraOff = !row.camera_on && call.call_type === "video";
-    const speaking = false;
-    return `<div class="live-tile ${self ? "self" : ""} ${cameraOff ? "camera-off" : ""} ${call.call_type === "audio" ? "audio-tile" : ""}" data-live-tile="${esc(id)}" data-speaking="${speaking}">
+    const isAudio = call.call_type === "audio";
+    const speaking = Boolean(call.speakingIds?.has(id));
+    const mirrorSelf = self && !isAudio && !call.screenSharing && call.facing !== "environment" && call.cameraOn;
+    const classes = [
+      "live-tile",
+      self ? "self-tile" : "remote-tile",
+      cameraOff ? "camera-off" : "",
+      isAudio ? "audio-tile" : "",
+      mirrorSelf ? "mirror-self" : "",
+      opts.main ? "main-tile" : "",
+      opts.pip ? "pip-tile" : "",
+      speaking ? "speaking" : "",
+    ].filter(Boolean).join(" ");
+    return `<div class="${classes}" data-live-tile="${esc(id)}" data-self="${self ? "1" : "0"}">
       <video autoplay playsinline ${self ? "muted" : ""}></video>
       <div class="live-tile-avatar">${memberAvatar(id, "team-avatar")}</div>
       <span class="live-tile-name" dir="auto">${esc(name)}</span>
@@ -3151,18 +3643,21 @@
     const call = S.call;
     const host = document.querySelector("[data-live-grid]");
     if (!call || !host) return;
-    const rows = acceptedParticipants();
-    host.className = `live-video-grid count-${Math.min(rows.length, 6)} ${call.call_type === "audio" ? "audio-only" : ""}`;
-    host.innerHTML = rows
+    const rows = acceptedParticipants()
       .slice()
-      .sort((a, b) => {
-        const selfA = String(a.user_id) === myId() ? -1 : 0;
-        const selfB = String(b.user_id) === myId() ? -1 : 0;
-        return selfA - selfB;
-      })
-      .map(tileMarkup)
-      .join("");
+      .sort((a, b) => (String(a.user_id) === myId() ? 1 : 0) - (String(b.user_id) === myId() ? 1 : 0));
+    const isAudio = call.call_type === "audio";
+    const focusLayout = !isAudio && rows.length === 2;
+    host.className = `live-video-grid count-${Math.min(rows.length, 6)} ${isAudio ? "audio-only" : ""} ${focusLayout ? "focus-layout" : ""}`;
+    if (focusLayout) {
+      const remote = rows.find((r) => String(r.user_id) !== myId()) || rows[0];
+      const self = rows.find((r) => String(r.user_id) === myId()) || rows[1];
+      host.innerHTML = [tileMarkup(remote, { main: true }), tileMarkup(self, { pip: true })].join("");
+    } else {
+      host.innerHTML = rows.map((row) => tileMarkup(row)).join("");
+    }
     attachTileStreams();
+    initPipDrag(host);
     updateCallHeader();
   }
 
@@ -3177,6 +3672,55 @@
     for (const [id, peer] of call.peers) {
       attachRemoteStream(id, peer.remoteStream);
     }
+  }
+
+  function initPipDrag(host) {
+    if (!host) return;
+    const pip = host.querySelector(".pip-tile");
+    if (!pip || pip.dataset.pipDragReady === "1") return;
+    pip.dataset.pipDragReady = "1";
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let originLeft = 0;
+    let originTop = 0;
+    const onDown = (event) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      const rect = pip.getBoundingClientRect();
+      const hostRect = host.getBoundingClientRect();
+      dragging = true;
+      pip.setPointerCapture?.(event.pointerId);
+      startX = event.clientX;
+      startY = event.clientY;
+      originLeft = rect.left - hostRect.left;
+      originTop = rect.top - hostRect.top;
+      pip.style.right = "auto";
+      pip.style.bottom = "auto";
+      pip.style.left = `${originLeft}px`;
+      pip.style.top = `${originTop}px`;
+      event.preventDefault();
+    };
+    const onMove = (event) => {
+      if (!dragging) return;
+      const hostRect = host.getBoundingClientRect();
+      const dx = event.clientX - startX;
+      const dy = event.clientY - startY;
+      const maxLeft = Math.max(8, hostRect.width - pip.offsetWidth - 8);
+      const maxTop = Math.max(8, hostRect.height - pip.offsetHeight - 8);
+      const left = Math.min(maxLeft, Math.max(8, originLeft + dx));
+      const top = Math.min(maxTop, Math.max(8, originTop + dy));
+      pip.style.left = `${left}px`;
+      pip.style.top = `${top}px`;
+    };
+    const onUp = (event) => {
+      if (!dragging) return;
+      dragging = false;
+      try { pip.releasePointerCapture?.(event.pointerId); } catch {}
+    };
+    pip.addEventListener("pointerdown", onDown);
+    pip.addEventListener("pointermove", onMove);
+    pip.addEventListener("pointerup", onUp);
+    pip.addEventListener("pointercancel", onUp);
   }
 
   function attachRemoteStream(userId, stream) {
@@ -3197,7 +3741,10 @@
       const id = String(row.user_id);
       const tile = document.querySelector(`[data-live-tile="${id}"]`);
       if (!tile) continue;
+      const self = id === myId();
+      const isAudio = call.call_type === "audio";
       tile.classList.toggle("camera-off", !row.camera_on && call.call_type === "video");
+      tile.classList.toggle("mirror-self", self && !isAudio && !call.screenSharing && call.facing !== "environment" && call.cameraOn);
       const mic = tile.querySelector("[data-live-tile-mic]");
       if (mic) mic.textContent = row.mic_on === false ? "🔇" : "";
     }
@@ -3928,6 +4475,23 @@
       if (teamId) deps.setSelectedTeamId(teamId);
       S.pendingTaskId = taskId;
       deps.navigate("team-live");
+    },
+    openDirect: (userId, teamId) => {
+      if (teamId) deps.setSelectedTeamId(teamId);
+      deps.navigate("team-live");
+      window.setTimeout(() => void openDirect(userId), 120);
+    },
+    openConversationById: (conversationId) => {
+      deps.navigate("team-live");
+      window.setTimeout(() => void openConversation(conversationId), 80);
+    },
+    closeChatView,
+    handleBack: () => {
+      if (S.chatFocus && S.activeId) {
+        closeChatView();
+        return true;
+      }
+      return false;
     },
     openCallSheet: (options) => openCallSheet(options || {}),
     startDirectCall,

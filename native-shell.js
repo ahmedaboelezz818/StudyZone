@@ -671,6 +671,9 @@
   function onBackButton({ canGoBack } = {}) {
     if (closeTopLayer()) return;
     const page = window.StudyZoneApp?.page || "dashboard";
+    if (page === "team-live" && window.StudyZoneTeamLive?.handleBack?.()) {
+      return;
+    }
     if (page !== "dashboard") {
       window.StudyZoneApp?.navigate?.("dashboard");
       return;

@@ -20485,7 +20485,8 @@
   });
   if (
     "serviceWorker" in navigator &&
-    window.location.protocol.startsWith("http")
+    window.location.protocol.startsWith("http") &&
+    !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())
   ) {
     navigator.serviceWorker
       .register("./service-worker.js")

@@ -86,6 +86,34 @@
   </head>
   <body>
     <div class="scroll-progress" id="scroll-progress" aria-hidden="true"></div>
+    <script>
+      (function () {
+        var shown = false;
+        function showStartupError(err, source) {
+          try {
+            var msg = (err && (err.message || (err.reason && err.reason.message) || String(err.reason || err))) || String(err || "Startup error");
+            console.error("[StudyZone startup]", source || "error", err || msg);
+            if (shown) return;
+            shown = true;
+            var host = document.getElementById("startup-error-banner");
+            if (!host) {
+              host = document.createElement("div");
+              host.id = "startup-error-banner";
+              host.setAttribute("role", "alert");
+              host.style.cssText = "position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:2147483647;background:#2b1010;color:#fff;border:1px solid #ff6b6b;border-radius:12px;padding:12px 14px;font:14px/1.4 system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.35);max-height:40vh;overflow:auto;";
+              (document.body || document.documentElement).appendChild(host);
+            }
+            host.textContent = "Study Zone startup issue: " + msg;
+          } catch (e) {}
+        }
+        window.addEventListener("error", function (e) {
+          showStartupError(e.error || e.message, e.filename ? (e.filename + ":" + e.lineno) : "error");
+        }, true);
+        window.addEventListener("unhandledrejection", function (e) {
+          showStartupError(e.reason || e, "unhandledrejection");
+        });
+      })();
+    </script>
     <div class="app-shell">
       <aside class="sidebar" id="sidebar">
         <a class="brand" href="#dashboard" aria-label="Study Zone dashboard">
