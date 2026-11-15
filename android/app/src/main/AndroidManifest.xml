@@ -216,9 +216,28 @@
             </intent-filter>
         </receiver>
 
-        <!-- Replace the Capacitor push plugin's FCM service so incoming team calls
-             can show a full-screen call notification even in background. Non-call
-             messages are forwarded to the plugin for normal handling. -->
+        <!-- End-call action + return-to-call action for the foreground service. -->
+        <receiver
+            android:name=".StudyZoneCallActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.studyzone.app.action.CALL_END" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Active call: keeps audio/WebRTC alive in the background and gives the
+             user a persistent notification with a return and an end action.
+             It is started only by the web layer when a call really begins. -->
+        <service
+            android:name=".StudyZoneCallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone|camera" />
+
+        <!-- Screen capture: foreground service required by Android for MediaProjection. -->
+        <service
+            android:name=".StudyZoneScreenCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
         <service
             android:name=".StudyZoneFirebaseMessagingService"
             android:exported="false">
@@ -236,8 +255,12 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- Voice notes: WebView getUserMedia() requires the manifest permission and
-         Capacitor's WebChromeClient requests it at runtime on first use. -->
+    <!-- Foreground service for the active call (microphone/camera while the
+         user is really in a call). Not used for anything else. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- Team Live video calls. Optional so devices without a camera can still

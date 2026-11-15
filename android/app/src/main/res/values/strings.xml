@@ -40,6 +40,16 @@
     <string name="clock_notification_stop">Turn off</string>
     <string name="incoming_video_call">Incoming video call</string>
     <string name="incoming_audio_call">Incoming audio call</string>
+    <string name="call_in_progress_video">Video call in progress</string>
+    <string name="call_in_progress_audio">Voice call in progress</string>
+    <string name="end_call">End call</string>
+    <string name="active_call_channel_name">Active call</string>
+    <string name="active_call_channel_description">Persistent notification while a team call is active</string>
+    <string name="screen_capture_channel_name">Screen share</string>
+    <string name="screen_capture_channel_description">Persistent notification while you are sharing your screen in a team call</string>
+    <string name="screen_capture_title">Sharing screen</string>
+    <string name="screen_capture_text">Your screen is visible to participants in this call</string>
+    <string name="screen_capture_stop">Stop sharing</string>
     <string name="incoming_call_hint">Accept to join the call. Decline to let them know you\'re unavailable.</string>
     <string name="accept_call">Accept</string>
     <string name="decline_call">Decline</string>

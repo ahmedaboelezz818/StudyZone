@@ -37,6 +37,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(StudyZoneWidgetPlugin.class);
         registerPlugin(StudyZonePermissionsPlugin.class);
         registerPlugin(StudyZoneClockPlugin.class);
+        registerPlugin(StudyZoneCallServicePlugin.class);
+        registerPlugin(StudyZoneScreenCapturePlugin.class);
         super.onCreate(savedInstanceState);
 
         handleOpenPage(getIntent());
@@ -100,14 +102,19 @@ public class MainActivity extends BridgeActivity {
         }
 
         String page = intent.hasExtra("page") ? intent.getStringExtra("page") : null;
-        if (page == null && intent.getData() != null) {
-            page = intent.getData().getQueryParameter("page");
-        }
+        boolean endCallRequest = "1".equals(intent.getStringExtra("studyzone_end_call"));
 
         dispatchPendingCallAction();
         if (page == null || page.isEmpty()) return;
         final String target = JSONObject.quote(page);
         final WebView webView = getBridge().getWebView();
+        if (endCallRequest) {
+            String endCallId = intent.getStringExtra(CallNotificationHelper.EXTRA_CALL_ID);
+            final String endCallScript =
+                    "setTimeout(function(){window.dispatchEvent(new CustomEvent('studyzone:end-call',{detail:{callId:" +
+                            JSONObject.quote(endCallId == null ? "" : endCallId) + "}}));},450);";
+            webView.post(() -> webView.evaluateJavascript(endCallScript, null));
+        }
         webView.post(() -> webView.evaluateJavascript(
                 "setTimeout(function(){window.dispatchEvent(new CustomEvent('studyzone:shortcut-open',{detail:{page:" +
                         target + "}}));},450);",

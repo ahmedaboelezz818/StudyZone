@@ -38,6 +38,13 @@
     "application/json",
   ];
 
+  const VIDEO_TYPES = [
+    "video/mp4",
+    "video/webm",
+    "video/quicktime",
+    "video/x-matroska",
+  ];
+
   const AUDIO_TYPES = [
     "audio/webm",
     "audio/ogg",
@@ -48,7 +55,7 @@
     "audio/x-m4a",
   ];
 
-  const ALLOWED_ATTACHMENT_TYPES = [...IMAGE_TYPES, ...FILE_TYPES, ...AUDIO_TYPES];
+  const ALLOWED_ATTACHMENT_TYPES = [...IMAGE_TYPES, ...VIDEO_TYPES, ...FILE_TYPES, ...AUDIO_TYPES];
 
   const DEFAULT_STUN = [
     "stun:stun.l.google.com:19302",
@@ -65,6 +72,10 @@
 
   function isImageType(value) {
     return IMAGE_TYPES.includes(normalizeMime(value));
+  }
+
+  function isVideoType(value) {
+    return VIDEO_TYPES.includes(normalizeMime(value));
   }
 
   function isAudioType(value) {
@@ -84,7 +95,7 @@
     if (!type || !ALLOWED_ATTACHMENT_TYPES.includes(type)) {
       return { ok: false, reason: "type" };
     }
-    return { ok: true, type, image: IMAGE_TYPES.includes(type), audio: AUDIO_TYPES.includes(type) };
+    return { ok: true, type, image: IMAGE_TYPES.includes(type), video: VIDEO_TYPES.includes(type), audio: AUDIO_TYPES.includes(type) };
   }
 
   function safeAttachmentName(value) {
@@ -218,12 +229,14 @@
     MAX_MESSAGE_LENGTH,
     MAX_CALL_PARTICIPANTS,
     IMAGE_TYPES,
+    VIDEO_TYPES,
     FILE_TYPES,
     AUDIO_TYPES,
     ALLOWED_ATTACHMENT_TYPES,
     DEFAULT_STUN,
     normalizeMime,
     isImageType,
+    isVideoType,
     isAudioType,
     validateAttachment,
     safeAttachmentName,

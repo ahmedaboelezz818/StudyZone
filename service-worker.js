@@ -1,4 +1,4 @@
-const CACHE_NAME = "studyzone-shell-v27";
+const CACHE_NAME = "studyzone-shell-v28";
 
 const APP_SHELL = [
   "./",
@@ -150,6 +150,11 @@ self.addEventListener("push", (event) => {
       ? payload.title.slice(0, 140)
       : "Study Zone";
 
+  const data = {
+    url: typeof payload.url === "string" ? payload.url : (typeof payload.conversation_id === "string" ? `./#team-live?conversation=${payload.conversation_id}` : "./#tasks"),
+    ...(payload.conversation_id ? { conversation_id: payload.conversation_id } : {}),
+    ...(payload.type ? { type: payload.type } : {}),
+  };
   const options = {
     body: typeof payload.body === "string" ? payload.body.slice(0, 500) : "",
     icon: new URL("./icons/icon-192.png", self.registration.scope).href,
@@ -159,9 +164,7 @@ self.addEventListener("push", (event) => {
         ? payload.tag.slice(0, 120)
         : "study-zone-reminder",
     renotify: true,
-    data: {
-      url: typeof payload.url === "string" ? payload.url : "./#tasks",
-    },
+    data,
   };
 
   event.waitUntil(self.registration.showNotification(title, options));

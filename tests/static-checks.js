@@ -76,7 +76,7 @@ check("Notification preferences form exists", app.includes('id="notification-pre
 check("Team creation exists", /\.from\(\s*["']teams["']\s*\)\s*\.insert\(/.test(app));
 check("Team join RPC exists", app.includes('rpc("join_team"'));
 check("No service-role key assignment in browser files", !/service_role\s*[:=]/i.test(app + html + read("supabase-config.js")) && !/serviceRole/i.test(app + html + read("supabase-config.js")));
-check("Service worker cache was bumped", sw.includes("studyzone-shell-v27"));
+check("Service worker cache was bumped", sw.includes("studyzone-shell-v28"));
 
 check("Web app manifest keeps standalone display", /"display"\s*:\s*"standalone"/.test(manifest));
 check("Web app manifest has a start url and scope", /"start_url"\s*:/.test(manifest) && /"scope"\s*:/.test(manifest));
@@ -367,7 +367,16 @@ check(
   teamLive.includes("new RTCPeerConnection(") &&
     teamLive.includes("getUserMedia") &&
     teamLive.includes("team_call_signals") &&
-    !teamLive.includes("MediaRecorder"),
+    // Voice notes use MediaRecorder legitimately; call signaling must not
+    // carry audio through Supabase or record calls.
+    !/(startCall|setupCall|subscribeCallSignals)\s*\([^)]*\)[\s\S]*?MediaRecorder/.test(teamLive),
+);
+check(
+  "Voice recorder exists and uses MediaRecorder with real level analysis",
+  teamLive.includes("new MediaRecorder") &&
+    teamLive.includes("preferredVoiceMime") &&
+    teamLive.includes("sampleVoiceLevel") &&
+    teamLive.includes("startVoiceMeter"),
 );
 check(
   "Calls provide mute, camera, camera switch, screen share and quality",

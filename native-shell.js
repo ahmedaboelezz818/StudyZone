@@ -557,6 +557,27 @@
   };
 
   // ---- Push (FCM) ---------------------------------------------------------
+  async function removeDevicePushToken(token) {
+    const value = token || localStorage.getItem(PUSH_TOKEN_KEY) || "";
+    if (!value) return;
+    const userId = readUserId();
+    const accessToken = readAccessToken();
+    if (!userId || !accessToken || !config.url || !config.anonKey) return;
+    try {
+      await fetch(`${config.url}/rest/v1/device_push_tokens?token=eq.${encodeURIComponent(value)}&user_id=eq.${encodeURIComponent(userId)}`, {
+        method: "DELETE",
+        headers: {
+          apikey: config.anonKey,
+          authorization: `Bearer ${accessToken}`,
+        },
+      });
+    } catch (error) {
+      console.warn("[StudyZonePush] could not delete push token", error);
+    } finally {
+      try { localStorage.removeItem(PUSH_TOKEN_KEY); } catch {}
+    }
+  }
+
   const push = {
     async register() {
       if (!PushNotifications) return null;
@@ -621,6 +642,13 @@
           window.dispatchEvent(new CustomEvent("studyzone:incoming-call-action", { detail: { action: "refresh", callId: data.call_id || data.callId || "" } }));
           return;
         }
+        if (type === "new_message" && data.conversation_id) {
+          const conversationId = String(data.conversation_id);
+          window.__studyZonePendingMessageAction = { conversationId };
+          try { window.StudyZoneApp?.navigate?.("team-live"); } catch {}
+          window.dispatchEvent(new CustomEvent("studyzone:message-action", { detail: { conversationId } }));
+          return;
+        }
         const page = data.page;
         if (page) window.StudyZoneApp?.navigate?.(page);
       });
@@ -640,6 +668,14 @@
             window.dispatchEvent(new CustomEvent("studyzone:incoming-call-action", { detail }));
             return;
           }
+          if (type === "new_message" && data.conversation_id) {
+            const conversationId = String(data.conversation_id);
+            window.StudyZoneApp?.navigate?.("team-live");
+            const detail = { conversationId };
+            window.__studyZonePendingMessageAction = detail;
+            window.dispatchEvent(new CustomEvent("studyzone:message-action", { detail }));
+            return;
+          }
           const page = data.page;
           if (page) window.StudyZoneApp?.navigate?.(page);
         },
@@ -652,6 +688,10 @@
   void push.init();
 
   // ---- Lifecycle ----------------------------------------------------------
+  window.StudyZonePush = {
+    register: () => push.register(),
+    unregister: () => removeDevicePushToken(localStorage.getItem(PUSH_TOKEN_KEY)),
+  };
   let lastBackAt = 0;
   function closeTopLayer() {
     const modal = document.querySelector(".modal-backdrop:not([hidden])");

@@ -43,6 +43,10 @@
     "team_tasks",
     "team_task_assignees",
     "team_task_subtasks",
+    // Team chat: messages and conversations are member-scoped by RLS, and a
+    // queued insert replays through the same RLS on the server.
+    "team_messages",
+    "team_conversations",
   ]);
   const OFFLINE_TABLES = new Set([
     "tasks",

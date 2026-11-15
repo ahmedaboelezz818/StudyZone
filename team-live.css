@@ -1813,13 +1813,118 @@ html.team-live-chat-focus body {
 .live-message.mine .live-sz-audio-player { background: rgba(var(--accent-rgb), 0.14); border-color: rgba(var(--accent-rgb), 0.28); }
 @media (max-width: 720px) { .live-voice-controls .button { flex: 1 1 auto; } .live-voice-bubble { min-width: 0; } .live-sz-audio-player .sz-audio-top { grid-template-columns: auto 1fr; } .live-sz-audio-player .sz-audio-time { grid-column: 1 / -1; justify-self: end; } }
 
-.live-voice-recorder[data-state="recording"] { border-color: rgba(239, 68, 68, 0.45); box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.12), 0 10px 24px rgba(239, 68, 68, 0.08); }
-.live-voice-recorder[data-state="paused"] { border-color: rgba(var(--accent-rgb), 0.28); }
-.live-voice-recorder[data-state="ready"] { border-color: rgba(34, 197, 94, 0.35); }
-.live-voice-recorder[data-state="recording"] .live-voice-meta strong { color: #ef4444; }
-.live-voice-recorder[data-state="recording"] .voice-record-core { background: #ef4444; color: #ef4444; box-shadow: 0 0 0 8px rgba(239,68,68,.16); }
-.live-voice-recorder[data-state="recording"] .voice-record-pulse, .live-voice-recorder[data-state="recording"] .voice-record-wave { border-color: rgba(239,68,68,.35); }
-.live-voice-recorder[data-state="paused"] .voice-record-core { background: var(--accent); }
-.live-voice-recorder[data-state="ready"] .voice-record-core { background: #22c55e; box-shadow: 0 0 0 8px rgba(34,197,94,.14); }
+.live-voice-recorder[data-state="recording"] { border-color: rgba(var(--danger-rgb), 0.45); box-shadow: 0 0 0 1px rgba(var(--danger-rgb), 0.12), 0 10px 24px rgba(var(--danger-rgb), 0.08); }
+.live-voice-recorder[data-state="recording"] .live-voice-meta strong { color: var(--danger); }
+.live-voice-recorder[data-state="recording"] .voice-record-core { background: var(--danger); box-shadow: 0 0 0 8px rgba(var(--danger-rgb), .16); }
+.live-voice-recorder[data-state="recording"] .voice-record-pulse { border-color: rgba(var(--danger-rgb), .35); }
+.live-voice-recorder[data-state="paused"] .voice-record-core { background: var(--accent); box-shadow: 0 0 0 8px rgba(var(--accent-rgb), .14); }
+.live-voice-recorder[data-state="ready"] .voice-record-core { background: var(--accent); box-shadow: 0 0 0 8px rgba(var(--accent-rgb), .14); }
 .live-voice-hint { margin: 0; font-size: 12px; color: var(--muted); }
 .live-voice-preview-shell audio[data-live-voice-preview][controls] { width: 100%; height: 40px; border-radius: 10px; }
+
+/* ---- Chat & voice recorder fixes (composite patch) ----------------------- */
+/* Header and composer must stay visible; only the messages scroll. */
+.live-chat { position: relative; }
+.live-chat-head,
+.live-chat-toolbar,
+.live-typing,
+[data-live-composer] { flex: 0 0 auto; }
+.live-chat-head { position: sticky; top: 0; z-index: 4; background: var(--surface-raised, var(--surface)); }
+.live-typing { padding: 2px 14px; font-size: 11px; color: var(--muted); background: var(--surface); border-bottom: 1px solid var(--border-soft, var(--border)); }
+.live-typing[hidden] { display: none !important; }
+[data-live-composer] { position: sticky; bottom: 0; z-index: 4; background: var(--surface); border-top: 1px solid var(--border); padding-bottom: max(6px, env(safe-area-inset-bottom, 0px)); }
+.live-messages { scrollbar-gutter: stable; }
+.live-chat-close { color: var(--muted); }
+.live-chat-close:hover { color: var(--danger); border-color: rgba(var(--danger-rgb), .32); }
+.live-message.state-failed .live-message-text { border-color: rgba(var(--danger-rgb), .4); background: rgba(var(--danger-rgb), .08); }
+.live-read-state.state-failed { color: var(--danger); opacity: 1; }
+.live-read-state.state-pending { color: var(--muted); opacity: .7; }
+.live-retry { color: var(--danger); }
+
+.live-attachment-chip { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-md, 12px); background: var(--surface-soft); margin: 0 0 8px; }
+.live-attachment-chip-copy { display: grid; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.live-attachment-chip-copy strong, .live-attachment-chip-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-attachment-chip-copy small { color: var(--muted); font-size: 11px; }
+.live-attachment-chip-thumb { width: 54px; height: 54px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); flex: 0 0 auto; }
+.live-upload-progress { position: relative; width: 64px; height: 4px; border-radius: 999px; overflow: hidden; background: rgba(var(--accent-rgb), .18); }
+.live-upload-progress > span { display: block; height: 100%; width: 40%; background: var(--accent); animation: live-upload-indeterminate 1.1s ease-in-out infinite; }
+@keyframes live-upload-indeterminate { 0% { transform: translateX(-110%); } 100% { transform: translateX(260%); } }
+
+/* Voice recorder: real level-driven waveform, no decorative fake bars. */
+.live-voice-record-btn { flex: 0 0 auto; width: 48px; height: 48px; border-radius: 50%; border: 2px solid rgba(var(--danger-rgb), .55); background: rgba(var(--danger-rgb), .18); color: var(--danger); font-size: 18px; display: grid; place-items: center; cursor: pointer; }
+.live-voice-record-btn[hidden] { display: none !important; }
+.live-voice-wave { display: grid; grid-auto-flow: column; grid-auto-columns: 3px; gap: 3px; align-items: center; height: 22px; margin-top: 6px; max-width: 260px; }
+.voice-wave-bar { display: block; width: 3px; height: calc(4px + (var(--level, 0.18) * 14px)); min-height: 4px; border-radius: 99px; background: rgba(var(--danger-rgb), .45); transition: height 120ms linear, background 120ms linear; }
+.voice-wave-bar.active { background: var(--danger); }
+.live-voice-recorder[data-state="ready"] .voice-wave-bar { background: rgba(var(--accent-rgb), .3); }
+
+/* Call: video fills the surface; controls stay on top; local PiP is movable. */
+.live-call-overlay { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; background: #050b0a; color: #f5fffb; }
+.live-call-body { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.live-video-grid { position: absolute; inset: 0; display: grid; gap: 4px; padding: 4px; align-content: stretch; justify-content: stretch; overflow: hidden; }
+.live-video-grid.count-1 { grid-template-columns: 1fr; }
+.live-video-grid.count-2 { grid-template-columns: 1fr 1fr; }
+.live-video-grid.count-2 .live-tile.remote-tile { grid-column: 1 / -1; grid-row: 1 / -1; z-index: 0; }
+.live-video-grid.count-2 .live-tile.self-tile { grid-column: auto; grid-row: auto; position: absolute; z-index: 5; width: clamp(96px, 28vw, 180px); aspect-ratio: 3 / 4; right: max(12px, env(safe-area-inset-right)); bottom: calc(84px + env(safe-area-inset-bottom)); left: auto !important; top: auto !important; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.45); border: 2px solid rgba(255,255,255,.18); }
+.live-video-grid.count-3, .live-video-grid.count-4 { grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; }
+.live-video-grid.count-5, .live-video-grid.count-6 { grid-template-columns: repeat(3, 1fr); grid-auto-rows: 1fr; }
+.live-video-grid.audio-only { place-items: center; align-content: center; }
+.live-tile { position: relative; min-width: 0; min-height: 0; border-radius: 14px; overflow: hidden; background: #101b18; }
+.live-tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.live-tile.self-tile video { object-fit: cover; }
+.live-tile-avatar { position: absolute; inset: 0; display: grid; place-items: center; background: radial-gradient(circle at 50% 40%, #152823, #050b0a); }
+.live-tile:not(.camera-off) .live-tile-avatar { display: none; }
+.live-tile-name { position: absolute; inset-inline-start: 10px; bottom: 10px; z-index: 1; padding: 4px 10px; border-radius: 999px; background: rgba(0,0,0,.55); font-size: 12px; color: #eafff6; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-tile-mic { position: absolute; top: 10px; inset-inline-end: 10px; z-index: 1; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: rgba(0,0,0,.5); }
+.live-call-controls { flex: 0 0 auto; z-index: 6; display: flex; gap: 10px; justify-content: center; align-items: center; padding: 10px max(12px, env(safe-area-inset-left)) calc(10px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-right)); background: linear-gradient(180deg, rgba(5,11,10,0), rgba(5,11,10,.9)); }
+.live-control { min-width: 54px; border-radius: 16px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06); color: #eafff6; padding: 8px 6px 6px; display: grid; justify-items: center; gap: 4px; cursor: pointer; }
+.live-control span { font-size: 20px; line-height: 1; }
+.live-control small { font-size: 10px; }
+.live-control.active { border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.14); }
+.live-control.danger { background: #c23b3b; border-color: #ff8a8a; color: #fff; }
+.live-call-head { flex: 0 0 auto; z-index: 6; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 14px; background: linear-gradient(0deg, rgba(5,11,10,0), rgba(5,11,10,.85)); }
+.live-call-overlay.minimized { inset: auto 10px 10px auto; width: min(320px, calc(100vw - 20px)); height: 210px; border-radius: 18px; overflow: hidden; }
+.live-call-overlay.minimized .live-call-body, .live-call-overlay.minimized .live-call-controls, .live-call-overlay.minimized .live-call-chat, .live-call-overlay.minimized .live-turn-warning { display: none; }
+
+/* Small screens / weak devices: drop heavy blur and tighten sizes. */
+@media (max-width: 720px) {
+  .live-messages { padding-inline: 10px; }
+  .live-message-body { max-width: 88%; }
+  .live-control small { display: none; }
+  .live-control { min-width: 46px; padding: 6px; }
+  .live-call-head strong { font-size: 14px; }
+  .live-tile { border-radius: 10px; }
+  .live-video-grid.count-2 .live-tile.self-tile { width: clamp(84px, 30vw, 140px); bottom: calc(72px + env(safe-area-inset-bottom)); }
+  .live-visual, .live-back-icon, .live-call-pulse { animation: none !important; }
+}
+@media (prefers-reduced-motion: reduce) { .live-upload-progress > span { animation: none; } }
+
+/* RTL keeps the same mirrored behaviour. */
+:root[dir="rtl"] .live-call-head,
+:root[dir="rtl"] .live-call-controls { direction: rtl; }
+
+
+/* ---- Media lightbox ---------------------------------------------------- */
+#team-live-lightbox { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+#team-live-lightbox[hidden] { display: none !important; }
+.live-lightbox-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.78); backdrop-filter: blur(4px); }
+.live-lightbox-panel { position: relative; z-index: 1; max-width: min(1100px, 100%); max-height: calc(100dvh - 24px); margin: 0; display: grid; grid-template-rows: auto 1fr auto; gap: 10px; border: 1px solid rgba(255,255,255,.1); border-radius: 16px; overflow: hidden; background: #050b0a; box-shadow: 0 30px 80px rgba(0,0,0,.6); }
+.live-lightbox-body { display: grid; place-items: center; min-height: 0; overflow: hidden; }
+.live-lightbox-body img, .live-lightbox-body video { max-width: 100%; max-height: calc(100dvh - 120px); width: auto; height: auto; object-fit: contain; display: block; }
+.live-lightbox-close { position: absolute; top: 10px; inset-inline-end: 10px; z-index: 2; }
+.live-lightbox-caption { margin: 0; padding: 10px 14px; color: #cfe9de; font-size: 12px; border-top: 1px solid rgba(255,255,255,.08); }
+body.live-lightbox-open { overflow: hidden; }
+
+/* Video attachment inside a message bubble. */
+.live-attachment-video video { display: block; width: min(420px, 100%); max-height: 320px; border-radius: 12px; background: #000; border: 1px solid var(--border); }
+
+/* RTL lightbox mirrors the controls. */
+:root[dir="rtl"] .live-lightbox-close { inset-inline-end: auto; inset-inline-start: 10px; }
+
+
+.live-screen-banner{position:fixed;top:max(10px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:70;display:inline-flex;align-items:center;gap:10px;padding:7px 12px;border-radius:999px;background:rgba(5,11,10,.86);color:#eafff6;border:1px solid rgba(255,255,255,.14);font-size:12px;backdrop-filter:blur(10px)}
+.live-screen-banner span{font-size:15px}
+.live-screen-banner .button{padding:2px 8px}
+.live-control.busy{opacity:.75;cursor:progress}
+.live-control:disabled,.live-control[aria-disabled="true"]{cursor:wait}
+

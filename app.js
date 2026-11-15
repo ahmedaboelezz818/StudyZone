@@ -19621,6 +19621,11 @@
         );
         showToast(`Push subscription cleanup failed: ${error.message}`);
       }
+      try {
+        await window.StudyZonePush?.unregister?.();
+      } catch (error) {
+        console.warn("Could not remove the native push token while signing out.", error);
+      }
       const offlineStore = window.StudyZoneOffline;
       const offlineUserId = session?.user?.id;
       if (offlineStore && offlineUserId) {

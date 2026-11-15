@@ -36,6 +36,12 @@
     loadingOlder: false,
     reads: [],
     reactions: new Map(),
+    typing: new Map(),
+    typingChannel: null,
+    typingChannelId: null,
+    delivered: new Set(),
+    pendingMessages: new Map(),
+    failedMessages: new Map(),
     reactionChannel: null,
     reactionChannelId: null,
     openReactionPickerMessageId: null,
@@ -47,6 +53,7 @@
     draft: "",
     replyTo: null,
     pendingFile: null,
+    pendingPreviewUrl: "",
     uploading: false,
     voice: {
       state: "idle", // idle|recording|paused|ready
@@ -71,6 +78,8 @@
     teamChannelId: null,
     readChannel: null,
     readChannelId: null,
+    screenCaptureListenerAttached: false,
+    screenCaptureCanvas: null,
     pollTimer: 0,
     reloadTimer: 0,
 
@@ -159,6 +168,75 @@
     const message = error && error.message ? error.message : String(error || "");
     console.error(prefix, error);
     toast(`${prefix}${message ? ` ${message}` : ""}`.trim());
+  }
+
+  function errorMessageText(error) {
+    if (!error) return "";
+    return String(error.message || error.details || error.hint || error).slice(0, 300);
+  }
+
+  let typingTimer = 0;
+  function scheduleTypingSignal() {
+    if (typingTimer) window.clearTimeout(typingTimer);
+    typingTimer = window.setTimeout(() => {
+      typingTimer = 0;
+      void sendTypingSignal();
+    }, 700);
+  }
+
+  function sendTypingSignal() {
+    const client = sb();
+    const user = me();
+    const conversationId = S.activeId;
+    if (!client || !user || !conversationId) return;
+    try {
+      const channel = client.channel(`team-live-typing-${conversationId}`);
+      if (channel && typeof channel.send === "function") {
+        void channel.send({
+          type: "broadcast",
+          event: "typing",
+          payload: { user_id: user.id, conversation_id: conversationId, at: Date.now() },
+        });
+      }
+    } catch (error) {
+      /* Typing is a nice-to-have; never break the composer. */
+    }
+  }
+
+  function subscribeTyping(conversationId) {
+    const client = sb();
+    if (!client || !conversationId) return;
+    if (S.typingChannel && String(S.typingChannelId) === String(conversationId)) return;
+    teardownTypingChannel();
+    S.typingChannelId = String(conversationId);
+    try {
+      S.typingChannel = client
+        .channel(`team-live-typing-${conversationId}`)
+        .on(
+          "broadcast",
+          { event: "typing" },
+          (payload) => {
+            const row = payload?.payload;
+            if (!row || String(row.user_id) === myId()) return;
+            if (String(row.conversation_id || S.activeId) !== String(S.activeId)) return;
+            S.typing = S.typing || new Map();
+            S.typing.set(String(row.user_id), { userId: String(row.user_id), at: Number(row.at) || Date.now() });
+            renderTypingIndicator();
+          },
+        )
+        .subscribe();
+    } catch (error) {
+      /* ignore */
+    }
+  }
+
+  function teardownTypingChannel() {
+    const client = sb();
+    if (S.typingChannel && client) {
+      try { client.removeChannel(S.typingChannel); } catch {}
+    }
+    S.typingChannel = null;
+    S.typingChannelId = null;
   }
 
   function isMissingRpc(error) {
@@ -420,7 +498,7 @@
     S.chatRenderedFor = null;
     S.search = "";
     S.replyTo = null;
-    S.pendingFile = null;
+    clearPendingAttachment();
     S.messages = [];
     S.messagesError = "";
     S.hasMoreMessages = true;
@@ -434,6 +512,7 @@
     await markConversationRead(S.activeId);
     subscribeReadState(S.activeId);
     subscribeReactions(S.activeId);
+    subscribeTyping(S.activeId);
     const searchInput = document.querySelector('[data-live-input="message-search"]');
     if (searchInput) searchInput.value = "";
   }
@@ -883,9 +962,17 @@
     if (row.conversation_id && String(row.conversation_id) === String(S.activeId)) {
       if (payload.eventType === "UPDATE") {
         const index = S.messages.findIndex((message) => String(message.id) === String(row.id));
-        if (index >= 0) S.messages[index] = { ...S.messages[index], ...row };
+        if (index >= 0) {
+          S.messages[index] = { ...S.messages[index], ...row };
+          renderMessages();
+        } else {
+          appendMessageOnce(row);
+        }
       } else {
-        upsertMessage(row);
+        if (appendMessageOnce(row)) {
+          renderMessages();
+          scrollMessages(false);
+        }
         if (row.attachment_path) {
           void signAttachments().then(() => renderMessages());
         }
@@ -955,6 +1042,58 @@
     renderMessages();
   }
 
+  // De-duplicated append: Realtime, the 12 s poll and optimistic sends can all
+  // deliver the same row. Idempotency is by the database message id.
+  function appendMessageOnce(row) {
+    if (!row || !row.id) return false;
+    if (S.messages.some((message) => String(message.id) === String(row.id))) return false;
+    S.messages.push(row);
+    S.messages.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    return true;
+  }
+
+  function mergeTypingState(rows) {
+    if (!Array.isArray(rows)) return;
+    const next = new Map();
+    for (const row of rows) {
+      const id = String(row?.user_id || row?.sender_id || "");
+      if (!id || id === myId()) continue;
+      const at = new Date(row.typed_at || row.created_at || Date.now()).getTime();
+      if (!Number.isFinite(at)) continue;
+      next.set(id, { userId: id, at });
+    }
+    S.typing = next;
+    renderTypingIndicator();
+  }
+
+  function renderTypingIndicator() {
+    const host = document.querySelector("[data-live-typing]");
+    if (!host) return;
+    const now = Date.now();
+    const active = [...(S.typing?.values() || [])].filter(
+      (item) => now - Number(item.at) < 8000,
+    );
+    if (!active.length) {
+      host.textContent = "";
+      host.hidden = true;
+      return;
+    }
+    const names = active
+      .slice(0, 2)
+      .map((item) => memberName(item.userId))
+      .filter(Boolean);
+    if (!names.length) {
+      host.textContent = "";
+      host.hidden = true;
+      return;
+    }
+    host.textContent =
+      names.length === 1
+        ? t(`${names[0]} is typing…`, `${names[0]} يكتب الآن…`)
+        : t("Several people are typing…", "عدة أشخاص يكتبون الآن…");
+    host.hidden = false;
+  }
+
   // -------------------------------------------------------------------------
   // Page markup
   // -------------------------------------------------------------------------
@@ -998,6 +1137,7 @@
     S.openReactionPickerMessageId = null;
     teardownReadChannel();
     teardownReactionChannel();
+    teardownTypingChannel();
     renderSidebar();
     syncChatSurface();
     applyChatFocusState();
@@ -1226,6 +1366,7 @@
         <button type="button" class="live-icon-button" data-live-action="call-here" data-call-type="audio" title="${esc(t("Audio call", "مكالمة صوتية"))}" aria-label="${esc(t("Audio call", "مكالمة صوتية"))}">☎</button>
         <button type="button" class="live-icon-button" data-live-action="call-here" data-call-type="video" title="${esc(t("Video call", "مكالمة مرئية"))}" aria-label="${esc(t("Video call", "مكالمة مرئية"))}">▣</button>
         ${isGroup ? `<button type="button" class="live-icon-button" data-live-action="open-call-sheet-here" title="${esc(t("Call options", "خيارات المكالمة"))}" aria-label="${esc(t("Call options", "خيارات المكالمة"))}">⋯</button>` : ""}
+        <button type="button" class="live-icon-button live-chat-close" data-live-action="back-to-list" title="${esc(t("Close chat", "إغلاق المحادثة"))}" aria-label="${esc(t("Close chat", "إغلاق المحادثة"))}">✕</button>
       </div>
     </header>
     <div class="live-chat-toolbar">
@@ -1236,6 +1377,7 @@
       ${S.search ? `<button type="button" class="button button-quiet button-small" data-live-action="clear-message-search">${esc(t("Clear", "مسح"))}</button>` : ""}
       <button type="button" class="live-icon-button live-icon-button-small" data-live-action="reload-messages" title="${esc(t("Reload messages", "إعادة تحميل الرسائل"))}" aria-label="${esc(t("Reload messages", "إعادة تحميل الرسائل"))}">↻</button>
     </div>
+    <div class="live-typing" data-live-typing hidden aria-live="polite"></div>
     <div class="live-messages" data-live-messages role="log" aria-live="polite"></div>
     <div data-live-composer>${composerMarkup()}</div>`;
   }
@@ -1251,16 +1393,20 @@
               <button type="button" class="live-icon-button live-icon-button-small" data-live-action="cancel-reply" aria-label="${esc(t("Cancel reply", "إلغاء الرد"))}">✕</button>
             </div>` : ""}
       ${S.pendingFile ? `<div class="live-attachment-chip">
-              <span>${esc(S.pendingFile.name)} • ${esc(core ? core.formatBytes(S.pendingFile.size) : "")}</span>
-              <small>${esc(S.pendingFile.type && S.pendingFile.type.startsWith("image/") ? t("Photo", "صورة") : t("File", "ملف"))}</small>
+              ${S.pendingPreviewUrl && S.pendingFile.type.startsWith("image/") ? `<img class="live-attachment-chip-thumb" src="${esc(S.pendingPreviewUrl)}" alt="" />` : S.pendingFile.type.startsWith("video/") ? `<video class="live-attachment-chip-thumb" src="${esc(S.pendingPreviewUrl)}" muted playsinline preload="metadata"></video>` : ""}
+              <span class="live-attachment-chip-copy"><strong dir="auto">${esc(S.pendingFile.name)}</strong><small>${esc(core ? core.formatBytes(S.pendingFile.size) : "")} ${esc(S.pendingFile.type ? `• ${S.pendingFile.type}` : "")}</small></span>
+              <small>${esc(S.pendingFile.type && S.pendingFile.type.startsWith("image/") ? t("Photo", "صورة") : S.pendingFile.type && S.pendingFile.type.startsWith("video/") ? t("Video", "فيديو") : t("File", "ملف"))}</small>
+              ${S.uploading ? `<span class="live-upload-progress" aria-hidden="true"><span></span></span>` : ""}
               <button type="button" class="live-icon-button live-icon-button-small" data-live-action="clear-attachment" aria-label="${esc(t("Remove attachment", "إزالة المرفق"))}">✕</button>
             </div>` : ""}
       ${showVoice ? `<div class="live-voice-recorder" data-live-voice-wrap data-state="${esc(state)}" role="status" aria-live="polite">
         <div class="live-voice-recorder-top">
-          <div class="live-voice-visual voice-record-visual" data-state="${esc(state)}" aria-hidden="true"><span class="voice-record-pulse"></span><span class="voice-record-core"></span><span class="voice-record-wave"></span></div>
+          <button type="button" class="live-voice-record-btn" data-live-action="voice-stop" aria-label="${esc(t("Stop recording", "إيقاف التسجيل"))}" title="${esc(t("Stop recording", "إيقاف التسجيل"))}" ${state === "recording" || state === "paused" ? "" : "hidden"}>■</button>
+          <div class="live-voice-visual voice-record-visual" data-state="${esc(state)}" aria-hidden="true"><span class="voice-record-pulse"></span><span class="voice-record-core"></span></div>
           <div class="live-voice-meta">
             <strong data-live-voice-timer>${esc(formatVoiceClock(state === "ready" ? (v.durationMs || 0) : voiceElapsedMs()))}</strong>
             <small data-live-voice-status>${esc(state === "recording" ? t("Recording...", "جاري التسجيل...") : state === "paused" ? t("Paused", "متوقف مؤقتًا") : state === "ready" ? t("Preview before sending", "معاينة قبل الإرسال") : (v.error || ""))}</small>
+            <div class="live-voice-wave" data-live-voice-wave aria-hidden="true">${Array.from({ length: 24 }, () => '<span class="voice-wave-bar" style="--level:0.18"></span>').join("")}</div>
           </div>
         </div>
         <div class="live-voice-preview-shell" data-live-voice-preview-shell ${state === "ready" && v.url ? "" : "hidden"}>
@@ -1335,12 +1481,18 @@
 
   function readStateFor(message) {
     if (!message || String(message.sender_id) !== myId()) return { text: "", state: "", label: "" };
+    if (S.failedMessages.has(String(message.id))) {
+      return { text: "!", state: "failed", label: t("Failed to send. Tap to retry.", "فشل الإرسال. اضغط لإعادة المحاولة.") };
+    }
+    if (S.pendingMessages.has(String(message.id))) {
+      return { text: "◌", state: "pending", label: t("Sending…", "جارٍ الإرسال…") };
+    }
     const others = S.reads.filter((row) => String(row.user_id) !== myId());
     if (!others.length) return { text: "✓", state: "sent", label: t("Sent", "أُرسلت") };
     const readBy = others.filter(
       (row) => new Date(row.last_read_at).getTime() >= new Date(message.created_at).getTime(),
     ).length;
-    if (!readBy) return { text: "✓✓", state: "delivered", label: t("Delivered to chat", "تم التسليم") };
+    if (!readBy) return { text: "✓✓", state: "delivered", label: t("Delivered", "تم التسليم") };
     const conversation = activeConversation();
     if (conversation?.kind === "direct") return { text: "✓✓", state: "read", label: t("Read", "قُرئت") };
     return { text: "✓✓", state: "read", label: t(`Read by ${readBy}`, `قرأها ${readBy}`) };
@@ -1429,34 +1581,47 @@
     const reply = message.reply_to_id ? messageById(message.reply_to_id) : null;
     const signed = message.attachment_path ? S.signed.get(message.attachment_path) : '';
     const isAudio = type === 'audio';
+    const isVideoAttachment = !isAudio && message.attachment_path && core && core.isVideoType
+      ? core.isVideoType(message.attachment_type || message.attachment_name || '')
+      : false;
     const image = type === 'image' && signed;
+    const video = isVideoAttachment ? signed : '';
     let content = '';
     if (deleted) {
       content = '<p class="live-deleted">' + esc(t('This message was deleted', 'تم حذف هذه الرسالة')) + '</p>';
     } else if (isAudio) {
       content = audioPlayerMarkup(message, signed);
+    } else if (video) {
+      content = '<p class="live-message-text" dir="auto">' + (message.body ? esc(message.body) : '') + '</p>' +
+        '<div class="live-attachment live-attachment-video">' +
+          '<video src="' + esc(video) + '" controls playsinline preload="metadata" data-live-action="open-video-attachment" data-message-id="' + esc(message.id) + '" data-url="' + esc(video) + '"></video>' +
+        '</div>';
     } else {
       const textBody = message.body ? '<p class="live-message-text" dir="auto">' + esc(message.body) + '</p>' : '';
       const attachment = message.attachment_path ? ('<div class="live-attachment ' + (image ? 'image' : '') + '">' + (image
-        ? '<button type="button" class="live-attachment-image" data-live-action="open-attachment" data-url="' + esc(signed) + '"><img src="' + esc(signed) + '" alt="' + esc(message.attachment_name || t('Photo', 'صورة')) + '" loading="lazy" /></button>'
+        ? '<button type="button" class="live-attachment-image" data-live-action="open-image-attachment" data-message-id="' + esc(message.id) + '" data-url="' + esc(signed) + '"><img src="' + esc(signed) + '" alt="' + esc(message.attachment_name || t('Photo', 'صورة')) + '" loading="lazy" /></button>'
         : '<button type="button" class="live-attachment-file" data-live-action="open-attachment" data-url="' + esc(signed) + '"><span aria-hidden="true">' + (type === 'image' ? '🖼' : '📎') + '</span><span><strong dir="auto">' + esc(message.attachment_name || t('Attachment', 'مرفق')) + '</strong><small>' + esc(core ? core.formatBytes(message.attachment_size) : '') + (signed ? '' : ' • ' + t('Preparing link…', 'جارٍ تجهيز الرابط…')) + '</small></span></button>'
       ) + '</div>') : '';
       content = textBody + attachment;
     }
     const canDelete = !deleted && (mine || deps.teamCanManageTeam(teamById(S.teamId)));
+    const canRetry = !deleted && mine && S.failedMessages.has(String(message.id));
     const replyPreview = reply ? (String(reply.message_type) === 'audio' ? t('Voice message', 'رسالة صوتية') : (String(reply.body || reply.attachment_name || '').slice(0, 120) || t('Attachment', 'مرفق'))) : '';
     const rs = readStateFor(message);
-    return '<div class="live-message ' + (mine ? 'mine ' : '') + (groupedMessage ? 'grouped ' : '') + (isAudio ? 'live-message-audio ' : '') + '" data-message-id="' + esc(message.id) + '">' +
+    const stateClass = rs.state ? ` state-${rs.state}` : '';
+    return '<div class="live-message ' + (mine ? 'mine ' : '') + (groupedMessage ? 'grouped ' : '') + (isAudio ? 'live-message-audio ' : '') + stateClass + '" data-message-id="' + esc(message.id) + '" data-message-state="' + esc(rs.state) + '">' +
       '<div class="live-message-avatar">' + memberAvatar(message.sender_id) + '</div>' +
       '<div class="live-message-body">' +
-        '<div class="live-message-meta"><strong dir="auto">' + esc(memberName(message.sender_id)) + '</strong><time>' + esc(formatTime(message.created_at)) + '</time>' + (rs.text ? '<span class="live-read-state state-' + esc(rs.state) + '" title="' + esc(rs.label || rs.text) + '" aria-label="' + esc(rs.label || rs.text) + '">' + esc(rs.text) + '</span>' : '') + '</div>' +
+        '<div class="live-message-meta"><strong dir="auto">' + esc(memberName(message.sender_id)) + '</strong><time datetime="' + esc(message.created_at || '') + '">' + esc(formatTime(message.created_at)) + '</time>' + (rs.text ? '<span class="live-read-state state-' + esc(rs.state) + '" title="' + esc(rs.label || rs.text) + '" aria-label="' + esc(rs.label || rs.text) + '">' + esc(rs.text) + '</span>' : '') + '</div>' +
         (reply ? '<div class="live-reply-quote"><strong>' + esc(memberName(reply.sender_id)) + '</strong><span dir="auto">' + esc(replyPreview) + '</span></div>' : '') +
         content +
         (!deleted ? messageReactionsMarkup(message.id) : '') +
         (!deleted ? '<div class="live-message-actions">' +
           '<button type="button" class="live-icon-button live-icon-button-small" data-live-action="open-reaction-picker" data-message-id="' + esc(message.id) + '" title="' + esc(t('React', 'تفاعل')) + '" aria-label="' + esc(t('Add reaction', 'إضافة تفاعل')) + '">😊</button>' +
           '<button type="button" class="live-icon-button live-icon-button-small" data-live-action="reply-message" data-message-id="' + esc(message.id) + '" title="' + esc(t('Reply', 'رد')) + '" aria-label="' + esc(t('Reply', 'رد')) + '">↩</button>' +
+          '<button type="button" class="live-icon-button live-icon-button-small" data-live-action="forward-message" data-message-id="' + esc(message.id) + '" title="' + esc(t('Forward', 'إعادة توجيه')) + '" aria-label="' + esc(t('Forward', 'إعادة توجيه')) + '">↪</button>' +
           '<button type="button" class="live-icon-button live-icon-button-small" data-live-action="copy-message" data-message-id="' + esc(message.id) + '" title="' + esc(t('Copy', 'نسخ')) + '" aria-label="' + esc(t('Copy', 'نسخ')) + '">⧉</button>' +
+          (canRetry ? '<button type="button" class="live-icon-button live-icon-button-small live-retry" data-live-action="retry-message" data-message-id="' + esc(message.id) + '" title="' + esc(t('Retry send', 'إعادة الإرسال')) + '" aria-label="' + esc(t('Retry send', 'إعادة الإرسال')) + '">⟳</button>' : '') +
           (canDelete ? '<button type="button" class="live-icon-button live-icon-button-small danger" data-live-action="delete-message" data-message-id="' + esc(message.id) + '" title="' + esc(t('Delete', 'حذف')) + '" aria-label="' + esc(t('Delete', 'حذف')) + '">✕</button>' : '') +
         '</div>' : '') +
       '</div></div>';
@@ -1513,6 +1678,7 @@
       host.scrollTop = prevTop;
     }
     try { initLiveAudioPlayers(host); } catch {}
+    renderTypingIndicator();
   }
 
   function scrollMessages(force) {
@@ -1570,11 +1736,13 @@
     stopVoiceTimer();
     if (!S.voice) return;
     S.voice.timer = window.setInterval(() => {
+      const level = sampleVoiceLevel();
+      setVoiceWaveLevel(level);
       updateVoiceComposerUi();
       if (S.voice.state === "recording" && voiceElapsedMs() >= 10 * 60 * 1000) {
         void stopVoiceRecording();
       }
-    }, 250);
+    }, 180);
   }
 
   function releaseVoiceStream() {
@@ -1584,12 +1752,70 @@
       v.stream.getTracks().forEach((track) => { try { track.stop(); } catch {} });
     }
     v.stream = null;
+    if (v.audioCtx) {
+      try { void v.audioCtx.close(); } catch {}
+      v.audioCtx = null;
+    }
+    v.analyser = null;
+    v.analyserData = null;
   }
 
   function clearVoicePreviewUrl() {
     const v = S.voice;
     if (v?.url) { try { URL.revokeObjectURL(v.url); } catch {} }
     if (v) v.url = "";
+  }
+
+  function setVoiceWaveLevel(level) {
+    const v = S.voice;
+    const host = document.querySelector("[data-live-voice-wrap]");
+    const bars = host ? host.querySelectorAll(".voice-wave-bar") : [];
+    if (!bars.length) return;
+    const safe = Math.max(0, Math.min(1, Number(level) || 0));
+    // Bars are rendered left-to-right; light up proportionally to the real
+    // microphone level. Nothing moves before the stream actually produces data.
+    const active = Math.round(safe * bars.length);
+    bars.forEach((bar, index) => {
+      const on = index < active;
+      bar.classList.toggle("active", on);
+      bar.style.setProperty("--level", on ? "1" : "0.18");
+    });
+  }
+
+  function sampleVoiceLevel() {
+    const v = S.voice;
+    if (!v || !v.analyser || !v.analyserData) return 0;
+    try {
+      v.analyser.getByteTimeDomainData(v.analyserData);
+      let sum = 0;
+      for (const value of v.analyserData) {
+        const normalized = (value - 128) / 128;
+        sum += normalized * normalized;
+      }
+      return Math.min(1, Math.sqrt(sum / v.analyserData.length) * 2.4);
+    } catch {
+      return 0;
+    }
+  }
+
+  function startVoiceMeter(stream) {
+    const v = S.voice;
+    if (!v) return;
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      const context = new Ctx();
+      const source = context.createMediaStreamSource(stream);
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      v.audioCtx = context;
+      v.analyser = analyser;
+      v.analyserData = new Uint8Array(analyser.fftSize);
+      if (context.state === "suspended") void context.resume().catch(() => {});
+    } catch {
+      /* Waveform is optional; recording still works without it. */
+    }
   }
 
   function resetVoiceRecording({ keepError = false } = {}) {
@@ -1615,6 +1841,7 @@
     if (!keepError) v.error = "";
     const preview = document.querySelector('[data-live-voice-preview]');
     if (preview) { try { preview.pause(); preview.src = ""; } catch {} }
+    setVoiceWaveLevel(0);
     updateVoiceComposerUi();
   }
 
@@ -1665,8 +1892,18 @@
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (!document.querySelector('[data-live-composer]')) { stream.getTracks().forEach(t=>{try{t.stop()}catch{}}); v.busy=false; return; }
       v.stream = stream;
+      startVoiceMeter(stream);
       const mimeType = preferredVoiceMime();
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      let recorder;
+      try {
+        recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      } catch (error) {
+        releaseVoiceStream();
+        v.busy = false;
+        v.error = t("Could not create the audio recorder.", "تعذر إنشاء مسجل الصوت.");
+        updateVoiceComposerUi();
+        return;
+      }
       v.recorder = recorder;
       v.mimeType = recorder.mimeType || mimeType || "audio/webm";
       v.chunks = [];
@@ -1756,6 +1993,10 @@
     const client = sb();
     const v = S.voice;
     if (!user || !client || !conversationId || S.uploading || !v?.blob || v.state !== "ready") return;
+    if (!navigator.onLine) {
+      toast(t("Voice messages need an internet connection.", "الرسائل الصوتية تحتاج اتصالًا بالإنترنت."));
+      return;
+    }
     S.uploading = true;
     updateVoiceComposerUi();
     try {
@@ -1790,6 +2031,7 @@
       resetVoiceRecording();
       S.replyTo = null;
       if (data) upsertMessage(data);
+      void dispatchMessagePush(conversationId);
       await signAttachments();
       await markConversationRead(conversationId);
       renderMessages();
@@ -1853,6 +2095,13 @@
     if (input) input.click();
   }
 
+  function clearPendingAttachment() {
+    const previous = S.pendingPreviewUrl;
+    S.pendingFile = null;
+    S.pendingPreviewUrl = "";
+    if (previous) { try { URL.revokeObjectURL(previous); } catch {} }
+  }
+
   function handleAttachmentChange(input) {
     const file = input.files && input.files[0];
     input.value = "";
@@ -1868,7 +2117,12 @@
       toast(reason);
       return;
     }
+    clearPendingAttachment();
     S.pendingFile = file;
+    const type = String(file.type || "");
+    if (/^(image|video)\//.test(type)) {
+      try { S.pendingPreviewUrl = URL.createObjectURL(file); } catch { S.pendingPreviewUrl = ""; }
+    }
     refreshComposer();
   }
 
@@ -1885,6 +2139,43 @@
       return;
     }
 
+    const optimisticId = uid();
+    const createdAt = new Date().toISOString();
+    const optimisticRow = {
+      id: optimisticId,
+      conversation_id: conversationId,
+      team_id: S.teamId,
+      sender_id: user.id,
+      message_type: file
+        ? core && core.isImageType(file.type)
+          ? "image"
+          : core && core.isAudioType(file.type)
+            ? "audio"
+            : "file"
+        : "text",
+      body: text || "",
+      reply_to_id: S.replyTo ? S.replyTo.id : null,
+      attachment_name: file ? (core ? core.safeAttachmentName(file.name) : file.name) : null,
+      attachment_size: file ? file.size : null,
+      attachment_type: file ? file.type : null,
+      attachment_path: null,
+      created_at: createdAt,
+      optimistic: true,
+    };
+    S.pendingMessages.set(optimisticId, { row: optimisticRow, text, file, replyTo: S.replyTo });
+    appendMessageOnce(optimisticRow);
+    renderMessages();
+    if (file && !navigator.onLine) {
+      toast(t("Files need an internet connection. Sending text is allowed offline.", "الملفات تحتاج اتصالًا بالإنترنت. يمكن إرسال النص فقط دون اتصال."));
+      S.uploading = false;
+      S.pendingMessages.delete(optimisticId);
+      S.failedMessages.set(optimisticId, { row: optimisticRow, text, file, replyTo: S.replyTo });
+      const index = S.messages.findIndex((message) => String(message.id) === String(optimisticId));
+      if (index >= 0) S.messages[index] = { ...optimisticRow };
+      renderMessages();
+      refreshComposer();
+      return;
+    }
     S.uploading = true;
     refreshComposer();
     let attachment = null;
@@ -1912,6 +2203,7 @@
 
       const isAudio = file && core && core.isAudioType && core.isAudioType(attachment.attachment_type);
       const row = {
+        id: optimisticId,
         conversation_id: conversationId,
         message_type: file
           ? core && core.isImageType(attachment.attachment_type)
@@ -1920,7 +2212,6 @@
               ? "audio"
               : "file"
           : "text",
-        body: text || (isAudio ? null : null),
         body: text || null,
         reply_to_id: S.replyTo ? S.replyTo.id : null,
         ...(attachment || {}),
@@ -1933,44 +2224,90 @@
         )
         .single();
       if (error) throw error;
+      S.pendingMessages.delete(optimisticId);
+      S.failedMessages.delete(optimisticId);
       S.draft = "";
       S.replyTo = null;
-      S.pendingFile = null;
-      if (data) upsertMessage(data);
+      clearPendingAttachment();
+      const index = S.messages.findIndex((message) => String(message.id) === String(optimisticId));
+      if (index >= 0) S.messages[index] = { ...data };
+      else appendMessageOnce(data);
+      void dispatchMessagePush(conversationId);
       if (attachment) await signAttachments();
       await markConversationRead(conversationId);
       renderMessages();
       scrollMessages(true);
+      toast(t("Message sent.", "تم إرسال الرسالة."));
     } catch (error) {
-      notifyError(t("Could not send the message.", "تعذّر إرسال الرسالة."), error);
+      const info = S.pendingMessages.get(optimisticId);
+      S.pendingMessages.delete(optimisticId);
+      S.failedMessages.set(optimisticId, info || { row: optimisticRow, text, file, replyTo: S.replyTo });
+      console.error(t("Could not send the message.", "تعذّر إرسال الرسالة."), error);
+      toast(`${t("Could not send the message.", "تعذّر إرسال الرسالة.")} ${errorMessageText(error)}`);
+      renderMessages();
     } finally {
       S.uploading = false;
       refreshComposer();
     }
   }
 
+  async function retryMessage(messageId) {
+    const id = String(messageId || "");
+    const pending = S.failedMessages.get(id) || S.pendingMessages.get(id);
+    if (!pending) return;
+    const message = messageById(id);
+    if (message) {
+      S.messages = S.messages.filter((row) => String(row.id) !== id);
+    }
+    S.failedMessages.delete(id);
+    S.pendingMessages.delete(id);
+    S.draft = pending.text || "";
+    S.pendingFile = pending.file || null;
+    S.replyTo = pending.replyTo || null;
+    refreshComposer();
+    await sendMessage();
+  }
+
+  function forwardMessage(messageId) {
+    const message = messageById(messageId);
+    if (!message) return;
+    const text = String(message.body || message.attachment_name || "").trim();
+    if (text) {
+      S.draft = text;
+      refreshComposer();
+      document.querySelector('[data-live-input="draft"]')?.focus();
+      toast(t("Message copied to the composer.", "تم نسخ الرسالة إلى صندوق الكتابة."));
+      return;
+    }
+    toast(t("This message cannot be forwarded.", "لا يمكن إعادة توجيه هذه الرسالة."));
+  }
+
   async function deleteMessage(messageId) {
     const message = messageById(messageId);
     if (!message) return;
     if (!window.confirm(t("Delete this message for everyone in this chat?", "حذف هذه الرسالة للجميع في هذه المحادثة؟"))) return;
+    const optimisticId = message.id;
+    const previous = { ...message };
     try {
       const { error } = await sb()
         .from("team_messages")
         .update({ deleted_at: new Date().toISOString(), body: null })
         .eq("id", messageId);
       if (error) throw error;
+      const index = S.messages.findIndex((row) => String(row.id) === String(messageId));
+      if (index >= 0) {
+        S.messages[index] = { ...S.messages[index], deleted_at: new Date().toISOString(), body: null };
+      }
       // Best-effort storage cleanup for attachments (requires storage delete policy/permission).
-      if (message.attachment_path) {
+      if (previous.attachment_path) {
         try {
-          await sb().storage.from("team-chat").remove([message.attachment_path]);
-          S.signed.delete(message.attachment_path);
-          S.signedAt.delete(message.attachment_path);
+          await sb().storage.from("team-chat").remove([previous.attachment_path]);
+          S.signed.delete(previous.attachment_path);
+          S.signedAt.delete(previous.attachment_path);
         } catch (storageError) {
           console.warn("Attachment storage cleanup failed (message soft-deleted).", storageError);
         }
       }
-      message.deleted_at = new Date().toISOString();
-      message.body = null;
       renderMessages();
       toast(t("Message deleted.", "تم حذف الرسالة."));
     } catch (error) {
@@ -2011,12 +2348,72 @@
     await loadMessages(S.activeId, { silent: true, before: oldest.created_at, appendOlder: true });
   }
 
+  function openLightbox(url, title, mediaType) {
+    const type = String(mediaType || "");
+    let host = document.getElementById("team-live-lightbox");
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "team-live-lightbox";
+      host.className = "live-lightbox";
+      host.hidden = true;
+      host.innerHTML =
+        '<div class="live-lightbox-backdrop" data-live-action="close-lightbox" aria-hidden="true"></div>' +
+        '<figure class="live-lightbox-panel" role="dialog" aria-modal="true" aria-label="' + esc(title || "Media") + '">' +
+          '<button type="button" class="live-icon-button live-lightbox-close" data-live-action="close-lightbox" aria-label="' + esc(t("Close", "إغلاق")) + '">✕</button>' +
+          '<div class="live-lightbox-body" data-live-lightbox-body></div>' +
+          '<figcaption class="live-lightbox-caption" data-live-lightbox-caption></figcaption>' +
+        '</figure>';
+      document.body.appendChild(host);
+    }
+    const bodyHost = host.querySelector("[data-live-lightbox-body]");
+    const caption = host.querySelector("[data-live-lightbox-caption]");
+    if (!bodyHost || !caption) return;
+    const safeUrl = String(url || "");
+    if (type === "video") {
+      bodyHost.innerHTML = '<video src="' + esc(safeUrl) + '" controls playsinline autoplay preload="metadata"></video>';
+    } else {
+      bodyHost.innerHTML = '<img src="' + esc(safeUrl) + '" alt="' + esc(title || t("Photo", "صورة")) + '" />';
+    }
+    caption.textContent = title ? String(title) : "";
+    host.hidden = false;
+    document.body.classList.add("live-lightbox-open");
+  }
+
+  function closeLightbox() {
+    const host = document.getElementById("team-live-lightbox");
+    if (!host) return;
+    const video = host.querySelector("video");
+    if (video) { try { video.pause(); } catch {} }
+    host.hidden = true;
+    document.body.classList.remove("live-lightbox-open");
+  }
+
   function openAttachment(url) {
     if (!url) {
       toast(t("The attachment link is still being prepared.", "رابط المرفق قيد التجهيز."));
       return;
     }
     window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  function openImageAttachment(url, messageId) {
+    const message = messageId ? messageById(messageId) : null;
+    const name = message?.attachment_name || t("Photo", "صورة");
+    if (!url) {
+      toast(t("The attachment link is still being prepared.", "رابط المرفق قيد التجهيز."));
+      return;
+    }
+    openLightbox(url, name, "image");
+  }
+
+  function openVideoAttachment(url, messageId) {
+    const message = messageId ? messageById(messageId) : null;
+    const name = message?.attachment_name || t("Video", "فيديو");
+    if (!url) {
+      toast(t("The attachment link is still being prepared.", "رابط المرفق قيد التجهيز."));
+      return;
+    }
+    openLightbox(url, name, "video");
   }
 
   function replyToMessage(messageId) {
@@ -2282,7 +2679,7 @@
         refreshComposer();
         return;
       case "clear-attachment":
-        S.pendingFile = null;
+        clearPendingAttachment();
         refreshComposer();
         return;
       case "pick-attachment":
@@ -2327,6 +2724,12 @@
       case "copy-message":
         void copyMessage(target.dataset.messageId);
         return;
+      case "forward-message":
+        forwardMessage(target.dataset.messageId);
+        return;
+      case "retry-message":
+        void retryMessage(target.dataset.messageId);
+        return;
       case "delete-message":
         void deleteMessage(target.dataset.messageId);
         return;
@@ -2335,6 +2738,15 @@
         return;
       case "open-attachment":
         openAttachment(target.dataset.url);
+        return;
+      case "open-image-attachment":
+        openImageAttachment(target.dataset.url, target.dataset.messageId);
+        return;
+      case "open-video-attachment":
+        openVideoAttachment(target.dataset.url, target.dataset.messageId);
+        return;
+      case "close-lightbox":
+        closeLightbox();
         return;
       case "enable-notifications":
         void enableNotifications();
@@ -2395,6 +2807,9 @@
         return;
       case "toggle-screen-share":
         void toggleScreenShare();
+        return;
+      case "toggle-speaker":
+        void toggleSpeaker();
         return;
       case "toggle-call-chat":
         toggleCallChat();
@@ -2560,6 +2975,7 @@
       if (name === "draft") {
         S.draft = input.value;
         autoGrow(input);
+        scheduleTypingSignal();
       } else if (name === "conversation-search") {
         S.convSearch = input.value;
         renderSidebar();
@@ -2635,6 +3051,31 @@
       window.__studyZonePendingCallAction = null;
       void handleNativeCallAction(detail);
     });
+    window.addEventListener("studyzone:end-call", () => {
+      // Persistent notification "End call" button. This is an explicit user
+      // action, so leaving the call is allowed even without opening the app.
+      if (S.call) void endCall({ force: true, silent: false, source: "notification" });
+    });
+    window.addEventListener("studyzone:message-action", (event) => {
+      const detail = event?.detail || window.__studyZonePendingMessageAction;
+      if (!detail) return;
+      window.__studyZonePendingMessageAction = null;
+      const conversationId = String(detail.conversationId || detail.conversation_id || "");
+      if (!conversationId) return;
+      S.pendingConversationId = conversationId;
+      deps.navigate("team-live");
+      window.setTimeout(() => void openConversation(conversationId), 350);
+    });
+    if (window.__studyZonePendingMessageAction) {
+      const pending = window.__studyZonePendingMessageAction;
+      window.__studyZonePendingMessageAction = null;
+      const conversationId = String(pending.conversationId || pending.conversation_id || "");
+      if (conversationId) {
+        S.pendingConversationId = conversationId;
+        deps.navigate("team-live");
+        window.setTimeout(() => void openConversation(conversationId), 600);
+      }
+    }
     if (window.__studyZonePendingCallAction) {
       const pending = window.__studyZonePendingCallAction;
       window.__studyZonePendingCallAction = null;
@@ -2886,46 +3327,97 @@
     return t("Could not start the microphone or camera.", "تعذّر تشغيل الميكروفون أو الكاميرا.");
   }
 
+  async function listVideoInputDevices() {
+    try {
+      if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== "function") {
+        return [];
+      }
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      return (devices || []).filter((device) => device.kind === "videoinput");
+    } catch (error) {
+      console.warn("Could not enumerate video input devices.", error);
+      return [];
+    }
+  }
+
+  async function acquireVideoTrack(facing = "user") {
+    const strict = { audio: false, video: { facingMode: { exact: facing }, width: { ideal: 1280 }, height: { ideal: 720 } } };
+    try {
+      const media = await navigator.mediaDevices.getUserMedia(strict);
+      return { stream: media, track: media.getVideoTracks()[0] || null, deviceId: null };
+    } catch (error) {
+      const name = String(error?.name || "");
+      if (name === "OverconstrainedError" || name === "NotFoundError" || name === "NotReadableError") {
+        // Exact facingMode is not available everywhere (some WebViews expose an
+        // unnamed camera set). Try the deviceId that matches the facing mode.
+        const devices = await listVideoInputDevices();
+        const labels = devices.map((device) => String(device.label || "").toLowerCase());
+        const wantBack = facing === "environment";
+        let chosen =
+          devices.find((device, index) => {
+            const label = labels[index];
+            if (wantBack) return /back|rear|environment|world|wide|ultra/.test(label);
+            return /front|user|face|selfie/.test(label);
+          }) || devices[wantBack ? devices.length - 1 : 0];
+        if (chosen?.deviceId) {
+          const media = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: { deviceId: { exact: chosen.deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          });
+          return { stream: media, track: media.getVideoTracks()[0] || null, deviceId: chosen.deviceId };
+        }
+        // Final fallback: ideal facingMode, the browser picks the closest camera.
+        const media = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        });
+        return { stream: media, track: media.getVideoTracks()[0] || null, deviceId: null };
+      }
+      throw error;
+    }
+  }
+
   async function acquireMedia(callType, facing = "user") {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       throw new Error(t("This device does not expose camera or microphone access.", "هذا الجهاز لا يتيح الوصول إلى الكاميرا أو الميكروفون."));
     }
     const wantVideo = callType === "video";
     let stream;
-    try {
+    if (wantVideo) {
+      try {
+        const result = await acquireVideoTrack(facing || "user");
+        stream = result.stream;
+      } catch (error) {
+        const blocked = ["NotAllowedError", "SecurityError", "PermissionDeniedError"].includes(
+          String(error?.name || ""),
+        );
+        if (!blocked) {
+          try {
+            const audioOnly = await navigator.mediaDevices.getUserMedia({ audio: true });
+            toast(
+              t(
+                "The camera is unavailable, so the call started with audio only.",
+                "الكاميرا غير متاحة، لذلك بدأت المكالمة بالصوت فقط.",
+              ),
+            );
+            // Carry the audio-only stream forward; videoTrack remains null.
+            stream = audioOnly;
+          } catch (audioError) {
+            throw new Error(mediaErrorMessage(audioError));
+          }
+        } else {
+          throw new Error(mediaErrorMessage(error));
+        }
+      }
+    } else {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
         },
-        video: wantVideo
-          ? {
-              facingMode: facing || "user",
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-            }
-          : false,
+        video: false,
       });
-    } catch (error) {
-      const blocked = ["NotAllowedError", "SecurityError", "PermissionDeniedError"].includes(
-        String(error?.name || ""),
-      );
-      if (wantVideo && !blocked) {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-          toast(
-            t(
-              "The camera is unavailable, so the call started with audio only.",
-              "الكاميرا غير متاحة، لذلك بدأت المكالمة بالصوت فقط.",
-            ),
-          );
-        } catch (audioError) {
-          throw new Error(mediaErrorMessage(audioError));
-        }
-      } else {
-        throw new Error(mediaErrorMessage(error));
-      }
     }
     const audioTrack = stream.getAudioTracks()[0] || null;
     if (!audioTrack) {
@@ -3051,7 +3543,7 @@
     const { data, error } = await client
       .from("team_call_participants")
       .select(
-        "call_id,user_id,role,invite_status,mic_on,camera_on,screen_sharing,joined_at,left_at,last_seen_at,connection_state",
+        "call_id,user_id,invite_status,mic_on,camera_on,screen_sharing,joined_at,left_at,last_seen_at",
       )
       .eq("call_id", callId);
     if (error) throw error;
@@ -3081,6 +3573,20 @@
       });
     } catch (error) {
       console.warn("Could not dispatch call push notification.", error);
+    }
+  }
+
+  // Privacy-safe message push: never sends the body. The device decides what
+  // to show. Failure here must never break sending a message.
+  async function dispatchMessagePush(conversationId) {
+    const client = sb();
+    if (!client || !conversationId || !client.functions || typeof client.functions.invoke !== "function") return;
+    try {
+      await client.functions.invoke("team-live-message-push", {
+        body: { conversation_id: String(conversationId) },
+      });
+    } catch (error) {
+      console.warn("Could not dispatch the message push notification.", error);
     }
   }
 
@@ -3264,6 +3770,30 @@
   // Call state
   // -------------------------------------------------------------------------
 
+  function startCallForegroundService(call) {
+    const plugin = window.Capacitor?.Plugins?.StudyZoneCallForegroundService;
+    if (!plugin || typeof plugin.startCall !== "function") return;
+    try {
+      void plugin.startCall({
+        callId: String(call?.id || ""),
+        callType: call?.call_type || "audio",
+        title: call?.title || "",
+      }).catch(() => {});
+    } catch {
+      /* The service is a best-effort background helper; never block the call. */
+    }
+  }
+
+  function stopCallForegroundService(callId) {
+    const plugin = window.Capacitor?.Plugins?.StudyZoneCallForegroundService;
+    if (!plugin || typeof plugin.stopCall !== "function") return;
+    try {
+      void plugin.stopCall({ callId: String(callId || "") }).catch(() => {});
+    } catch {
+      /* ignore */
+    }
+  }
+
   function setupCall(row, media, ice) {
     const client = sb();
     if (!client) return;
@@ -3301,6 +3831,7 @@
       statsBusy: false,
       ending: false,
       channels: [],
+      speakerOn: true,
       audioCtx: null,
       analyser: null,
       analyserData: null,
@@ -3308,6 +3839,7 @@
     S.callChatMessages = [];
     S.callChatDraft = "";
     document.body.classList.add("live-call-active");
+    startCallForegroundService(S.call);
 
     ensureSelfParticipant();
     openCallUi();
@@ -4034,11 +4566,13 @@
         <button type="button" class="live-control" data-live-action="toggle-mute" data-live-mute aria-pressed="${call.muted}" title="${esc(t("Mute", "كتم"))}"><span>${call.muted ? "🔇" : "🎙"}</span><small>${esc(call.muted ? t("Unmute", "إلغاء الكتم") : t("Mute", "كتم"))}</small></button>
         <button type="button" class="live-control" data-live-action="toggle-camera" data-live-camera aria-pressed="${call.cameraOn}" title="${esc(t("Camera", "الكاميرا"))}"><span>${call.cameraOn ? "▣" : "▢"}</span><small>${esc(call.cameraOn ? t("Camera off", "إيقاف الكاميرا") : t("Camera on", "تشغيل الكاميرا"))}</small></button>
         <button type="button" class="live-control" data-live-action="switch-camera" data-live-switch title="${esc(t("Switch camera", "تبديل الكاميرا"))}"><span>⇄</span><small>${esc(t("Flip", "تبديل"))}</small></button>
+        <button type="button" class="live-control" data-live-action="toggle-speaker" data-live-speaker aria-pressed="${call.speakerOn}" title="${esc(t("Speaker", "السماعة"))}"><span>🔊</span><small>${esc(call.speakerOn ? t("Speaker on", "السماعة تعمل") : t("Speaker off", "السماعة مغلقة"))}</small></button>
         <button type="button" class="live-control" data-live-action="toggle-screen-share" data-live-screen aria-pressed="${call.screenSharing}" title="${esc(t("Share screen", "مشاركة الشاشة"))}"><span>▤</span><small>${esc(call.screenSharing ? t("Stop share", "إيقاف المشاركة") : t("Share", "مشاركة"))}</small></button>
         ${group ? `<button type="button" class="live-control" data-live-action="open-add-member" title="${esc(t("Add member", "إضافة عضو"))}"><span>＋</span><small>${esc(t("Add", "إضافة"))}</small></button>` : ""}
         <button type="button" class="live-control" data-live-action="toggle-call-chat" data-live-chat-toggle aria-pressed="${call.chatOpen}" title="${esc(t("Chat", "المحادثة"))}"><span>💬</span><small>${esc(t("Chat", "المحادثة"))}</small></button>
         <button type="button" class="live-control danger" data-live-action="end-call" title="${esc(t("End call", "إنهاء المكالمة"))}"><span>☎</span><small>${esc(t("End", "إنهاء"))}</small></button>
       </footer>
+      ${call.screenSharing ? `<p class="live-screen-banner" role="status" aria-live="polite"><span>▤</span> ${esc(t("You are sharing your screen", "أنت تشارك شاشتك"))} <button type="button" class="button button-ghost button-small" data-live-action="toggle-screen-share">${esc(t("Stop", "إيقاف"))}</button></p>` : ""}
       ${
         call.turnConfigured === false
           ? `<p class="live-turn-warning">${esc(
@@ -4211,13 +4745,32 @@
         ? t("Camera off", "إيقاف الكاميرا")
         : t("Camera on", "تشغيل الكاميرا");
     }
+    const switchButton = document.querySelector("[data-live-switch]");
+    if (switchButton) {
+      const busy = Boolean(call.cameraSwitching);
+      switchButton.disabled = busy;
+      switchButton.setAttribute("aria-disabled", String(busy));
+      switchButton.classList.toggle("busy", busy);
+      switchButton.querySelector("small").textContent = busy
+        ? t("Switching…", "جارٍ التبديل…")
+        : t("Flip", "تبديل");
+    }
     const screen = document.querySelector("[data-live-screen]");
     if (screen) {
       screen.classList.toggle("active", Boolean(call.screenSharing));
       screen.setAttribute("aria-pressed", String(Boolean(call.screenSharing)));
+      screen.querySelector("span").textContent = call.screenSharing ? "⏹" : "▤";
       screen.querySelector("small").textContent = call.screenSharing
         ? t("Stop share", "إيقاف المشاركة")
         : t("Share", "مشاركة");
+    }
+    const speaker = document.querySelector("[data-live-speaker]");
+    if (speaker) {
+      speaker.classList.toggle("active", Boolean(call.speakerOn));
+      speaker.setAttribute("aria-pressed", String(Boolean(call.speakerOn)));
+      speaker.querySelector("small").textContent = call.speakerOn
+        ? t("Speaker on", "السماعة تعمل")
+        : t("Speaker off", "السماعة مغلقة");
     }
     const chat = document.querySelector("[data-live-chat-toggle]");
     if (chat) chat.classList.toggle("active", Boolean(call.chatOpen));
@@ -4387,29 +4940,137 @@
 
   async function switchCamera() {
     const call = S.call;
-    if (!call || !call.cameraOn || !call.videoTrack) {
-      toast(t("Turn the camera on first.", "شغّل الكاميرا أولًا."));
+    if (!call) return;
+    if (call.cameraSwitching) {
+      // A switch is already running; ignore repeated taps that would open both cameras.
       return;
     }
+    if (!call.cameraOn || !call.videoTrack) {
+      toast(t("Turn the camera on first.", "شغّل الكاميرا أولًا."));
+      // Helpful behaviour: turning the camera on is the closest action a user
+      // expects when they tap "switch camera" with the camera off.
+      await toggleCamera();
+      return;
+    }
+
     const next = call.facing === "user" ? "environment" : "user";
+    call.cameraSwitching = true;
     try {
-      const media = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: next, width: { ideal: 1280 }, height: { ideal: 720 } },
-      });
-      const track = media.getVideoTracks()[0];
-      if (!track) throw new Error(t("No other camera is available.", "لا توجد كاميرا أخرى متاحة."));
+      updateCallControls();
+      const devices = await listVideoInputDevices();
+      if (devices.length < 2) {
+        toast(t("This device has no other camera.", "هذا الجهاز لا يحتوي على كاميرا أخرى."));
+        return;
+      }
+
+      const result = await acquireVideoTrack(next);
+      const track = result.track;
+      if (!track) throw new Error(t("No camera is available.", "لا توجد كاميرا متاحة."));
+
       const old = call.videoTrack;
       call.videoTrack = track;
       call.facing = next;
       call.localStream.removeTrack(old);
-      old.stop();
+      track.addEventListener("ended", () => {
+        if (S.call === call && call.videoTrack === track) {
+          call.videoTrack = null;
+          call.cameraOn = false;
+          updateCallControls();
+          renderCallStage();
+        }
+      });
       call.localStream.addTrack(track);
       await replaceVideoForAll(track);
+      try { old.stop(); } catch {}
       renderCallStage();
-      toast(t("Camera switched.", "تم تبديل الكاميرا."));
+      toast(
+        next === "environment"
+          ? t("Switched to the back camera.", "تم التبديل إلى الكاميرا الخلفية.")
+          : t("Switched to the front camera.", "تم التبديل إلى الكاميرا الأمامية."),
+      );
     } catch (error) {
-      toast(mediaErrorMessage(error));
+      const name = String(error?.name || "");
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        toast(t("Camera permission was blocked. Allow it and try again.", "تم حظر إذن الكاميرا. اسمح به ثم حاول مرة أخرى."));
+      } else if (name === "NotFoundError" || name === "OverconstrainedError") {
+        toast(t("The requested camera is not available on this device.", "الكاميرا المطلوبة غير متاحة على هذا الجهاز."));
+      } else {
+        toast(t("Could not switch the camera. Please try again.", "تعذّر تبديل الكاميرا. يرجى المحاولة مرة أخرى."));
+      }
+      console.warn("Could not switch camera.", error);
+    } finally {
+      call.cameraSwitching = false;
+      updateCallControls();
+    }
+  }
+
+  async function requestNativeScreenConsent() {
+    const plugin = window.Capacitor?.Plugins?.StudyZoneScreenCapture;
+    if (!plugin || typeof plugin.requestConsent !== "function") return null;
+    const result = await plugin.requestConsent({ maxWidth: 720, maxHeight: 1280, frameRate: 4 });
+    if (!result || result.granted !== true) return null;
+    return result;
+  }
+
+  async function stopNativeScreenConsent() {
+    const plugin = window.Capacitor?.Plugins?.StudyZoneScreenCapture;
+    if (!plugin || typeof plugin.stopCapture !== "function") return;
+    try { await plugin.stopCapture(); } catch {}
+  }
+
+  function ensureScreenCaptureListener() {
+    const plugin = window.Capacitor?.Plugins?.StudyZoneScreenCapture;
+    if (!plugin || S.screenCaptureListenerAttached) return;
+    S.screenCaptureListenerAttached = true;
+
+    const frameToCanvas = (data) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = data.width || 720;
+        canvas.height = data.height || 1280;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        if (S.screenCaptureCanvas !== canvas) {
+          S.screenCaptureCanvas = canvas;
+          const stream = canvas.captureStream(4);
+          const track = stream.getVideoTracks()[0];
+          const call = S.call;
+          if (call && track) {
+            if (call.screenStream) {
+              try { call.screenStream.getVideoTracks().forEach((oldTrack) => oldTrack.stop()); } catch {}
+            }
+            call.screenStream = stream;
+            call.screenSharing = true;
+            void replaceVideoForAll(track);
+            updateCallControls();
+            renderCallStage();
+            void updateSelfParticipant({ screen_sharing: true });
+          }
+        }
+      };
+      img.src = `data:image/jpeg;base64,${data.jpeg}`;
+    };
+
+    try {
+      plugin.addListener("captureFrame", (data) => frameToCanvas(data || {}));
+      plugin.addListener("captureStarted", () => {
+        const call = S.call;
+        if (call) updateCallControls();
+      });
+      plugin.addListener("consentResult", (event) => {
+        if (!event || event.granted === true) return;
+        const call = S.call;
+        if (call) { call.screenSharing = false; updateCallControls(); renderCallStage(); }
+        toast(
+          event.reason === "denied"
+            ? t("Screen sharing was not allowed.", "لم يتم السماح بمشاركة الشاشة.")
+            : t("Could not start screen sharing.", "تعذّر بدء مشاركة الشاشة."),
+        );
+      });
+    } catch (error) {
+      console.warn("Screen capture listener unavailable.", error);
     }
   }
 
@@ -4420,8 +5081,41 @@
       stopScreenShare();
       return;
     }
+
+    const isNative = Boolean(window.Capacitor?.isNativePlatform?.());
+    if (isNative && window.Capacitor?.Plugins?.StudyZoneScreenCapture) {
+      try {
+        ensureScreenCaptureListener();
+        // Native Android path: system consent dialog, then foreground service
+        // captures frames. The WebView turns them into a canvas MediaStream
+        // for the ongoing WebRTC peer.
+        call.screenSharing = true; // optimistic UI; cleared if consent fails or stops
+        updateCallControls();
+        const result = await requestNativeScreenConsent();
+        if (!result) {
+          call.screenSharing = false;
+          updateCallControls();
+          return;
+        }
+        return;
+      } catch (error) {
+        call.screenSharing = false;
+        updateCallControls();
+        toast(t("Could not start screen sharing.", "تعذّر بدء مشاركة الشاشة."));
+        console.warn("Native screen capture failed.", error);
+        return;
+      }
+    }
+
+    // Web fallback: getDisplayMedia when the environment supports it (desktop
+    // browsers and compatible WebViews).
     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-      toast(t("Screen sharing is not available in this browser.", "مشاركة الشاشة غير متاحة في هذا المتصفح."));
+      toast(
+        t(
+          "Screen sharing is not available on this device. On Android the app uses the system screen-capture permission.",
+          "مشاركة الشاشة غير متاحة على هذا الجهاز. يستخدم التطبيق على أندرويد إذن مشاركة الشاشة من النظام.",
+        ),
+      );
       return;
     }
     try {
@@ -4444,16 +5138,40 @@
 
   function stopScreenShare() {
     const call = S.call;
-    if (!call || !call.screenStream) return;
+    if (!call || !call.screenSharing) return;
     const stream = call.screenStream;
     call.screenStream = null;
     call.screenSharing = false;
-    stream.getTracks().forEach((track) => track.stop());
+    if (stream) stream.getTracks().forEach((track) => track.stop());
+    call.screenCaptureCanvas = null;
+    try { void stopNativeScreenConsent(); } catch {}
     const cameraTrack = call.cameraOn ? call.videoTrack : null;
     void replaceVideoForAll(cameraTrack);
     renderCallStage();
     updateCallControls();
     void updateSelfParticipant({ screen_sharing: false });
+  }
+
+  async function toggleSpeaker() {
+    const call = S.call;
+    if (!call) return;
+    call.speakerOn = !call.speakerOn;
+    updateCallControls();
+    const want = call.speakerOn ? "speaker" : "";
+    try {
+      for (const video of document.querySelectorAll(".live-call-overlay video")) {
+        if (typeof video.setSinkId === "function") {
+          try { await video.setSinkId(want); } catch { /* some browsers only allow default audio output */ }
+        }
+      }
+    } catch (error) {
+      console.warn("Could not switch the audio output.", error);
+    }
+    toast(
+      call.speakerOn
+        ? t("Speaker on.", "السماعة تعمل.")
+        : t("Speaker off.", "السماعة مغلقة."),
+    );
   }
 
   function toggleCallChat() {
@@ -4576,8 +5294,10 @@
     // Local disconnect/cleanup for this participant only. Do NOT end the call for everyone
     // on navigation/unmount/unload unless the user explicitly pressed "End call".
     if (unload) {
+      // Leaving the page/app must not end the call for everyone and must not
+      // free the devices we still need for the call. Only mark the participant
+      // as having left on the server (best effort) and keep the call alive.
       try { void rpc("team_live_leave_call", { p_call_id: id }).catch(() => {}); } catch {}
-      teardownCall({ skipServerPrune: true });
       return;
     }
     try {
@@ -4605,6 +5325,8 @@
     const call = S.call;
     if (!call) return;
     S.call = null;
+    S.endingCallIds.delete(String(call.id));
+    stopCallForegroundService(call.id);
 
     // Stop timers and polling immediately.
     if (call.timer) window.clearInterval(call.timer);

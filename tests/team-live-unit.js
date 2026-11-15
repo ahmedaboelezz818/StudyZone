@@ -14,6 +14,14 @@ function equal(name, actual, expected) {
   );
 }
 
+function containsAll(name, actual, expected) {
+  const actualObject = actual || {};
+  const missing = Object.entries(expected).filter(
+    ([key, value]) => JSON.stringify(actualObject[key]) !== JSON.stringify(value),
+  );
+  check(`${name} (missing ${JSON.stringify(missing)})`, missing.length === 0);
+}
+
 /* ---------- attachment validation ---------- */
 equal("rejects a missing file", core.validateAttachment(null), {
   ok: false,
@@ -35,7 +43,7 @@ equal(
 equal(
   "accepts a file exactly at the limit",
   core.validateAttachment({ size: core.MAX_ATTACHMENT_BYTES, type: "image/png" }),
-  { ok: true, type: "image/png", image: true },
+  { ok: true, type: "image/png", image: true, video: false, audio: false },
 );
 equal(
   "rejects unknown mime types",
@@ -50,12 +58,12 @@ equal(
 equal(
   "normalizes mime parameters",
   core.validateAttachment({ size: 10, type: "Image/JPEG; charset=binary" }),
-  { ok: true, type: "image/jpeg", image: true },
+  { ok: true, type: "image/jpeg", image: true, video: false, audio: false },
 );
 equal(
   "accepts a PDF as a non-image attachment",
   core.validateAttachment({ size: 10, type: "application/pdf" }),
-  { ok: true, type: "application/pdf", image: false },
+  { ok: true, type: "application/pdf", image: false, video: false, audio: false },
 );
 equal(
   "accepts docx (long openxml type)",
@@ -67,6 +75,8 @@ equal(
     ok: true,
     type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     image: false,
+    video: false,
+    audio: false,
   },
 );
 
