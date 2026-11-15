@@ -48,6 +48,23 @@
     replyTo: null,
     pendingFile: null,
     uploading: false,
+    voice: {
+      state: "idle", // idle|recording|paused|ready
+      recorder: null,
+      stream: null,
+      chunks: [],
+      blob: null,
+      url: "",
+      startedAt: 0,
+      pausedAt: 0,
+      pausedTotal: 0,
+      timer: 0,
+      durationMs: 0,
+      mimeType: "",
+      error: "",
+      previewPlaying: false,
+      busy: false,
+    },
     chatRenderedFor: null,
     listSignature: "",
     teamChannel: null,
@@ -68,6 +85,8 @@
     seenInvites: new Set(),
     handledInvites: new Set(),
     missedNotified: new Set(),
+    endedCallIds: new Set(),
+    endingCallIds: new Set(),
     invitePoll: 0,
     unreadPoll: 0,
     inviteChannel: null,
@@ -152,6 +171,18 @@
       code === "42P01" ||
       /could not find the function|function .* does not exist|relation .* does not exist/i.test(message)
     );
+  }
+
+  function markCallEnded(callId) {
+    const id = String(callId || "");
+    if (!id) return;
+    S.endedCallIds.add(id);
+    S.invites = (S.invites || []).filter((row) => String(row.call_id) !== id);
+    if (String(S.incomingCallId || "") === id) setIncomingCall(null);
+  }
+
+  function isCallKnownEnded(callId) {
+    return S.endedCallIds.has(String(callId || ""));
   }
 
   function formatTime(value) {
@@ -371,6 +402,7 @@
 
   async function openConversation(id, { scroll = true, focus = true } = {}) {
     if (!id) return;
+    if (String(S.activeId || "") !== String(id)) { try { resetVoiceRecording(); } catch {} }
     S.activeId = String(id);
     if (focus) S.chatFocus = true;
     if (!conversationById(S.activeId)) {
@@ -955,6 +987,7 @@
   }
 
   function closeChatView() {
+    try { resetVoiceRecording(); } catch {}
     S.chatFocus = false;
     S.activeId = null;
     S.chatRenderedFor = null;
@@ -1209,36 +1242,51 @@
 
   function composerMarkup() {
     const reply = S.replyTo;
+    const v = S.voice || {};
+    const state = v.state || "idle";
+    const showVoice = state !== "idle";
     return `<form class="live-composer" data-live-form="composer">
-      ${
-        reply
-          ? `<div class="live-reply-banner">
+      ${reply ? `<div class="live-reply-banner">
               <div><small>${esc(t("Replying to", "ردًا على"))} ${esc(memberName(reply.sender_id))}</small><p dir="auto">${esc(String(reply.body || "").slice(0, 120) || t("Attachment", "مرفق"))}</p></div>
-              <button type="button" class="live-icon-button live-icon-button-small" data-live-action="cancel-reply" aria-label="${esc(t("Cancel reply", "إلغاء الرد"))}">×</button>
-            </div>`
-          : ""
-      }
-      ${
-        S.pendingFile
-          ? `<div class="live-attachment-chip">
-              <span>${esc(S.pendingFile.name)} · ${esc(core ? core.formatBytes(S.pendingFile.size) : "")}</span>
-              ${S.pendingFile.type && S.pendingFile.type.startsWith("image/") ? `<small>${esc(t("Photo", "صورة"))}</small>` : `<small>${esc(t("File", "ملف"))}</small>`}
-              <button type="button" class="live-icon-button live-icon-button-small" data-live-action="clear-attachment" aria-label="${esc(t("Remove attachment", "إزالة المرفق"))}">×</button>
-            </div>`
-          : ""
-      }
-      <div class="live-composer-row">
-        <button type="button" class="live-icon-button" data-live-action="pick-attachment" title="${esc(t("Attach a photo or file", "أرفق صورة أو ملفًا"))}" aria-label="${esc(t("Attach a photo or file", "أرفق صورة أو ملفًا"))}">＋</button>
+              <button type="button" class="live-icon-button live-icon-button-small" data-live-action="cancel-reply" aria-label="${esc(t("Cancel reply", "إلغاء الرد"))}">✕</button>
+            </div>` : ""}
+      ${S.pendingFile ? `<div class="live-attachment-chip">
+              <span>${esc(S.pendingFile.name)} • ${esc(core ? core.formatBytes(S.pendingFile.size) : "")}</span>
+              <small>${esc(S.pendingFile.type && S.pendingFile.type.startsWith("image/") ? t("Photo", "صورة") : t("File", "ملف"))}</small>
+              <button type="button" class="live-icon-button live-icon-button-small" data-live-action="clear-attachment" aria-label="${esc(t("Remove attachment", "إزالة المرفق"))}">✕</button>
+            </div>` : ""}
+      ${showVoice ? `<div class="live-voice-recorder" data-live-voice-wrap data-state="${esc(state)}" role="status" aria-live="polite">
+        <div class="live-voice-recorder-top">
+          <div class="live-voice-visual voice-record-visual" data-state="${esc(state)}" aria-hidden="true"><span class="voice-record-pulse"></span><span class="voice-record-core"></span><span class="voice-record-wave"></span></div>
+          <div class="live-voice-meta">
+            <strong data-live-voice-timer>${esc(formatVoiceClock(state === "ready" ? (v.durationMs || 0) : voiceElapsedMs()))}</strong>
+            <small data-live-voice-status>${esc(state === "recording" ? t("Recording...", "جاري التسجيل...") : state === "paused" ? t("Paused", "متوقف مؤقتًا") : state === "ready" ? t("Preview before sending", "معاينة قبل الإرسال") : (v.error || ""))}</small>
+          </div>
+        </div>
+        <div class="live-voice-preview-shell" data-live-voice-preview-shell ${state === "ready" && v.url ? "" : "hidden"}>
+          <audio data-live-voice-preview controls preload="metadata"${v.url ? ` src="${esc(v.url)}"` : ""}></audio>
+        </div>
+        <p class="live-voice-error" data-live-voice-error ${v.error ? "" : "hidden"}>${esc(v.error || "")}</p>
+        ${state === "recording" || state === "paused" ? `<p class="live-voice-hint">${esc(t("Recording from your microphone. Stop to preview before sending.", "يتم التسجيل من الميكروفون. أوقف التسجيل للمعاينة قبل الإرسال."))}</p>` : state === "ready" ? `<p class="live-voice-hint">${esc(t("Listen to the preview, then send or delete to re-record.", "استمع للمعاينة ثم أرسل أو احذف لإعادة التسجيل."))}</p>` : ""}
+        <div class="live-voice-controls">
+          <button type="button" class="button button-secondary button-small" data-live-action="voice-pause" ${state === "recording" || state === "paused" ? "" : "hidden"}>${state === "paused" ? esc(t("Resume", "استكمال")) : esc(t("Pause", "إيقاف مؤقت"))}</button>
+          <button type="button" class="button button-secondary button-small" data-live-action="voice-stop" ${state === "recording" || state === "paused" ? "" : "hidden"}>${esc(t("Stop", "إيقاف"))}</button>
+          <button type="button" class="button button-ghost button-small" data-live-action="voice-preview-toggle" ${state === "ready" ? "" : "hidden"}>${esc(t("Preview", "معاينة"))}</button>
+          <button type="button" class="button button-ghost button-small" data-live-action="voice-discard" ${state === "ready" ? "" : "hidden"}>${esc(t("Delete", "حذف"))}</button>
+          <button type="button" class="button button-ghost button-small" data-live-action="voice-cancel" ${state === "recording" || state === "paused" ? "" : "hidden"}>${esc(t("Cancel", "إلغاء"))}</button>
+          <button type="button" class="button button-primary button-small" data-live-action="voice-send" ${state === "ready" ? "" : "hidden"}>${S.uploading ? esc(t("Sending...", "جارٍ الإرسال...")) : esc(t("Send voice", "إرسال الصوت"))}</button>
+        </div>
+      </div>` : ""}
+      <div class="live-composer-row"${showVoice ? ' hidden' : ''}>
+        <button type="button" class="live-icon-button" data-live-action="pick-attachment" title="${esc(t("Attach a photo or file", "إرفاق صورة أو ملف"))}" aria-label="${esc(t("Attach a photo or file", "إرفاق صورة أو ملف"))}">📎</button>
+        <button type="button" class="live-icon-button" data-live-action="voice-start" title="${esc(t("Record voice message", "تسجيل رسالة صوتية"))}" aria-label="${esc(t("Record voice message", "تسجيل رسالة صوتية"))}">🎙</button>
         <textarea name="body" rows="1" maxlength="${core ? core.MAX_MESSAGE_LENGTH : 4000}" data-live-input="draft" placeholder="${esc(t("Write a message…", "اكتب رسالة…"))}" autocomplete="off">${esc(S.draft)}</textarea>
         <button type="submit" class="button button-primary button-small live-send" ${S.uploading ? "disabled" : ""}>${S.uploading ? esc(t("Sending…", "جارٍ الإرسال…")) : esc(t("Send", "إرسال"))}</button>
       </div>
-      <input type="file" data-live-input="attachment" accept="${esc(
-        core ? core.ALLOWED_ATTACHMENT_TYPES.join(",") : "image/*",
-      )}" hidden />
-      <p class="live-composer-hint">${esc(t("Enter sends · Shift+Enter adds a line · up to 20 MB", "Enter للإرسال · Shift+Enter لسطر جديد · حتى 20 م.ب"))}</p>
+      <input type="file" data-live-input="attachment" accept="${esc(core ? core.ALLOWED_ATTACHMENT_TYPES.join(",") : "image/*")}" hidden />
+      <p class="live-composer-hint">${esc(t("Enter sends • Shift+Enter adds a line • up to 20 MB", "Enter للإرسال • Shift+Enter لسطر جديد • حتى 20 MB"))}</p>
     </form>`;
   }
-
   function refreshComposer() {
     const host = document.querySelector("[data-live-composer]");
     if (!host) return;
@@ -1298,78 +1346,120 @@
     return { text: "✓✓", state: "read", label: t(`Read by ${readBy}`, `قرأها ${readBy}`) };
   }
 
+  function initLiveAudioPlayers(root = document) {
+    const scope = root && root.querySelectorAll ? root : document;
+    const fmt = (sec) => { const total = Math.max(0, Math.floor(Number(sec) || 0)); const m = Math.floor(total / 60), ss = total % 60; return String(m).padStart(2, '0') + ':' + String(ss).padStart(2, '0'); };
+    scope.querySelectorAll('.sz-audio-player').forEach((player) => {
+      if (player.dataset.liveEnhanced === '1') return;
+      const audio = player.querySelector('audio');
+      const toggle = player.querySelector('[data-audio-action="toggle"]');
+      const wave = player.querySelector('.sz-audio-wave');
+      const progress = player.querySelector('.sz-audio-wave-progress');
+      const cur = player.querySelector('[data-audio-current]');
+      const tot = player.querySelector('[data-audio-total]');
+      if (!audio || !toggle || !wave) return;
+      player.dataset.liveEnhanced = '1';
+      const setProgress = () => {
+        const dur = isFinite(audio.duration) ? audio.duration : 0;
+        const pct = dur ? Math.min(100, (audio.currentTime / dur) * 100) : 0;
+        if (progress) progress.style.width = pct + '%';
+        wave.style.setProperty('--progress', pct + '%');
+        if (cur) cur.textContent = fmt(audio.currentTime);
+        if (tot) tot.textContent = fmt(dur || Number(player.dataset.duration || 0));
+      };
+      const setPlaying = (playing) => { player.classList.toggle('is-playing', playing); toggle.textContent = playing ? '❚❚' : '▶'; toggle.setAttribute('aria-label', playing ? 'Pause' : 'Play'); };
+      toggle.addEventListener('click', () => {
+        if (audio.paused) {
+          document.querySelectorAll('.sz-audio-player audio').forEach((a) => { if (a !== audio) { try { a.pause(); } catch {} } });
+          void audio.play().catch(() => {});
+        } else { audio.pause(); }
+      });
+      audio.addEventListener('play', () => { document.querySelectorAll('.sz-audio-player').forEach((p) => { if (p !== player) p.classList.remove('is-playing'); }); setPlaying(true); });
+      audio.addEventListener('pause', () => setPlaying(false));
+      audio.addEventListener('ended', () => { audio.currentTime = 0; setPlaying(false); setProgress(); });
+      audio.addEventListener('timeupdate', setProgress);
+      audio.addEventListener('loadedmetadata', setProgress);
+      audio.addEventListener('durationchange', setProgress);
+      const seek = (clientX) => { const rect = wave.getBoundingClientRect(); const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / Math.max(1, rect.width))); if (isFinite(audio.duration)) audio.currentTime = ratio * audio.duration; };
+      wave.addEventListener('click', (e) => seek(e.clientX));
+      wave.addEventListener('keydown', (e) => { if (!isFinite(audio.duration)) return; if (e.key === 'ArrowLeft') { audio.currentTime = Math.max(0, audio.currentTime - 5); e.preventDefault(); } if (e.key === 'ArrowRight') { audio.currentTime = Math.min(audio.duration, audio.currentTime + 5); e.preventDefault(); } });
+      setProgress(); setPlaying(!audio.paused);
+    });
+  }
+
+  function audioPlayerMarkup(message, signedUrl) {
+    const dur = Math.max(0, Number(message.body) || 0);
+    const bars = Array.from({ length: 40 }, (_, i) => '<span style="--h:' + (20 + ((i * 7) % 55)) + '%"></span>').join('');
+    if (!signedUrl) {
+      return '<div class="live-voice-bubble"><div class="live-voice-loading">' + esc(t('Preparing voice message...', 'جارٍ تجهيز الرسالة الصوتية...')) + '</div></div>';
+    }
+    const durLabel = core ? core.formatDuration(dur) : formatVoiceClock(dur * 1000);
+    return '<div class="live-voice-bubble">' +
+      '<div class="sz-audio-player live-sz-audio-player" data-duration="' + dur + '">' +
+        '<audio preload="metadata" src="' + esc(signedUrl) + '"></audio>' +
+        '<div class="sz-audio-top">' +
+          '<button type="button" class="sz-audio-play" data-audio-action="toggle" aria-label="Play">▶</button>' +
+          '<div class="sz-audio-wave" role="slider" tabindex="0" aria-label="' + esc(t('Seek', 'تقديم/تأخير')) + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">' +
+            '<div class="sz-audio-wave-bars">' + bars + '</div>' +
+            '<div class="sz-audio-wave-progress" style="--progress:0%"></div>' +
+          '</div>' +
+          '<div class="sz-audio-time"><span data-audio-current>00:00</span><span class="sz-audio-sep">/</span><span data-audio-total>' + esc(durLabel) + '</span></div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
   function messageMarkup(message, groupedMessage) {
     const mine = String(message.sender_id) === myId();
     const deleted = Boolean(message.deleted_at);
-    const type = message.message_type || "text";
-    if (type === "system") {
-      return `<div class="live-message-system"><span>${esc(message.body || "")}</span></div>`;
-    }
-    if (type === "call") {
+    const type = message.message_type || 'text';
+    if (type === 'system') { return '<div class="live-message-system"><span>' + esc(message.body || '') + '</span></div>'; }
+    if (type === 'call') {
       const info = message.call_id ? S.callInfo.get(String(message.call_id)) : null;
-      const live = info && info.status !== "ended";
-      const icon = info?.call_type === "audio" ? "☎" : "▣";
-      const label = live
-        ? t("Join the call", "انضم إلى المكالمة")
-        : info?.ended_reason === "declined"
-          ? t("Call declined", "رُفضت المكالمة")
-          : info?.ended_reason === "missed"
-            ? t("Missed call", "مكالمة فائتة")
-            : t("Call ended", "انتهت المكالمة");
-      return `<div class="live-message live-message-call ${mine ? "mine" : ""}">
-        <div class="live-message-avatar">${memberAvatar(message.sender_id)}</div>
-        <div class="live-message-body">
-          <div class="live-message-meta"><strong dir="auto">${esc(memberName(message.sender_id))}</strong><time>${esc(formatTime(message.created_at))}</time></div>
-          <div class="live-call-message-card">
-            <span class="live-call-message-icon" aria-hidden="true">${icon}</span>
-            <div><strong>${esc(message.body || t("Call", "مكالمة"))}</strong><small>${esc(label)}</small></div>
-            ${live && message.call_id ? `<button type="button" class="button button-primary button-small" data-live-action="join-call" data-call-id="${esc(message.call_id)}">${esc(t("Join", "انضمام"))}</button>` : ""}
-          </div>
-        </div>
-      </div>`;
+      const live = info && info.status !== 'ended';
+      const icon = info?.call_type === 'audio' ? '📞' : '🎥';
+      const label = live ? t('Join the call', 'انضم إلى المكالمة') : info?.ended_reason === 'declined' ? t('Call declined', 'رُفضت المكالمة') : info?.ended_reason === 'missed' ? t('Missed call', 'مكالمة فائتة') : t('Call ended', 'انتهت المكالمة');
+      return '<div class="live-message live-message-call ' + (mine ? 'mine' : '') + '">' +
+        '<div class="live-message-avatar">' + memberAvatar(message.sender_id) + '</div>' +
+        '<div class="live-message-body">' +
+          '<div class="live-message-meta"><strong dir="auto">' + esc(memberName(message.sender_id)) + '</strong><time>' + esc(formatTime(message.created_at)) + '</time></div>' +
+          '<div class="live-call-message-card"><span class="live-call-message-icon" aria-hidden="true">' + icon + '</span><div><strong>' + esc(message.body || t('Call', 'مكالمة')) + '</strong><small>' + esc(label) + '</small></div>' + (live && message.call_id ? '<button type="button" class="button button-primary button-small" data-live-action="join-call" data-call-id="' + esc(message.call_id) + '">' + esc(t('Join', 'انضمام')) + '</button>' : '') + '</div>' +
+        '</div></div>';
     }
-
     const reply = message.reply_to_id ? messageById(message.reply_to_id) : null;
-    const signed = message.attachment_path ? S.signed.get(message.attachment_path) : "";
-    const image = type === "image" && signed;
-    const attachment = message.attachment_path
-      ? `<div class="live-attachment ${image ? "image" : ""}">
-          ${image
-            ? `<button type="button" class="live-attachment-image" data-live-action="open-attachment" data-url="${esc(signed)}"><img src="${esc(signed)}" alt="${esc(message.attachment_name || t("Photo", "صورة"))}" loading="lazy" /></button>`
-            : `<button type="button" class="live-attachment-file" data-live-action="open-attachment" data-url="${esc(signed)}">
-                <span aria-hidden="true">${type === "image" ? "▣" : "📄"}</span>
-                <span><strong dir="auto">${esc(message.attachment_name || t("Attachment", "مرفق"))}</strong><small>${esc(core ? core.formatBytes(message.attachment_size) : "")}${signed ? "" : ` · ${t("Preparing link…", "جارٍ تجهيز الرابط…")}`}</small></span>
-              </button>`}
-        </div>`
-      : "";
-
+    const signed = message.attachment_path ? S.signed.get(message.attachment_path) : '';
+    const isAudio = type === 'audio';
+    const image = type === 'image' && signed;
+    let content = '';
+    if (deleted) {
+      content = '<p class="live-deleted">' + esc(t('This message was deleted', 'تم حذف هذه الرسالة')) + '</p>';
+    } else if (isAudio) {
+      content = audioPlayerMarkup(message, signed);
+    } else {
+      const textBody = message.body ? '<p class="live-message-text" dir="auto">' + esc(message.body) + '</p>' : '';
+      const attachment = message.attachment_path ? ('<div class="live-attachment ' + (image ? 'image' : '') + '">' + (image
+        ? '<button type="button" class="live-attachment-image" data-live-action="open-attachment" data-url="' + esc(signed) + '"><img src="' + esc(signed) + '" alt="' + esc(message.attachment_name || t('Photo', 'صورة')) + '" loading="lazy" /></button>'
+        : '<button type="button" class="live-attachment-file" data-live-action="open-attachment" data-url="' + esc(signed) + '"><span aria-hidden="true">' + (type === 'image' ? '🖼' : '📎') + '</span><span><strong dir="auto">' + esc(message.attachment_name || t('Attachment', 'مرفق')) + '</strong><small>' + esc(core ? core.formatBytes(message.attachment_size) : '') + (signed ? '' : ' • ' + t('Preparing link…', 'جارٍ تجهيز الرابط…')) + '</small></span></button>'
+      ) + '</div>') : '';
+      content = textBody + attachment;
+    }
     const canDelete = !deleted && (mine || deps.teamCanManageTeam(teamById(S.teamId)));
-    const body = deleted
-      ? `<p class="live-deleted">${esc(t("This message was deleted", "تم حذف هذه الرسالة"))}</p>`
-      : message.body
-        ? `<p class="live-message-text" dir="auto">${esc(message.body)}</p>`
-        : "";
-
-    return `<div class="live-message ${mine ? "mine" : ""} ${groupedMessage ? "grouped" : ""}" data-message-id="${esc(message.id)}">
-      <div class="live-message-avatar">${memberAvatar(message.sender_id)}</div>
-      <div class="live-message-body">
-        <div class="live-message-meta"><strong dir="auto">${esc(memberName(message.sender_id))}</strong><time>${esc(formatTime(message.created_at))}</time>${(() => { const rs = readStateFor(message); return rs.text ? `<span class="live-read-state state-${esc(rs.state)}" title="${esc(rs.label || rs.text)}" aria-label="${esc(rs.label || rs.text)}">${esc(rs.text)}</span>` : ""; })()}</div>
-        ${reply ? `<div class="live-reply-quote"><strong>${esc(memberName(reply.sender_id))}</strong><span dir="auto">${esc(String(reply.body || "").slice(0, 120) || t("Attachment", "مرفق"))}</span></div>` : ""}
-        ${body}
-        ${attachment}
-        ${!deleted ? messageReactionsMarkup(message.id) : ""}
-        ${
-          !deleted
-            ? `<div class="live-message-actions">
-                <button type="button" class="live-icon-button live-icon-button-small" data-live-action="open-reaction-picker" data-message-id="${esc(message.id)}" title="${esc(t("React", "تفاعل"))}" aria-label="${esc(t("Add reaction", "إضافة تفاعل"))}">😊</button>
-                <button type="button" class="live-icon-button live-icon-button-small" data-live-action="reply-message" data-message-id="${esc(message.id)}" title="${esc(t("Reply", "رد"))}" aria-label="${esc(t("Reply", "رد"))}">↩</button>
-                <button type="button" class="live-icon-button live-icon-button-small" data-live-action="copy-message" data-message-id="${esc(message.id)}" title="${esc(t("Copy", "نسخ"))}" aria-label="${esc(t("Copy", "نسخ"))}">⧉</button>
-                ${canDelete ? `<button type="button" class="live-icon-button live-icon-button-small danger" data-live-action="delete-message" data-message-id="${esc(message.id)}" title="${esc(t("Delete", "حذف"))}" aria-label="${esc(t("Delete", "حذف"))}">×</button>` : ""}
-              </div>`
-            : ""
-        }
-      </div>
-    </div>`;
+    const replyPreview = reply ? (String(reply.message_type) === 'audio' ? t('Voice message', 'رسالة صوتية') : (String(reply.body || reply.attachment_name || '').slice(0, 120) || t('Attachment', 'مرفق'))) : '';
+    const rs = readStateFor(message);
+    return '<div class="live-message ' + (mine ? 'mine ' : '') + (groupedMessage ? 'grouped ' : '') + (isAudio ? 'live-message-audio ' : '') + '" data-message-id="' + esc(message.id) + '">' +
+      '<div class="live-message-avatar">' + memberAvatar(message.sender_id) + '</div>' +
+      '<div class="live-message-body">' +
+        '<div class="live-message-meta"><strong dir="auto">' + esc(memberName(message.sender_id)) + '</strong><time>' + esc(formatTime(message.created_at)) + '</time>' + (rs.text ? '<span class="live-read-state state-' + esc(rs.state) + '" title="' + esc(rs.label || rs.text) + '" aria-label="' + esc(rs.label || rs.text) + '">' + esc(rs.text) + '</span>' : '') + '</div>' +
+        (reply ? '<div class="live-reply-quote"><strong>' + esc(memberName(reply.sender_id)) + '</strong><span dir="auto">' + esc(replyPreview) + '</span></div>' : '') +
+        content +
+        (!deleted ? messageReactionsMarkup(message.id) : '') +
+        (!deleted ? '<div class="live-message-actions">' +
+          '<button type="button" class="live-icon-button live-icon-button-small" data-live-action="open-reaction-picker" data-message-id="' + esc(message.id) + '" title="' + esc(t('React', 'تفاعل')) + '" aria-label="' + esc(t('Add reaction', 'إضافة تفاعل')) + '">😊</button>' +
+          '<button type="button" class="live-icon-button live-icon-button-small" data-live-action="reply-message" data-message-id="' + esc(message.id) + '" title="' + esc(t('Reply', 'رد')) + '" aria-label="' + esc(t('Reply', 'رد')) + '">↩</button>' +
+          '<button type="button" class="live-icon-button live-icon-button-small" data-live-action="copy-message" data-message-id="' + esc(message.id) + '" title="' + esc(t('Copy', 'نسخ')) + '" aria-label="' + esc(t('Copy', 'نسخ')) + '">⧉</button>' +
+          (canDelete ? '<button type="button" class="live-icon-button live-icon-button-small danger" data-live-action="delete-message" data-message-id="' + esc(message.id) + '" title="' + esc(t('Delete', 'حذف')) + '" aria-label="' + esc(t('Delete', 'حذف')) + '">✕</button>' : '') +
+        '</div>' : '') +
+      '</div></div>';
   }
 
   function renderMessages(opts = {}) {
@@ -1422,6 +1512,7 @@
     } else {
       host.scrollTop = prevTop;
     }
+    try { initLiveAudioPlayers(host); } catch {}
   }
 
   function scrollMessages(force) {
@@ -1443,6 +1534,314 @@
       entry.hidden = total <= 0;
       entry.textContent = `${total > 99 ? "99+" : total} ${t("unread", "غير مقروءة")}`;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Voice message recording (chat composer)
+  // -------------------------------------------------------------------------
+
+  function formatVoiceClock(ms) {
+    const total = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+
+  function voiceElapsedMs() {
+    const v = S.voice;
+    if (!v) return 0;
+    if (v.state === "recording" && v.startedAt) {
+      return Date.now() - v.startedAt - (v.pausedTotal || 0);
+    }
+    if (v.state === "paused" && v.pausedAt && v.startedAt) {
+      return v.pausedAt - v.startedAt - (v.pausedTotal || 0);
+    }
+    return v.durationMs || 0;
+  }
+
+  function stopVoiceTimer() {
+    if (S.voice?.timer) {
+      window.clearInterval(S.voice.timer);
+      S.voice.timer = 0;
+    }
+  }
+
+  function startVoiceTimer() {
+    stopVoiceTimer();
+    if (!S.voice) return;
+    S.voice.timer = window.setInterval(() => {
+      updateVoiceComposerUi();
+      if (S.voice.state === "recording" && voiceElapsedMs() >= 10 * 60 * 1000) {
+        void stopVoiceRecording();
+      }
+    }, 250);
+  }
+
+  function releaseVoiceStream() {
+    const v = S.voice;
+    if (!v) return;
+    if (v.stream) {
+      v.stream.getTracks().forEach((track) => { try { track.stop(); } catch {} });
+    }
+    v.stream = null;
+  }
+
+  function clearVoicePreviewUrl() {
+    const v = S.voice;
+    if (v?.url) { try { URL.revokeObjectURL(v.url); } catch {} }
+    if (v) v.url = "";
+  }
+
+  function resetVoiceRecording({ keepError = false } = {}) {
+    const v = S.voice;
+    if (!v) return;
+    stopVoiceTimer();
+    if (v.recorder) {
+      try { if (v.recorder.state !== "inactive") v.recorder.stop(); } catch {}
+    }
+    releaseVoiceStream();
+    clearVoicePreviewUrl();
+    v.state = "idle";
+    v.recorder = null;
+    v.chunks = [];
+    v.blob = null;
+    v.startedAt = 0;
+    v.pausedAt = 0;
+    v.pausedTotal = 0;
+    v.durationMs = 0;
+    v.mimeType = "";
+    v.previewPlaying = false;
+    v.busy = false;
+    if (!keepError) v.error = "";
+    const preview = document.querySelector('[data-live-voice-preview]');
+    if (preview) { try { preview.pause(); preview.src = ""; } catch {} }
+    updateVoiceComposerUi();
+  }
+
+  async function ensureMicrophonePermission() {
+    try {
+      const plugin = window.Capacitor?.Plugins?.StudyZonePermissions;
+      if (plugin && typeof plugin.requestMicrophone === "function") {
+        const res = await plugin.requestMicrophone();
+        if (res && (res.granted === false || res.state === "denied" || res.blocked || res.permanentlyDenied)) {
+          return { ok: false, blocked: Boolean(res.blocked || res.permanentlyDenied), message: t("Microphone permission is blocked. Enable it in app settings.", "تم حظر إذن الميكروفون. فعّله من إعدادات التطبيق.") };
+        }
+      } else if (plugin && typeof plugin.checkMicrophone === "function") {
+        const res = await plugin.checkMicrophone();
+        if (res && (res.blocked || res.permanentlyDenied)) {
+          return { ok: false, blocked: true, message: t("Microphone permission is blocked. Enable it in app settings.", "تم حظر إذن الميكروفون. فعّله من إعدادات التطبيق.") };
+        }
+      }
+    } catch { /* fall back to getUserMedia */ }
+    return { ok: true };
+  }
+
+  function preferredVoiceMime() {
+    const types = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus", "audio/ogg", "audio/mpeg"];
+    if (!window.MediaRecorder || typeof MediaRecorder.isTypeSupported !== "function") return "";
+    for (const t of types) { try { if (MediaRecorder.isTypeSupported(t)) return t; } catch {} }
+    return "";
+  }
+
+  async function startVoiceRecording() {
+    const v = S.voice;
+    if (!v || S.uploading || v.busy) return;
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      v.error = t("Audio recording is not supported on this device/browser.", "تسجيل الصوت غير مدعوم على هذا الجهاز/المتصفح.");
+      updateVoiceComposerUi();
+      return;
+    }
+    const perm = await ensureMicrophonePermission();
+    if (!perm.ok) {
+      v.error = perm.message;
+      updateVoiceComposerUi();
+      if (perm.blocked) { try { await window.Capacitor?.Plugins?.StudyZonePermissions?.openAppSettings?.(); } catch {} }
+      return;
+    }
+    resetVoiceRecording();
+    v.busy = true; v.error = "";
+    updateVoiceComposerUi();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!document.querySelector('[data-live-composer]')) { stream.getTracks().forEach(t=>{try{t.stop()}catch{}}); v.busy=false; return; }
+      v.stream = stream;
+      const mimeType = preferredVoiceMime();
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      v.recorder = recorder;
+      v.mimeType = recorder.mimeType || mimeType || "audio/webm";
+      v.chunks = [];
+      recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) v.chunks.push(e.data); };
+      recorder.onstop = () => {
+        stopVoiceTimer();
+        releaseVoiceStream();
+        try {
+          const blob = new Blob(v.chunks || [], { type: v.mimeType || "audio/webm" });
+          if (!blob.size) {
+            resetVoiceRecording({ keepError: true });
+            v.error = t("No audio was recorded.", "لم يتم تسجيل أي صوت.");
+            updateVoiceComposerUi();
+            return;
+          }
+          v.blob = blob;
+          v.durationMs = Math.max(0, Math.round(voiceElapsedMs()));
+          clearVoicePreviewUrl();
+          v.url = URL.createObjectURL(blob);
+          v.state = "ready";
+        } catch {
+          resetVoiceRecording({ keepError: true });
+          v.error = t("Could not prepare the recording.", "تعذر تجهيز التسجيل.");
+        }
+        v.busy = false;
+        updateVoiceComposerUi();
+      };
+      recorder.onerror = () => {
+        v.error = t("Recording failed. Please try again.", "فشل التسجيل. يرجى المحاولة مرة أخرى.");
+        resetVoiceRecording({ keepError: true });
+      };
+      recorder.start(250);
+      v.startedAt = Date.now();
+      v.pausedTotal = 0;
+      v.pausedAt = 0;
+      v.state = "recording";
+      v.busy = false;
+      startVoiceTimer();
+      updateVoiceComposerUi();
+    } catch (error) {
+      v.busy = false;
+      const name = String(error?.name || "");
+      v.error = (name === "NotAllowedError" || name === "SecurityError")
+        ? t("Microphone access was denied.", "تم رفض الوصول إلى الميكروفون.")
+        : t("Could not start recording.", "تعذر بدء التسجيل.");
+      releaseVoiceStream();
+      v.state = "idle";
+      updateVoiceComposerUi();
+    }
+  }
+
+  function pauseVoiceRecording() {
+    const v = S.voice; if (!v?.recorder) return;
+    try {
+      if (v.state === "recording" && v.recorder.state === "recording") {
+        v.pausedAt = Date.now(); v.recorder.pause(); v.state = "paused";
+      } else if (v.state === "paused" && v.recorder.state === "paused") {
+        v.pausedTotal += Date.now() - (v.pausedAt || Date.now()); v.pausedAt = 0; v.recorder.resume(); v.state = "recording";
+      }
+    } catch {}
+    updateVoiceComposerUi();
+  }
+
+  async function stopVoiceRecording() {
+    const v = S.voice; if (!v?.recorder) return;
+    try { if (v.recorder.state !== "inactive") v.recorder.stop(); } catch { resetVoiceRecording(); }
+  }
+
+  function toggleVoicePreviewPlayback() {
+    const audio = document.querySelector('[data-live-voice-preview]');
+    if (!audio || !S.voice?.url) return;
+    if (audio.paused) { void audio.play().catch(() => {}); } else { audio.pause(); }
+  }
+
+  function voiceExtensionFromMime(mime) {
+    const m = String(mime || "").split(";")[0].trim().toLowerCase();
+    if (m === "audio/mp4" || m === "audio/x-m4a" || m === "audio/aac") return "m4a";
+    if (m === "audio/ogg") return "ogg";
+    if (m === "audio/mpeg") return "mp3";
+    if (m === "audio/wav") return "wav";
+    return "webm";
+  }
+
+  async function sendVoiceMessage() {
+    const user = me();
+    const conversationId = S.activeId;
+    const client = sb();
+    const v = S.voice;
+    if (!user || !client || !conversationId || S.uploading || !v?.blob || v.state !== "ready") return;
+    S.uploading = true;
+    updateVoiceComposerUi();
+    try {
+      const ext = voiceExtensionFromMime(v.mimeType || v.blob.type);
+      const safeName = `voice-message-${Date.now()}.${ext}`;
+      const path = `${conversationId}/${uid()}-${safeName}`;
+      const contentType = core ? core.normalizeMime(v.mimeType || v.blob.type || "audio/webm") : (v.mimeType || "audio/webm");
+      const { error: uploadError } = await client.storage
+        .from("team-chat")
+        .upload(path, v.blob, { contentType, upsert: false, cacheControl: "3600" });
+      if (uploadError) throw uploadError;
+
+      const durationSeconds = Math.max(0, Math.round((v.durationMs || voiceElapsedMs()) / 1000));
+      const row = {
+        conversation_id: conversationId,
+        message_type: "audio",
+        body: String(durationSeconds), // duration in seconds (compatible with existing schema)
+        reply_to_id: S.replyTo ? S.replyTo.id : null,
+        attachment_path: path,
+        attachment_name: safeName,
+        attachment_type: contentType,
+        attachment_size: v.blob.size,
+      };
+      const { data, error } = await client
+        .from("team_messages")
+        .insert(row)
+        .select(
+          "id,conversation_id,team_id,sender_id,message_type,body,attachment_path,attachment_name,attachment_type,attachment_size,reply_to_id,call_id,created_at,edited_at,deleted_at,deleted_by",
+        )
+        .single();
+      if (error) throw error;
+      resetVoiceRecording();
+      S.replyTo = null;
+      if (data) upsertMessage(data);
+      await signAttachments();
+      await markConversationRead(conversationId);
+      renderMessages();
+      scrollMessages(true);
+      toast(t("Voice message sent.", "تم إرسال الرسالة الصوتية."));
+    } catch (error) {
+      notifyError(t("Could not send the voice message.", "تعذر إرسال الرسالة الصوتية."), error);
+    } finally {
+      S.uploading = false;
+      updateVoiceComposerUi();
+    }
+  }
+
+  function updateVoiceComposerUi() {
+    const host = document.querySelector('[data-live-voice-wrap]');
+    if (!host) return;
+    const v = S.voice;
+    const state = v?.state || "idle";
+    const ms = state === "ready" ? (v.durationMs || 0) : voiceElapsedMs();
+    const timerEl = host.querySelector('[data-live-voice-timer]');
+    if (timerEl) timerEl.textContent = formatVoiceClock(ms);
+    const statusEl = host.querySelector('[data-live-voice-status]');
+    if (statusEl) {
+      statusEl.textContent =
+        state === "recording" ? t("Recording...", "جاري التسجيل...")
+        : state === "paused" ? t("Paused", "متوقف مؤقتًا")
+        : state === "ready" ? t("Preview before sending", "معاينة قبل الإرسال")
+        : v?.error ? v.error : "";
+    }
+    const previewShell = host.querySelector('[data-live-voice-preview-shell]');
+    if (previewShell) previewShell.hidden = !(state === "ready" && v.url);
+    const preview = host.querySelector('[data-live-voice-preview]');
+    if (preview && state === "ready" && v.url && preview.src !== v.url) preview.src = v.url;
+    host.dataset.state = state;
+    host.querySelectorAll('[data-live-action]').forEach((btn) => {
+      const action = btn.getAttribute('data-live-action');
+      const show = (
+        (action === 'voice-start' && (state === 'idle')) ||
+        (action === 'voice-pause' && (state === 'recording' || state === 'paused')) ||
+        (action === 'voice-stop' && (state === 'recording' || state === 'paused')) ||
+        (action === 'voice-cancel' && (state === 'recording' || state === 'paused' || state === 'ready')) ||
+        (action === 'voice-preview-toggle' && state === 'ready') ||
+        (action === 'voice-send' && state === 'ready') ||
+        (action === 'voice-discard' && state === 'ready')
+      );
+      btn.hidden = !show;
+      if (action === 'voice-pause') btn.textContent = state === 'paused' ? t('Resume', 'استكمال') : t('Pause', 'إيقاف مؤقت');
+      if (action === 'voice-preview-toggle' && preview) btn.textContent = preview.paused ? t('Preview', 'معاينة') : t('Pause preview', 'إيقاف المعاينة');
+      btn.disabled = Boolean(S.uploading || v.busy);
+    });
+    const errEl = host.querySelector('[data-live-voice-error]');
+    if (errEl) { errEl.textContent = v?.error || ""; errEl.hidden = !v?.error; }
   }
 
   // -------------------------------------------------------------------------
@@ -1511,13 +1910,17 @@
         };
       }
 
+      const isAudio = file && core && core.isAudioType && core.isAudioType(attachment.attachment_type);
       const row = {
         conversation_id: conversationId,
         message_type: file
           ? core && core.isImageType(attachment.attachment_type)
             ? "image"
-            : "file"
+            : isAudio
+              ? "audio"
+              : "file"
           : "text",
+        body: text || (isAudio ? null : null),
         body: text || null,
         reply_to_id: S.replyTo ? S.replyTo.id : null,
         ...(attachment || {}),
@@ -1885,6 +2288,27 @@
       case "pick-attachment":
         pickAttachment();
         return;
+      case "voice-start":
+        void startVoiceRecording();
+        return;
+      case "voice-pause":
+        pauseVoiceRecording();
+        return;
+      case "voice-stop":
+        void stopVoiceRecording();
+        return;
+      case "voice-cancel":
+        resetVoiceRecording();
+        return;
+      case "voice-discard":
+        resetVoiceRecording();
+        return;
+      case "voice-preview-toggle":
+        toggleVoicePreviewPlayback();
+        return;
+      case "voice-send":
+        void sendVoiceMessage();
+        return;
       case "back-to-list":
         closeChatView();
         return;
@@ -1985,10 +2409,12 @@
         void endCall();
         return;
       case "leave-call":
-        void leaveCall();
+        // Leaving the screen must not end the call for everyone.
+        void leaveCall({ silent: false, reason: "leave" });
         return;
       case "close-call":
-        void leaveCall();
+        // Closing the call UI locally must not end the call for everyone.
+        void leaveCall({ silent: true, reason: "close" });
         return;
       case "call-chat-send":
         void sendCallChat();
@@ -2175,10 +2601,11 @@
     });
 
     window.addEventListener("beforeunload", () => {
-      if (S.call) void leaveCall({ silent: true, unload: true });
+      // Leaving the page/app must not end the call for everyone.
+      if (S.call) void leaveCall({ silent: true, unload: true, reason: "beforeunload" });
     });
     window.addEventListener("pagehide", () => {
-      if (S.call) void leaveCall({ silent: true, unload: true });
+      if (S.call) void leaveCall({ silent: true, unload: true, reason: "pagehide" });
     });
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) return;
@@ -2219,12 +2646,14 @@
 
   function shutdown() {
     S.destroyed = true;
+    try { resetVoiceRecording(); } catch {}
     teardownTeamChannel();
     teardownReadChannel();
     teardownReactionChannel();
     stopInviteWatcher();
     stopRing();
-    if (S.call) void leaveCall({ silent: true });
+    // Module shutdown/unmount must not end the call for everyone.
+    if (S.call) void leaveCall({ silent: true, reason: "shutdown" });
     S.teamId = null;
     S.activeId = null;
     S.conversations = [];
@@ -2705,6 +3134,7 @@
       });
       const row = await loadCallRow(callId);
       if (!row) throw new Error(t("The call could not be created.", "تعذّر إنشاء المكالمة."));
+      console.info('[team-live][call]', { event: 'start', callId: String(callId), status: row?.status, type: callType, scope });
       setupCall(row, media, ice);
       void sendCallPush(callId, { call_type: callType, scope, title: title || null });
       toast(
@@ -2715,7 +3145,10 @@
     } catch (error) {
       media.stream.getTracks().forEach((track) => track.stop());
       if (callId) {
-        void rpc("team_live_leave_call", { p_call_id: callId }).catch(() => {});
+        void rpc("team_live_end_call", { p_call_id: callId }).catch(() => {
+          void rpc("team_live_leave_call", { p_call_id: callId }).catch(() => {});
+        });
+        markCallEnded(callId);
       }
       if (isMissingRpc(error)) {
         S.migrationMissing = true;
@@ -2783,7 +3216,12 @@
   }
 
   async function joinExistingCall(callId) {
-    if (!callId) return;
+    const id = String(callId || "");
+    if (!id) return;
+    if (isCallKnownEnded(id)) {
+      toast(t("This call has ended.", "انتهت هذه المكالمة."));
+      return;
+    }
     if (S.call) {
       if (String(S.call.id) === String(callId)) return;
       toast(t("Finish the current call first.", "أنهِ المكالمة الحالية أولًا."));
@@ -2796,16 +3234,19 @@
     }
     let media;
     try {
-      const row = await loadCallRow(callId);
+      const row = await loadCallRow(id);
+      console.info('[team-live][call]', { event: 'join-check', callId: id, status: row?.status });
       if (!row) throw new Error(t("Call not found.", "لم يتم العثور على المكالمة."));
-      if (row.status === "ended") {
+      if (String(row.status) === "ended") {
+        markCallEnded(id);
         toast(t("This call has ended.", "انتهت هذه المكالمة."));
         return;
       }
       media = await acquireMedia(row.call_type);
-      await rpc("team_live_join_call", { p_call_id: callId });
-      const fresh = await loadCallRow(callId);
-      if (!fresh || fresh.status === "ended") {
+      await rpc("team_live_join_call", { p_call_id: id });
+      const fresh = await loadCallRow(id);
+      if (!fresh || String(fresh.status) === "ended") {
+        if (fresh || id) markCallEnded(id);
         media.stream.getTracks().forEach((track) => track.stop());
         toast(t("This call has ended.", "انتهت هذه المكالمة."));
         return;
@@ -2826,6 +3267,7 @@
   function setupCall(row, media, ice) {
     const client = sb();
     if (!client) return;
+    console.info('[team-live][call]', { event: 'setup', callId: String(row?.id||''), status: row?.status });
     teardownCall();
     S.call = {
       ...row,
@@ -3307,8 +3749,12 @@
           },
           (payload) => {
             if (payload?.new?.status === "ended" && S.call && String(S.call.id) === String(call.id)) {
-              toast(t("The call ended.", "انتهت المكالمة."));
+              console.info('[team-live][call]', { event: 'remote-ended', callId: String(call.id), status: payload?.new?.status });
+              markCallEnded(call.id);
               teardownCall();
+              updateLiveBadge();
+              toast(t("Call ended for everyone.", "انتهت المكالمة للجميع."));
+              void loadConversations();
             }
           },
         )
@@ -3373,14 +3819,10 @@
     if (String(call.scope) === "direct") {
       call.noAnswerTimer = window.setTimeout(() => {
         if (!S.call || String(S.call.id) !== String(call.id)) return;
-        const answered = S.call.participants.some(
-          (row) => String(row.user_id) !== myId() && row.invite_status === "accepted" && !row.left_at,
-        );
+        const answered = S.call.participants.some((row) => String(row.user_id) !== myId() && row.invite_status === "accepted" && !row.left_at);
         if (answered) return;
         toast(t("No answer.", "لا يوجد رد."));
-        const id = call.id;
-        teardownCall();
-        void rpc("team_live_end_call", { p_call_id: id }).catch(() => {});
+        void endCall({ force: true, silent: false, source: "timeout" });
       }, 45000);
     }
   }
@@ -4092,57 +4534,137 @@
   // Ending calls and cleanup
   // -------------------------------------------------------------------------
 
-  async function endCall() {
+  async function endCall(options = {}) {
+    const { force = false, silent = false, source = "user" } = options || {};
     const call = S.call;
     if (!call) return;
-    const canEnd =
-      String(call.created_by) === myId() ||
-      (deps.teamCanManageTeam ? deps.teamCanManageTeam(teamById(call.team_id)) : false);
-    if (!canEnd) {
-      await leaveCall();
-      return;
+    const id = String(call.id);
+    if (call.ending || S.endingCallIds.has(id)) return;
+    call.ending = true;
+    S.endingCallIds.add(id);
+    updateCallControlsState();
+    if (!force && source === "user") {
+      const confirmed = window.confirm(t("End the call for everyone?", "إنهاء المكالمة للجميع؟"));
+      if (!confirmed) { call.ending = false; S.endingCallIds.delete(id); updateCallControlsState(); return; }
     }
-    if (!window.confirm(t("End the call for everyone?", "إنهاء المكالمة للجميع؟"))) return;
-    const id = call.id;
-    teardownCall();
     try {
+      console.info('[team-live][call]', { event: 'end-request', callId: id, source });
       await rpc("team_live_end_call", { p_call_id: id });
-      toast(t("Call ended.", "انتهت المكالمة."));
+      markCallEnded(id);
+      teardownCall();
+      updateLiveBadge();
+      if (!silent) toast(t("Call ended.", "انتهت المكالمة."));
+      void loadConversations();
+      void checkInvites();
     } catch (error) {
-      console.warn("Could not end the call cleanly.", error);
-    }
+      const fresh = await loadCallRow(id).catch(() => null);
+      if (!fresh || String(fresh.status) === "ended") {
+        markCallEnded(id); teardownCall(); updateLiveBadge();
+        if (!silent) toast(t("Call ended.", "انتهت المكالمة."));
+        void loadConversations(); void checkInvites();
+      } else {
+        if (S.call && String(S.call.id) === id) { S.call.ending = false; updateCallControlsState(); }
+        notifyError(t("Could not end the call. Please try again.", "تعذر إنهاء المكالمة. يرجى المحاولة مرة أخرى."), error);
+      }
+    } finally { S.endingCallIds.delete(id); }
   }
 
-  async function leaveCall({ silent = false, unload = false } = {}) {
+  async function leaveCall({ silent = false, unload = false, reason = "left" } = {}) {
     const call = S.call;
     if (!call) return;
-    const id = call.id;
-    teardownCall();
+    const id = String(call.id);
+    // Local disconnect/cleanup for this participant only. Do NOT end the call for everyone
+    // on navigation/unmount/unload unless the user explicitly pressed "End call".
     if (unload) {
-      // Best effort while the page is going away.
-      void rpc("team_live_leave_call", { p_call_id: id }).catch(() => {});
+      try { void rpc("team_live_leave_call", { p_call_id: id }).catch(() => {}); } catch {}
+      teardownCall({ skipServerPrune: true });
       return;
     }
     try {
       await rpc("team_live_leave_call", { p_call_id: id });
-      if (!silent) toast(t("You left the call.", "غادرت المكالمة."));
     } catch (error) {
       if (!silent) console.warn("Could not leave the call cleanly.", error);
+    } finally {
+      teardownCall();
     }
+    if (!silent) toast(t("You left the call.", "غادرت المكالمة."));
   }
 
-  function teardownCall() {
+  function updateCallControlsState() {
+    const call = S.call;
+    const ending = Boolean(call && call.ending);
+    const root = document.getElementById("team-live-call-root");
+    if (!root) return;
+    root.querySelectorAll('[data-live-action="end-call"], [data-live-action="leave-call"], [data-live-action="close-call"]').forEach((el) => {
+      if ("disabled" in el) el.disabled = ending;
+      el.setAttribute("aria-disabled", ending ? "true" : "false");
+    });
+  }
+
+  function teardownCall({ skipServerPrune = false } = {}) {
     const call = S.call;
     if (!call) return;
     S.call = null;
-    void rpc("team_live_prune_signals", { p_call_id: call.id }).catch(() => {});
-    document.body.classList.remove("live-call-active");
+
+    // Stop timers and polling immediately.
     if (call.timer) window.clearInterval(call.timer);
     if (call.statsTimer) window.clearInterval(call.statsTimer);
     if (call.signalPoll) window.clearInterval(call.signalPoll);
     if (call.participantsPoll) window.clearInterval(call.participantsPoll);
     if (call.heartbeat) window.clearInterval(call.heartbeat);
     if (call.noAnswerTimer) window.clearTimeout(call.noAnswerTimer);
+
+    // Stop local media (mic/camera/screen) and release devices.
+    try {
+      if (call.screenStream) {
+        call.screenStream.getTracks().forEach((track) => {
+          try { track.stop(); } catch { /* ignore */ }
+        });
+      }
+      if (call.localStream) {
+        call.localStream.getTracks().forEach((track) => {
+          try { track.stop(); } catch { /* ignore */ }
+        });
+      }
+      if (call.audioTrack) { try { call.audioTrack.stop(); } catch { /* ignore */ } }
+      if (call.videoTrack) { try { call.videoTrack.stop(); } catch { /* ignore */ } }
+    } catch {
+      /* ignore */
+    }
+
+    // Close all peer connections and pending candidates.
+    if (call.peers) {
+      for (const peer of call.peers.values()) {
+        if (peer.reconnectTimer) window.clearTimeout(peer.reconnectTimer);
+        try {
+          if (peer.pendingCandidates) peer.pendingCandidates.length = 0;
+          peer.pc.onicecandidate = null;
+          peer.pc.ontrack = null;
+          peer.pc.onnegotiationneeded = null;
+          peer.pc.onconnectionstatechange = null;
+          peer.pc.oniceconnectionstatechange = null;
+          peer.pc.close();
+        } catch {
+          /* ignore */
+        }
+      }
+      call.peers.clear();
+    }
+    if (call.connectedIds) call.connectedIds.clear();
+    if (call.seenSignals) call.seenSignals.clear();
+
+    // Remove Realtime subscriptions for call status, participants, signals and in-call chat.
+    if (call.channels && call.channels.length) {
+      for (const channel of call.channels) {
+        try {
+          sb()?.removeChannel(channel);
+        } catch {
+          /* ignore */
+        }
+      }
+      call.channels = [];
+    }
+
     if (call.audioCtx) {
       try {
         void call.audioCtx.close();
@@ -4150,32 +4672,23 @@
         /* ignore */
       }
     }
-    for (const channel of call.channels || []) {
-      try {
-        sb()?.removeChannel(channel);
-      } catch {
-        /* ignore */
-      }
+    call.analyser = null;
+    call.analyserData = null;
+    call.localStream = null;
+    call.screenStream = null;
+    call.audioTrack = null;
+    call.videoTrack = null;
+
+    if (!skipServerPrune) {
+      void rpc("team_live_prune_signals", { p_call_id: call.id }).catch(() => {});
     }
-    for (const peer of call.peers ? call.peers.values() : []) {
-      if (peer.reconnectTimer) window.clearTimeout(peer.reconnectTimer);
-      try {
-        peer.pc.close();
-      } catch {
-        /* ignore */
-      }
-    }
-    if (call.screenStream) {
-      call.screenStream.getTracks().forEach((track) => track.stop());
-    }
-    if (call.localStream) {
-      call.localStream.getTracks().forEach((track) => track.stop());
-    }
-    call.peers?.clear();
+
+    document.body.classList.remove("live-call-active");
     const root = document.getElementById("team-live-call-root");
     if (root) root.innerHTML = "";
     S.callChatMessages = [];
     S.callChatDraft = "";
+    S.callChatRendered = false;
     updateLiveBadge();
   }
 
@@ -4372,6 +4885,11 @@
   async function respondToInvite(callId, accept) {
     const id = String(callId || "");
     if (!id) return;
+    if (isCallKnownEnded(id)) {
+      if (!accept) return;
+      toast(t("This call has ended.", "انتهت هذه المكالمة."));
+      return;
+    }
     const invite =
       S.invites.find((row) => String(row.call_id) === id) || {
         call_id: id,
@@ -4421,7 +4939,8 @@
     try {
       await rpc("team_live_respond_call", { p_call_id: id, p_accept: true });
       const row = await loadCallRow(id);
-      if (!row || row.status === "ended") {
+      if (!row || String(row.status) === "ended") {
+        markCallEnded(id);
         media.stream.getTracks().forEach((track) => track.stop());
         toast(t("This call has ended.", "انتهت هذه المكالمة."));
         return;
@@ -4443,6 +4962,10 @@
       return;
     }
     if (!callId) return;
+    if (isCallKnownEnded(callId) && action !== "decline" && action !== "refresh") {
+      toast(t("This call has ended.", "انتهت هذه المكالمة."));
+      return;
+    }
     try {
       if (action === "decline") {
         await respondToInvite(callId, false);

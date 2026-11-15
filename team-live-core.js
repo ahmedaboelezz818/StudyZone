@@ -38,7 +38,17 @@
     "application/json",
   ];
 
-  const ALLOWED_ATTACHMENT_TYPES = [...IMAGE_TYPES, ...FILE_TYPES];
+  const AUDIO_TYPES = [
+    "audio/webm",
+    "audio/ogg",
+    "audio/mp4",
+    "audio/mpeg",
+    "audio/wav",
+    "audio/aac",
+    "audio/x-m4a",
+  ];
+
+  const ALLOWED_ATTACHMENT_TYPES = [...IMAGE_TYPES, ...FILE_TYPES, ...AUDIO_TYPES];
 
   const DEFAULT_STUN = [
     "stun:stun.l.google.com:19302",
@@ -57,6 +67,10 @@
     return IMAGE_TYPES.includes(normalizeMime(value));
   }
 
+  function isAudioType(value) {
+    return AUDIO_TYPES.includes(normalizeMime(value));
+  }
+
   function validateAttachment(file) {
     if (!file) return { ok: false, reason: "empty" };
     const size = Number(file.size || 0);
@@ -70,7 +84,7 @@
     if (!type || !ALLOWED_ATTACHMENT_TYPES.includes(type)) {
       return { ok: false, reason: "type" };
     }
-    return { ok: true, type, image: IMAGE_TYPES.includes(type) };
+    return { ok: true, type, image: IMAGE_TYPES.includes(type), audio: AUDIO_TYPES.includes(type) };
   }
 
   function safeAttachmentName(value) {
@@ -205,10 +219,12 @@
     MAX_CALL_PARTICIPANTS,
     IMAGE_TYPES,
     FILE_TYPES,
+    AUDIO_TYPES,
     ALLOWED_ATTACHMENT_TYPES,
     DEFAULT_STUN,
     normalizeMime,
     isImageType,
+    isAudioType,
     validateAttachment,
     safeAttachmentName,
     formatBytes,

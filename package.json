@@ -1,6 +1,6 @@
 {
   "name": "study-zone",
-  "version": "2.0.0",
+  "version": "2.0.4",
   "private": true,
   "description": "Study Zone web workspace and Capacitor Android app.",
   "scripts": {
