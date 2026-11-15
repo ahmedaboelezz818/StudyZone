@@ -34,6 +34,8 @@
     <link rel="stylesheet" href="./themes-presets.css?v=1" />
     <link rel="preload" as="style" href="./styles.css?v=team-system-1" />
     <link rel="stylesheet" href="./styles.css?v=team-system-1" />
+    <link rel="preload" as="style" href="./team-live.css?v=1" />
+    <link rel="stylesheet" href="./team-live.css?v=1" />
     <link rel="preload" as="style" href="./themes.css?v=2" />
     <link rel="stylesheet" href="./themes.css?v=2" />
     <link rel="stylesheet" href="./mobile.css?v=1" />
@@ -75,7 +77,9 @@
     <script src="./supabase-config.js"></script>
     <script src="./locales.js"></script>
     <script src="./offline-sync.js"></script>
-    <script src="./app.js?v=team-system-1" defer></script>
+    <script src="./team-live-core.js?v=1" defer></script>
+    <script src="./team-live.js?v=1" defer></script>
+    <script src="./app.js?v=1" defer></script>
     <script src="./sync-ui.js?v=1" defer></script>
     <script src="./native-shell.js?v=1" defer></script>
     <script src="./ui-controls.js?v=1" defer></script>
@@ -126,6 +130,10 @@
           >
           <a class="nav-link" href="#teams" data-page="teams"
             ><span class="nav-icon">⚭</span>Teams</a
+          >
+          <a class="nav-link" href="#team-live" data-page="team-live"
+            ><span class="nav-icon">💬</span>Team live
+            <span class="nav-count" id="team-live-count" hidden>0</span></a
           >
           <a class="nav-link" href="#team-tasks" data-page="team-tasks"
             ><span class="nav-icon">✓</span>My team tasks</a

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <application
         android:allowBackup="true"
@@ -194,6 +195,41 @@
             </intent-filter>
         </receiver>
 
+        <!-- WhatsApp-like incoming call UI and actions. -->
+        <activity
+            android:name=".IncomingCallActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:showOnLockScreen="true"
+            android:turnScreenOn="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/AppTheme.NoActionBar" />
+
+        <receiver
+            android:name=".IncomingCallReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.studyzone.app.action.CALL_ACCEPT" />
+                <action android:name="com.studyzone.app.action.CALL_DECLINE" />
+                <action android:name="com.studyzone.app.action.CALL_DISMISS" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Replace the Capacitor push plugin's FCM service so incoming team calls
+             can show a full-screen call notification even in background. Non-call
+             messages are forwarded to the plugin for normal handling. -->
+        <service
+            android:name=".StudyZoneFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <service
+            android:name="com.capacitorjs.plugins.pushnotifications.MessagingService"
+            tools:node="remove" />
+
     </application>
 
     <!-- Permissions -->
@@ -204,7 +240,16 @@
          Capacitor's WebChromeClient requests it at runtime on first use. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Team Live video calls. Optional so devices without a camera can still
+         install and use audio calls. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Incoming call alerts: full-screen intent (where permitted), vibration and wake. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- No foreground service is used: the persistent clock notification is a
          normal ongoing notification driven by the system chronometer. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />

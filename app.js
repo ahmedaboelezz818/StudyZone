@@ -9913,6 +9913,7 @@
         )
         .join("")}</div>
       ${migrationNotice}
+      ${window.StudyZoneTeamLive?.teamPanel?.(selected) || ""}
       <div class="grid team-layout">
         <section class="panel team-members-panel">
           <div class="team-heading"><div><p class="eyebrow">${owner ? teamText("YOU OWN THIS TEAM", "أنت المالك") : myMembership?.role === "admin" ? teamText("TEAM MANAGER", "مدير الفريق") : teamText("MEMBER", "عضو")}</p><h2>${escapeHtml(selected.name)}</h2><p class="panel-copy">${escapeHtml(selected.description || teamText("No description yet.", "لا وصف بعد."))}</p></div><div class="team-code"><span>${teamText("Join code", "كود الانضمام")}</span><strong dir="ltr">${escapeHtml(selected.join_code || "—")}</strong></div></div>
@@ -10919,8 +10920,14 @@
   }
 
   function teamTaskTaskActions(task, team) {
-    if (!teamCanManageTeam(team)) return "";
+    const liveActions = window.StudyZoneTeamLive?.taskActions?.(task, team) || "";
+    if (!teamCanManageTeam(team)) {
+      return liveActions
+        ? `<div class="team-detail-actions">${liveActions}</div>`
+        : "";
+    }
     return `<div class="team-detail-actions">
+      ${liveActions}
       <button class="button button-secondary button-small" type="button" data-action="team-task-edit" data-id="${escapeHtml(task.id)}">${teamText("Edit task", "تعديل المهمة")}</button>
       <button class="button button-secondary button-small" type="button" data-action="team-task-force-complete" data-id="${escapeHtml(task.id)}">${teamText("Force complete", "إكمال إجباري")}</button>
       <button class="button button-quiet button-small danger-text" type="button" data-action="team-task-delete" data-id="${escapeHtml(task.id)}">${teamText("Delete task", "حذف المهمة")}</button>
@@ -14540,6 +14547,11 @@
     media: mediaNotesPage,
     teams: teamsPage,
     "team-tasks": myTeamTasksPage,
+    "team-live": () => {
+      const html = window.StudyZoneTeamLive?.renderPage?.() || "";
+      window.requestAnimationFrame(() => window.StudyZoneTeamLive?.mount?.());
+      return html;
+    },
     teamLeaderboard: teamLeaderboardPage,
     "team-leaderboard": teamLeaderboardPage,
     focus: focusPage,
@@ -14565,6 +14577,7 @@
     media: "Media notes",
     teams: "Teams",
     "team-tasks": "My team tasks",
+    "team-live": "Team chat & calls",
     teamLeaderboard: "Team leaderboard",
     "team-leaderboard": "Team leaderboard",
     focus: "Focus timer",
@@ -14803,7 +14816,9 @@
         });
     }
     if (
-      (currentPage === "teams" || currentPage === "team-tasks") &&
+      (currentPage === "teams" ||
+        currentPage === "team-tasks" ||
+        currentPage === "team-live") &&
       session &&
       !teamsLoaded &&
       !teamsLoading
@@ -17649,6 +17664,7 @@
       return;
     }
     session = data.session;
+    window.StudyZoneTeamLive?.syncSession?.(session);
     window.StudyZoneOffline?.setUser?.(session?.user?.id || null);
     if (session) localStorage.setItem(authPromptStorageKey, "seen");
     else if (!localStorage.getItem(authPromptStorageKey)) {
@@ -17678,6 +17694,7 @@
     }
     supabase.auth.onAuthStateChange((_event, nextSession) => {
       session = nextSession;
+      window.StudyZoneTeamLive?.syncSession?.(session);
       window.StudyZoneOffline?.setUser?.(session?.user?.id || null);
       adminAuthorization = {
         status: "unknown",
@@ -19630,6 +19647,7 @@
       }
       await offlineStore?.clearUser?.(offlineUserId);
       window.StudyZoneNotifications?.cancelAll?.();
+      window.StudyZoneTeamLive?.shutdown?.();
       session = null;
       adminAuthorization = { status: "denied", userId: null };
       adminUsersRequest += 1;
@@ -20388,6 +20406,35 @@
   document.getElementById("footer-year").textContent = new Date().getFullYear();
   updateOfflineStatus();
   document.documentElement.dataset.motion = motionLevel;
+  window.StudyZoneTeamLive?.init?.({
+    getSupabase: () => supabase,
+    getSession: () => session,
+    getAccountProfile: () => accountProfile,
+    getTeams: () => teams,
+    getTeamMembers: () => teamMembers,
+    getTeamTasks: () => teamTasks,
+    getTeamProfiles: () => teamProfiles,
+    getTeamTaskAssignees: () => teamTaskAssignees,
+    getTaskParticipantIds: (taskId) => teamTaskParticipants(taskId),
+    getSelectedTeamId: () => selectedTeamId,
+    setSelectedTeamId: (teamId) => {
+      selectedTeamId = teamId;
+    },
+    getLanguage: () => appLanguage,
+    teamText,
+    escapeHtml,
+    showToast,
+    openModal,
+    closeModal,
+    teamAvatar,
+    teamMemberName,
+    teamDateLabel,
+    teamCanManageTeam,
+    scheduleRender,
+    navigate,
+    loadTeams: (options) => loadTeams(options),
+  });
+
   currentPage = pageRenderers[window.location.hash.slice(1)]
     ? window.location.hash.slice(1)
     : "dashboard";

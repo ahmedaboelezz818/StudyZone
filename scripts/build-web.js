@@ -12,6 +12,9 @@ const out = path.join(root, "www");
 const files = [
   "index.html",
   "app.js",
+  "team-live.css",
+  "team-live-core.js",
+  "team-live.js",
   "styles.css",
   "mobile.css",
   "themes.css",

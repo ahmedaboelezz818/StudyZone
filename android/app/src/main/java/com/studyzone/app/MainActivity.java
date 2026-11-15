@@ -81,14 +81,30 @@ public class MainActivity extends BridgeActivity {
         // resize or theme change still needs one refresh.
         StudyZoneClockWidget.updateAll(this);
         StudyZoneClockNotification.sync(this);
+        dispatchPendingCallAction();
     }
 
     private void handleOpenPage(Intent intent) {
         if (intent == null || getBridge() == null) return;
+
+        String action = intent.getAction();
+        String callId = intent.getStringExtra(CallNotificationHelper.EXTRA_CALL_ID);
+        if (action != null && callId != null && !callId.isEmpty()) {
+            if (action.startsWith(CallNotificationHelper.ACTION_ACCEPT)) {
+                CallNotificationHelper.savePendingAction(
+                        this, "accept", callId, CallNotificationHelper.payloadJson(intent));
+            } else if (action.startsWith(CallNotificationHelper.ACTION_DECLINE)) {
+                CallNotificationHelper.savePendingAction(
+                        this, "decline", callId, CallNotificationHelper.payloadJson(intent));
+            }
+        }
+
         String page = intent.hasExtra("page") ? intent.getStringExtra("page") : null;
         if (page == null && intent.getData() != null) {
             page = intent.getData().getQueryParameter("page");
         }
+
+        dispatchPendingCallAction();
         if (page == null || page.isEmpty()) return;
         final String target = JSONObject.quote(page);
         final WebView webView = getBridge().getWebView();
@@ -96,6 +112,23 @@ public class MainActivity extends BridgeActivity {
                 "setTimeout(function(){window.dispatchEvent(new CustomEvent('studyzone:shortcut-open',{detail:{page:" +
                         target + "}}));},450);",
                 null));
+    }
+
+    private void dispatchPendingCallAction() {
+        if (getBridge() == null) return;
+        String[] pending = CallNotificationHelper.consumePendingAction(this);
+        if (pending == null) return;
+        final String action = JSONObject.quote(pending[0]);
+        final String callId = JSONObject.quote(pending[1]);
+        String payload = pending[2] == null || pending[2].isEmpty() ? "{}" : pending[2];
+        final WebView webView = getBridge().getWebView();
+        final String script =
+                "setTimeout(function(){" +
+                "var d={action:" + action + ",callId:" + callId + ",payload:" + payload + "};" +
+                "window.__studyZonePendingCallAction=d;" +
+                "window.dispatchEvent(new CustomEvent('studyzone:incoming-call-action',{detail:d}));" +
+                "},600);";
+        webView.post(() -> webView.evaluateJavascript(script, null));
     }
 
     /**

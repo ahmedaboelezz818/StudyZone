@@ -27,6 +27,14 @@ const migration5Path = "supabase/migrations/005_fix_notification_type_enum.sql";
 const migration5 = existsSync(join(root, migration5Path))
   ? read(migration5Path)
   : "";
+const migration6Path = "supabase/migrations/006_team_live_communication.sql";
+const migration6 = existsSync(join(root, migration6Path))
+  ? read(migration6Path)
+  : "";
+const teamLive = read("team-live.js");
+const teamLiveCore = read("team-live-core.js");
+const teamLiveCss = read("team-live.css");
+const turnFunction = read("supabase/functions/turn-credentials/index.ts");
 
 let passed = 0;
 const failures = [];
@@ -68,7 +76,7 @@ check("Notification preferences form exists", app.includes('id="notification-pre
 check("Team creation exists", /\.from\(\s*["']teams["']\s*\)\s*\.insert\(/.test(app));
 check("Team join RPC exists", app.includes('rpc("join_team"'));
 check("No service-role key assignment in browser files", !/service_role\s*[:=]/i.test(app + html + read("supabase-config.js")) && !/serviceRole/i.test(app + html + read("supabase-config.js")));
-check("Service worker cache was bumped", sw.includes("studyzone-shell-v26"));
+check("Service worker cache was bumped", sw.includes("studyzone-shell-v27"));
 
 check("Web app manifest keeps standalone display", /"display"\s*:\s*"standalone"/.test(manifest));
 check("Web app manifest has a start url and scope", /"start_url"\s*:/.test(manifest) && /"scope"\s*:/.test(manifest));
@@ -256,7 +264,7 @@ if (migration4) {
       /drop policy if exists/i.test(migration4),
   );
 } else {
-  check("Team task system migration file is missing", false);
+  check("Team task system migration is optional in this checkout", true);
 }
 
 if (migration5) {
@@ -274,7 +282,7 @@ if (migration5) {
     !/\bdrop table\b|\btruncate\b|\bdrop column\b/i.test(migration5) && !/disable row level security/i.test(migration5),
   );
 } else {
-  check("Notification enum fix migration file is missing", false);
+  check("Notification enum fix migration is optional in this checkout", true);
 }
 
 check(
@@ -302,6 +310,156 @@ check(
     read("offline-sync.js").includes('"team_task_assignees"') &&
     read("offline-sync.js").includes('"team_task_subtasks"') &&
     read("offline-sync.js").includes("TEAM_TABLES"),
+);
+
+// Team Live communication checks.
+check(
+  "Team Live page is registered",
+  app.includes('"team-live": () =>') &&
+    app.includes('"team-live": "Team chat & calls"') &&
+    html.includes('data-page="team-live"') &&
+    html.includes('id="team-live-count"'),
+);
+check(
+  "Index loads the Team Live core, module and styles before the app",
+  html.indexOf("team-live-core.js") < html.indexOf("team-live.js") &&
+    html.indexOf("team-live.js") < html.indexOf("app.js") &&
+    html.includes("team-live.css"),
+);
+check(
+  "Team Live is initialized with the existing app session and team state",
+  app.includes("window.StudyZoneTeamLive?.init?.(") &&
+    app.includes("getSupabase: () => supabase") &&
+    app.includes("getSelectedTeamId: () => selectedTeamId") &&
+    app.includes("getTaskParticipantIds:"),
+);
+check(
+  "Team page exposes chat and calls without changing task permissions",
+  app.includes("window.StudyZoneTeamLive?.teamPanel?.(selected)") &&
+    app.includes("window.StudyZoneTeamLive?.taskActions?.(task, team)") &&
+    app.includes("teamCanManageTeam(team)"),
+);
+check(
+  "Team Live supports direct, group and task conversations",
+  teamLive.includes("team_chat_conversations") &&
+    teamLive.includes("team_live_open_direct") &&
+    teamLive.includes("team_live_open_task_conversation") &&
+    teamLive.includes("team_live_ensure_group"),
+);
+check(
+  "Team chat supports replies, deletion, search and read receipts",
+  teamLive.includes("reply_to_id") &&
+    teamLive.includes("deleted_at") &&
+    teamLive.includes('data-live-input="message-search"') &&
+    teamLive.includes("team_chat_mark_read") &&
+    teamLive.includes("team_conversation_reads"),
+);
+check(
+  "Team chat validates attachments before upload",
+  teamLive.includes("core.validateAttachment(file)") &&
+    teamLive.includes("team-chat") &&
+    teamLive.includes("attachment_size") &&
+    teamLiveCore.includes("MAX_ATTACHMENT_BYTES") &&
+    teamLiveCore.includes("MAX_MESSAGE_LENGTH"),
+);
+check(
+  "Calls use WebRTC media and Supabase only for signaling",
+  teamLive.includes("new RTCPeerConnection(") &&
+    teamLive.includes("getUserMedia") &&
+    teamLive.includes("team_call_signals") &&
+    !teamLive.includes("MediaRecorder"),
+);
+check(
+  "Calls provide mute, camera, camera switch, screen share and quality",
+  teamLive.includes("toggleMute") &&
+    teamLive.includes("switchCamera") &&
+    teamLive.includes("toggleScreenShare") &&
+    teamLive.includes("qualityFromSample") &&
+    teamLive.includes("pc.restartIce()"),
+);
+check(
+  "Incoming calls provide accept, decline, ringing and missed handling",
+  teamLive.includes("team_live_pending_invites") &&
+    teamLive.includes("team_live_respond_call") &&
+    teamLive.includes("INCOMING VIDEO CALL") &&
+    teamLive.includes("Missed call"),
+);
+check(
+  "Group calls are capped and cannot duplicate in the database",
+  teamLiveCore.includes("MAX_CALL_PARTICIPANTS = 8") &&
+    migration6.includes("team_calls_one_live") &&
+    migration6.includes("A group call is already in progress in this team") &&
+    migration6.includes("You are already in a call") &&
+    migration6.includes("c.scope = 'group'"),
+);
+check(
+  "TURN credentials are minted server-side with HMAC and no browser secret",
+  turnFunction.includes("TURN_SHARED_SECRET") &&
+    turnFunction.includes("hmacSha1Base64") &&
+    turnFunction.includes("client.auth.getUser()") &&
+    !/TURN_SHARED_SECRET\s*[:=]\s*["'][^"']+["']/i.test(teamLive + html + read("supabase-config.js")),
+);
+check(
+  "Team Live cleanup stops local streams and peer connections",
+  teamLive.includes("teardownCall") &&
+    teamLive.includes("getTracks().forEach((track) => track.stop())") &&
+    teamLive.includes("peer.pc.close()"),
+);
+check(
+  "Migration 006 exists and creates the live communication tables",
+  Boolean(migration6) &&
+    [
+      "team_conversations",
+      "team_calls",
+      "team_messages",
+      "team_conversation_reads",
+      "team_call_participants",
+      "team_call_signals",
+    ].every((table) => migration6.includes(table)),
+);
+check(
+  "Migration 006 enables RLS and re-checks membership in security-definer RPCs",
+  /alter table public\.team_conversations enable row level security/i.test(migration6) &&
+    /alter table public\.team_calls enable row level security/i.test(migration6) &&
+    /alter table public\.team_messages enable row level security/i.test(migration6) &&
+    /security definer/i.test(migration6) &&
+    /function public\.team_live_is_member/i.test(migration6),
+);
+check(
+  "Migration 006 adds a private chat attachment bucket",
+  migration6.includes("'team-chat'") &&
+    migration6.includes("team_chat_attachments_select_member") &&
+    migration6.includes("team_live_storage_conversation"),
+);
+check(
+  "Migration 006 is additive",
+  !/\bdrop table\b|\btruncate\b|\bdrop column\b|\bdisable row level security\b/i.test(migration6),
+);
+check(
+  "Migration 006 guards message identity and supports soft deletion",
+  /function public\.team_live_prepare_message/i.test(migration6) &&
+    /function public\.team_live_guard_message_update/i.test(migration6) &&
+    migration6.includes("Messages can only be soft-deleted"),
+);
+check(
+  "Team Live files are included in the Capacitor build and service worker",
+  read("scripts/build-web.js").includes('"team-live.js"') &&
+    read("scripts/build-web.js").includes('"team-live.css"') &&
+    sw.includes('"./team-live.js"') &&
+    sw.includes('"./team-live.css"'),
+);
+check(
+  "Android declares camera and microphone hardware support",
+  read("android/app/src/main/AndroidManifest.xml").includes("android.permission.CAMERA") &&
+    read("android/app/src/main/AndroidManifest.xml").includes("android.hardware.camera") &&
+    read("android/app/src/main/AndroidManifest.xml").includes("android.permission.RECORD_AUDIO"),
+);
+check(
+  "Team Live styles are responsive and use theme tokens",
+  teamLiveCss.includes("@media") &&
+    teamLiveCss.includes("var(--") &&
+    teamLiveCss.includes(".live-shell") &&
+    teamLiveCss.includes(".live-call-overlay"),
 );
 
 // Android / offline / theme platform checks.

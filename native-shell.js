@@ -217,7 +217,10 @@
         this.permission = status?.display || "prompt";
         await this.createChannels();
         this.ready = true;
-        if (this.permission === "granted") this.scheduleFromApp();
+        if (this.permission === "granted") {
+          this.scheduleFromApp();
+          void push.register();
+        }
       } catch (error) {
         console.warn("[StudyZoneNotifications] init failed", error);
       }
@@ -607,15 +610,37 @@
         console.warn("[StudyZonePush] registration error", error),
       );
       PushNotifications.addListener("pushNotificationReceived", (notification) => {
-        // Foreground delivery: the in-app UI already reacts to local data, so
-        // only route deep links here.
-        const page = notification?.data?.page;
+        const data = notification?.data || {};
+        const type = String(data.type || "").toLowerCase();
+        const isCall = type === "incoming_call" || type === "team_live_call" || type === "call_invite" || type === "call" || !!data.call_id || !!data.callId;
+        if (isCall) {
+          // Team Live has its own realtime/polling + in-app UI; trigger a refresh
+          // so foreground calls are picked up quickly without duplicating UI.
+          window.StudyZoneTeamLive?.__state && (window.StudyZoneTeamLive.__state.inviteCheckBusy = false);
+          try { window.StudyZoneApp?.navigate?.("team-live"); } catch {}
+          window.dispatchEvent(new CustomEvent("studyzone:incoming-call-action", { detail: { action: "refresh", callId: data.call_id || data.callId || "" } }));
+          return;
+        }
+        const page = data.page;
         if (page) window.StudyZoneApp?.navigate?.(page);
       });
       PushNotifications.addListener(
         "pushNotificationActionPerformed",
         (action) => {
-          const page = action?.notification?.data?.page;
+          const data = action?.notification?.data || {};
+          const type = String(data.type || "").toLowerCase();
+          const callId = data.call_id || data.callId || "";
+          const isCall = type === "incoming_call" || type === "team_live_call" || type === "call_invite" || type === "call" || !!callId;
+          if (isCall && callId) {
+            const actionId = String(action?.actionId || "tap").toLowerCase();
+            const callAction = actionId === "decline" || data.action === "decline" ? "decline" : "accept";
+            window.StudyZoneApp?.navigate?.("team-live");
+            const detail = { action: callAction, callId: String(callId), payload: data };
+            window.__studyZonePendingCallAction = detail;
+            window.dispatchEvent(new CustomEvent("studyzone:incoming-call-action", { detail }));
+            return;
+          }
+          const page = data.page;
           if (page) window.StudyZoneApp?.navigate?.(page);
         },
       );

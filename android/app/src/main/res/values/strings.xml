@@ -38,4 +38,13 @@
     <string name="clock_notification_text">Live 24-hour clock. Tap to open Focus, or turn it off with the button below.</string>
     <string name="clock_notification_open">Open clock</string>
     <string name="clock_notification_stop">Turn off</string>
+    <string name="incoming_video_call">Incoming video call</string>
+    <string name="incoming_audio_call">Incoming audio call</string>
+    <string name="incoming_call_hint">Accept to join the call. Decline to let them know you\'re unavailable.</string>
+    <string name="accept_call">Accept</string>
+    <string name="decline_call">Decline</string>
+    <string name="call_channel_name">Incoming calls</string>
+    <string name="call_channel_description">High-priority alerts for incoming team calls</string>
+    <string name="missed_call">Missed call</string>
+    <string name="call_from">Call from %1$s</string>
 </resources>

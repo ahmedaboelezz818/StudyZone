@@ -1,4 +1,4 @@
-const CACHE_NAME = "studyzone-shell-v26";
+const CACHE_NAME = "studyzone-shell-v27";
 
 const APP_SHELL = [
   "./",
@@ -26,6 +26,9 @@ const APP_SHELL = [
   "./assets/images/teams-collaboration.webp",
   "./assets/images/achievements-graduation.webp",
   "./app.js",
+  "./team-live.css",
+  "./team-live-core.js",
+  "./team-live.js",
   "./offline-sync.js",
   "./sync-ui.js",
   "./native-shell.js",
