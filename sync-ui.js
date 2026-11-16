@@ -1,5 +1,5 @@
 /*
- * Study Zone sync interface.
+ * Second Brain sync interface.
  *
  * The offline engine (offline-sync.js) owns the data. This module only renders
  * its state: the topbar connection chip, the live settings summary and the

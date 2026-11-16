@@ -66,7 +66,19 @@ public class StudyZoneFirebaseMessagingService extends FirebaseMessagingService 
         String stateLower = state == null ? "" : state.trim().toLowerCase();
         if ("ended".equals(stateLower) || "canceled".equals(stateLower) || "cancelled".equals(stateLower)
                 || "declined".equals(stateLower) || "accepted".equals(stateLower) || "missed".equals(stateLower)) {
+            // The caller ended the call or somebody else accepted it: remove
+            // the ringing notification on every device and stop here.
             CallNotificationHelper.cancel(this, callId);
+            return;
+        }
+
+        if (MainActivity.isInForeground()) {
+            // The web UI already shows its own incoming-call sheet. Forward the
+            // payload to Capacitor instead of drawing a second native screen.
+            try {
+                PushNotificationsPlugin.sendRemoteMessage(remoteMessage);
+            } catch (Throwable ignored) {
+            }
             return;
         }
 

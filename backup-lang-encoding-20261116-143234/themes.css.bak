@@ -1,0 +1,105 @@
+/* Study Zone color theme picker.
+ *
+ * Color tokens themselves now live in two places only:
+ *   - design-tokens.css   : shared aliases + the original palette
+ *   - themes-presets.css  : generated, complete token sets for every preset
+ *
+ * This file previously redefined palette variables for a subset of presets,
+ * which let a previous theme's background/accent survive a switch and looked
+ * like colors "mixing" between themes. It now contains UI styles only.
+ */
+
+/* Theme picker */
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.theme-option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--surface-soft);
+  color: var(--polar);
+  text-align: start;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    transform 0.18s ease,
+    background 0.18s ease;
+}
+.theme-option:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+.theme-option.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.theme-option strong {
+  font-size: 11px;
+  font-weight: 700;
+}
+.theme-option small {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+.theme-preview {
+  display: flex;
+  gap: 4px;
+  height: 38px;
+  padding: 5px;
+  border-radius: 8px;
+  background: var(--theme-preview-a);
+  overflow: hidden;
+}
+.theme-preview i {
+  display: block;
+  border-radius: 4px;
+  background: var(--theme-preview-b);
+  opacity: 0.85;
+}
+.theme-preview i:nth-child(1) {
+  width: 34%;
+  opacity: 0.45;
+}
+.theme-preview i:nth-child(2) {
+  flex: 1;
+  opacity: 0.75;
+}
+.theme-preview i:nth-child(3) {
+  width: 18%;
+}
+.theme-check {
+  position: absolute;
+  top: 8px;
+  inset-inline-end: 8px;
+  display: none;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--color-text-on-primary);
+  font-size: 9px;
+  font-weight: 800;
+}
+.theme-option.selected .theme-check {
+  display: grid;
+}
+@media (max-width: 760px) {
+  .theme-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 380px) {
+  .theme-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -265,6 +265,107 @@
     soundRepeat: false,
   });
   let focusSettings = { ...defaultFocusSettings };
+  const ALERT_SOUNDS = [
+    {
+      id: "focus-start",
+      label: { en: "Focus start", ar: "بداية التركيز" },
+      description: {
+        en: "Two-note signal that a focus session has begun.",
+        ar: "نغمة من نغمتين واضحة تعلن بدء جلسة التركيز.",
+      },
+      pattern: {
+        durationMs: 560,
+        tones: [
+          { frequency: 523.25, endFrequency: 392, start: 0, duration: 0.22 },
+          { frequency: 392, endFrequency: 329.63, start: 0.22, duration: 0.34 },
+        ],
+      },
+    },
+    {
+      id: "focus-end",
+      label: { en: "Focus end", ar: "نهاية التركيز" },
+      description: {
+        en: "Deep tone that marks a focus session or Pomodoro cycle as complete.",
+        ar: "نغمة عميقة تمثل اكتمال جلسة التركيز أو دورة البومودورو.",
+      },
+      pattern: {
+        durationMs: 1400,
+        tones: [
+          { frequency: 329.63, endFrequency: 246.94, start: 0, duration: 1.2 },
+        ],
+      },
+    },
+    {
+      id: "task-reminder",
+      label: { en: "Task reminder", ar: "تذكير المهمة" },
+      description: {
+        en: "Two-note alert that pulls a task or appointment back into focus.",
+        ar: "تنبيه من نغمتين يسترجع المهمة أو الموعد إلى التركيز.",
+      },
+      pattern: {
+        durationMs: 900,
+        tones: [
+          { frequency: 659.25, endFrequency: 830.61, start: 0, duration: 0.32 },
+          { frequency: 830.61, endFrequency: 659.25, start: 0.4, duration: 0.5 },
+        ],
+      },
+    },
+    {
+      id: "task-due",
+      label: { en: "Task due", ar: "استحقاق مهمة" },
+      description: {
+        en: "A clear alert for tasks or appointments that are due now.",
+        ar: "تنبيه واضح للمهام أو المواعيد المستحقة الآن.",
+      },
+      pattern: {
+        durationMs: 850,
+        tones: [
+          { frequency: 740, endFrequency: 660, start: 0, duration: 0.28 },
+          { frequency: 660, endFrequency: 740, start: 0.32, duration: 0.28 },
+          { frequency: 740, endFrequency: 620, start: 0.64, duration: 0.21 },
+        ],
+      },
+    },
+    {
+      id: "break-end",
+      label: { en: "Break end", ar: "نهاية الاستراحة" },
+      description: {
+        en: "Light, rising signal that a break is over and it is time to return.",
+        ar: "إشارة خفيفة صاعدة تعلن انتهاء الاستراحة وموعد العودة.",
+      },
+      pattern: {
+        durationMs: 1000,
+        tones: [
+          { frequency: 440, endFrequency: 523.25, start: 0, duration: 0.4 },
+          { frequency: 523.25, endFrequency: 659.25, start: 0.45, duration: 0.55 },
+        ],
+      },
+    },
+    {
+      id: "soft-chime",
+      label: { en: "Soft chime", ar: "جرس ناعم" },
+      description: {
+        en: "A gentle chime for a subtle alert.",
+        ar: "جرس لطيف لتنبيه هادئ.",
+      },
+      pattern: {
+        durationMs: 900,
+        tones: [
+          { frequency: 783.99, endFrequency: 659.25, start: 0, duration: 0.8 },
+        ],
+      },
+    },
+    {
+      id: "none",
+      label: { en: "No sound", ar: "بدون صوت" },
+      description: {
+        en: "Silence for moments when you only want a visual notification.",
+        ar: "صمت للحظات التي تريد فيها تنبيهًا مرئيًا فقط.",
+      },
+      pattern: { durationMs: 0, tones: [] },
+    },
+  ];
+
   const notificationPrefsKey = "studyzone.notification-prefs.v1";
   let notificationPrefs = {
     sound: true,
@@ -295,6 +396,7 @@
         end: /^\d{2}:\d{2}$/.test(storedNotificationPrefs.end || "")
           ? storedNotificationPrefs.end
           : "07:00",
+        vibration_enabled: storedNotificationPrefs.vibration_enabled !== false,
         taskSound: ALERT_SOUNDS.some(
           (sound) => sound.id === storedNotificationPrefs.taskSound,
         )
@@ -415,7 +517,7 @@
       notificationsDenied:
         "Notification permission was denied. You can enable it in your browser settings.",
       notificationReady:
-        "Browser notifications enabled while Study Zone is open.",
+        "Browser notifications enabled while Second Brain is open.",
       focusCompleted: "Focus session complete. Take a short break.",
       focusCompletedTitle: "Focus session complete!",
       cycleCompletedTitle: "Pomodoro cycle complete!",
@@ -508,7 +610,7 @@
       notificationsUnsupported: "إشعارات المتصفح غير مدعومة هنا.",
       notificationsDenied:
         "تم رفض إذن الإشعارات. يمكنك تفعيله من إعدادات المتصفح.",
-      notificationReady: "إشعارات المتصفح مفعلة أثناء فتح Study Zone.",
+      notificationReady: "إشعارات المتصفح مفعلة أثناء فتح Second Brain.",
       focusCompleted: "اكتملت جلسة التركيز. حان وقت استراحة قصيرة.",
       focusCompletedTitle: "اكتملت جلسة التركيز!",
       cycleCompletedTitle: "اكتملت دورة بومودورو!",
@@ -1772,7 +1874,7 @@
   }
 
   const interfaceText = {
-    "YOUR STUDY LIFE, ORGANIZED": "حياتك الدراسية، منظمة",
+    "YOUR MIND. ORGANIZED.": "عقلك. مُنظَّم.",
     WORKSPACE: "مساحة العمل",
     "Main navigation": "التنقل الرئيسي",
     "Progress navigation": "التنقل بين الإنجازات",
@@ -1828,7 +1930,7 @@
     "Supabase connected": "تم الاتصال بـSupabase",
     "Open navigation": "فتح قائمة التنقل",
     "Open profile": "فتح الملف الشخصي",
-    "Study Zone dashboard": "لوحة تحكم Study Zone",
+    "Second Brain dashboard": "لوحة تحكم Second Brain",
     Workspace: "مساحة العمل",
     Today: "اليوم",
     Close: "إغلاق",
@@ -1884,8 +1986,8 @@
     "1 day before": "قبل الموعد بيوم",
     Cancel: "إلغاء",
     "Save deadline": "حفظ الموعد",
-    "YOUR STUDY LIFE, ORGANIZED": "حياتك الدراسية، منظمة",
-    "Welcome to Study Zone": "مرحبًا بك في Study Zone",
+    "YOUR MIND. ORGANIZED.": "عقلك. مُنظَّم.",
+    "Welcome to Second Brain": "مرحبًا بك في Second Brain",
     "Connect Supabase to create an account or sign in.":
       "اربط Supabase لإنشاء حساب أو تسجيل الدخول.",
     "Sign in": "تسجيل الدخول",
@@ -1900,8 +2002,8 @@
     "Choose language": "اختر اللغة",
     "Toggle light theme": "تبديل السمة الفاتحة",
     "Motion & celebrations": "الحركة والاحتفالات",
-    "Choose how much motion Study Zone uses.":
-      "اختر مستوى الحركة في Study Zone.",
+    "Choose how much motion Second Brain uses.":
+      "اختر مستوى الحركة في Second Brain.",
     "Full Motion": "حركة كاملة",
     "Layered transitions and celebrations": "انتقالات واحتفالات متكاملة",
     "Reduced Motion": "حركة مخففة",
@@ -1961,7 +2063,7 @@
     "Your level increased!": "ارتقى مستواك!",
     "You've reached a new study milestone.": "لقد وصلت إلى محطة دراسية جديدة.",
     "Install app": "تثبيت التطبيق",
-    "Install Study Zone": "تثبيت Study Zone",
+    "Install Second Brain": "تثبيت Second Brain",
     Done: "تم",
     "A new version is available.": "يتوفر إصدار جديد.",
     "Update now": "حدّث الآن",
@@ -2170,13 +2272,13 @@
     Timezone: "المنطقة الزمنية",
     "Edit profile": "تعديل الملف الشخصي",
     "MAKE IT YOURS": "خصص تجربتك",
-    "Tune Study Zone to the way you like to work.":
-      "اضبط Study Zone بما يناسب أسلوب عملك.",
+    "Tune Second Brain to the way you like to work.":
+      "اضبط Second Brain بما يناسب أسلوب عملك.",
     Appearance: "المظهر",
     "Dark theme": "السمة الداكنة",
     "Designed for focus, day or night": "مصممة للتركيز ليلًا ونهارًا",
     "Emerald accents": "لمسات الزمرد",
-    "Official Study Zone color palette": "لوحة ألوان Study Zone الرسمية",
+    "Official Second Brain color palette": "لوحة ألوان Second Brain الرسمية",
     "Orange": "Orange",
     "Warm orange surfaces with a bright amber accent": "Warm orange surfaces with a bright amber accent",
     Language: "اللغة",
@@ -2189,14 +2291,14 @@
     "Study nudges": "تذكيرات الدراسة",
     "Gentle focus reminders": "تذكيرات لطيفة للتركيز",
     "Daily study check-in": "تذكير يومي بالدراسة",
-    "Review your open tasks once a day, even when Study Zone is closed.":
-      "راجع مهامك المفتوحة مرة يوميًا، حتى عند إغلاق Study Zone.",
+    "Review your open tasks once a day, even when Second Brain is closed.":
+      "راجع مهامك المفتوحة مرة يوميًا، حتى عند إغلاق Second Brain.",
     "Enable push reminders": "تفعيل الإشعارات الفورية",
     "Reminder time": "وقت التذكير",
     "Uses this device’s timezone.": "يستخدم المنطقة الزمنية لهذا الجهاز.",
     "Save reminder": "حفظ التذكير",
-    "Get a daily task check-in plus deadline and achievement notifications, even when Study Zone is closed.":
-      "احصل على تذكير يومي بالمهام وإشعارات المواعيد والإنجازات حتى عند إغلاق Study Zone.",
+    "Get a daily task check-in plus deadline and achievement notifications, even when Second Brain is closed.":
+      "احصل على تذكير يومي بالمهام وإشعارات المواعيد والإنجازات حتى عند إغلاق Second Brain.",
     "Push reminders need notification permission and the server setup described in README.md.":
       "تتطلب الإشعارات الفورية إذن الإشعارات وإعداد الخادم الموضح في README.md.",
     "Sign in to configure daily reminders.":
@@ -2666,14 +2768,14 @@
     document.documentElement.dir = appLanguage === "ar" ? "rtl" : "ltr";
     document.title =
       appLanguage === "ar"
-        ? "Study Zone — حياتك الدراسية، منظمة"
-        : "Study Zone — Your Study Life, Organized";
+        ? "Second Brain — عقلك. مُنظَّم."
+        : "Second Brain — Your Mind. Organized.";
     const description = document.querySelector('meta[name="description"]');
     if (description)
       description.content =
         appLanguage === "ar"
-          ? "Study Zone — حياتك الدراسية، منظمة."
-          : "Study Zone — Your Study Life, Organized.";
+          ? "Second Brain — عقلك. مُنظَّم."
+          : "Second Brain — Your Mind. Organized.";
     const walker = document.createTreeWalker(
       document.body,
       NodeFilter.SHOW_TEXT,
@@ -2803,8 +2905,8 @@
       description.textContent =
         getPwaInstallState() === "installed"
           ? appLanguage === "ar"
-            ? "Study Zone جاهز على هذا الجهاز الآن."
-            : "Study Zone is ready on this device now."
+            ? "Second Brain جاهز على هذا الجهاز الآن."
+            : "Second Brain is ready on this device now."
           : appLanguage === "ar"
             ? "مساحة دراسة واحدة تنظّم مهمتك ومواعيدك وجلسات تركيزك."
             : "One calm workspace that keeps your tasks, deadlines, and focus sessions organized.";
@@ -2857,7 +2959,7 @@
         refreshPwaInstructions();
       }
     } catch (error) {
-      console.error("Could not start Study Zone installation.", error);
+      console.error("Could not start Second Brain installation.", error);
       showToast("Could not start installation.");
     }
   }
@@ -3213,7 +3315,7 @@
       payload.feature !== "media-notes" ||
       !Array.isArray(payload.items)
     )
-      throw new Error("This file is not a Study Zone media backup.");
+      throw new Error("This file is not a Second Brain media backup.");
     const dataUrlToBlob = async (dataUrl) => {
       if (!dataUrl || typeof dataUrl !== "string") return null;
       try {
@@ -3749,7 +3851,7 @@
     if (summaryResult.error || achievementsResult.error) {
       const error = summaryResult.error || achievementsResult.error;
       console.error(
-        "Could not load Study Zone rewards. Apply the secure study rewards migration if it has not been applied.",
+        "Could not load Second Brain rewards. Apply the secure study rewards migration if it has not been applied.",
         error,
       );
       rewardSummary = null;
@@ -4105,7 +4207,7 @@
       <div class="sz-hero-content">
         <div class="sz-hero-top">
           <span class="sz-hero-badge"><i></i>${escapeHtml(dayLabelText)}</span>
-          <span class="sz-hero-badge">✦ ${tr("Your study life, organized", "حياتك الدراسية، منظمة")}</span>
+          <span class="sz-hero-badge">✦ ${tr("Your study life, organized", "عقلك. مُنظَّم.")}</span>
         </div>
         <p class="sz-hero-kicker">${tr("WELCOME BACK", "أهلًا بعودتك")}</p>
         <h1>${escapeHtml(greeting)},<br /><span>${escapeHtml(firstName)}.</span></h1>
@@ -4421,7 +4523,7 @@
       appLanguage === "ar"
         ? "لا تحتاج أن تكون مبالغًا، فقط منتظمًا."
         : "You do not have to be extreme, just consistent.";
-    const quoteCard = `<section class="sz-card sz-quote-card"><span class="sz-quote-mark">“</span><p class="sz-quote-text">${escapeHtml(motivationQuote)}</p><p class="sz-quote-author">${tr("A note to future you", "ملاحظة لك في المستقبل")} · Study Zone</p><div class="sz-hero-meta" style="margin-top:16px"><span class="sz-hero-chip tone-amber" style="background:rgba(var(--sz-amber-rgb),.08);border-color:rgba(var(--sz-amber-rgb),.2);color:var(--color-text)"><i></i>${tr("One page at a time", "صفحة واحدة في كل مرة")}</span></div><button class="button button-secondary button-small" data-navigate="notes" style="margin-top:14px">${tr("Write a note", "اكتب ملاحظة")}</button></section>`;
+    const quoteCard = `<section class="sz-card sz-quote-card"><span class="sz-quote-mark">“</span><p class="sz-quote-text">${escapeHtml(motivationQuote)}</p><p class="sz-quote-author">${tr("A note to future you", "ملاحظة لك في المستقبل")} · Second Brain</p><div class="sz-hero-meta" style="margin-top:16px"><span class="sz-hero-chip tone-amber" style="background:rgba(var(--sz-amber-rgb),.08);border-color:rgba(var(--sz-amber-rgb),.2);color:var(--color-text)"><i></i>${tr("One page at a time", "صفحة واحدة في كل مرة")}</span></div><button class="button button-secondary button-small" data-navigate="notes" style="margin-top:14px">${tr("Write a note", "اكتب ملاحظة")}</button></section>`;
 
     const badges =
       earnedAchievements
@@ -4463,7 +4565,9 @@
         <div class="sz-dash-bottom">${journalCard}${quoteCard}${achievementsPanel}</div>
         ${subjectsPanel}
       </div>
-      <p class="data-caption">${session ? tr("Everything above is calculated from your saved tasks, notes, habits, and verified focus sessions.", "كل ما سبق محسوب من مهامك وملاحظاتك وعاداتك وجلسات التركيز الموثقة.") : tr("Guest preview data is stored in this browser. Sign in to sync your private workspace.", "بيانات المعاينة محفوظة في هذا المتصفح. سجّل الدخول لمزامنة مساحتك الخاصة.")}</p>`;
+      <p class="data-caption">${session ? tr("Everything above is calculated from your saved tasks, notes, habits, and verified focus sessions.", "كل ما سبق محسوب من مهامك وملاحظاتك وعاداتك وجلسات التركيز الموثقة.") : tr("Guest preview data is stored in this browser. Sign in to sync your private workspace.", "بيانات المعاينة محفوظة في هذا المتصفح. سجّل الدخول لمزامنة مساحتك الخاصة.")}</p>
+      ${window.StudyZoneFlashcards?.dashboardCard ? window.StudyZoneFlashcards.dashboardCard() : ""}
+    </section>`;
   }
 
   function startOfLocalDay(value = new Date()) {
@@ -4772,7 +4876,7 @@
     if (priority !== 0) return priority;
     return String(a.title || "").localeCompare(
       String(b.title || ""),
-      appLanguage === "ar" ? "ar" : "en",
+      appLanguage === "ar" ? "ar-EG" : "en",
     );
   }
 
@@ -5090,7 +5194,7 @@
         </div>
         <div class="task-day-controls">
           <div class="task-view-switch" role="group" aria-label="Task view">
-            <button class="${dayMode ? "selected" : ""}" data-action="task-view-mode" data-mode="day">${appLanguage === "ar" ? "يوم" : "Day"}</button>
+            <button class="${dayMode ? "selected" : ""}" data-action="task-view-mode" data-mode="day">${appLanguage === "ar" ? "اليوم" : "Day"}</button>
             <button class="${!dayMode ? "selected" : ""}" data-action="task-view-mode" data-mode="all">${appLanguage === "ar" ? "الكل" : "All"}</button>
           </div>
           <div class="task-date-nav" ${dayMode ? "" : "hidden"}>
@@ -5225,14 +5329,14 @@
   function getFilteredDeadlines() {
     const now = Date.now();
     const normalized = deadlineSearch.toLocaleLowerCase(
-      appLanguage === "ar" ? "ar" : "en",
+      appLanguage === "ar" ? "ar-EG" : "en",
     );
     const result = getDeadlines().filter((deadline) => {
       const status = getDeadlineStatus(deadline, now);
       const subject = deadline.subject || subjectName(deadline.subject_id);
       const searchMatches =
         `${deadline.title} ${deadline.description || ""} ${subject}`
-          .toLocaleLowerCase(appLanguage === "ar" ? "ar" : "en")
+          .toLocaleLowerCase(appLanguage === "ar" ? "ar-EG" : "en")
           .includes(normalized);
       const filterMatches =
         deadlineFilter === "all" || deadlineFilter === status;
@@ -5272,7 +5376,7 @@
     const modeSwitch = `<div class="sz-fullcal-mode" role="group" aria-label="${t.calendar}">${[
       ["month", appLanguage === "ar" ? "شهر" : "Month"],
       ["week", appLanguage === "ar" ? "أسبوع" : "Week"],
-      ["day", appLanguage === "ar" ? "يوم" : "Day"],
+      ["day", appLanguage === "ar" ? "اليوم" : "Day"],
     ]
       .map(
         ([value, label]) =>
@@ -5816,7 +5920,7 @@
         if (noteSort === "title")
           return String(a.title || "").localeCompare(
             String(b.title || ""),
-            appLanguage === "ar" ? "ar" : "en",
+            appLanguage === "ar" ? "ar-EG" : "en",
           );
         if (noteSort === "created")
           return new Date(b.created_at || 0) - new Date(a.created_at || 0);
@@ -6143,7 +6247,7 @@
     return html;
   }
 
-﻿  function ensureMediaEditorDraft(kind = "image") {
+  function ensureMediaEditorDraft(kind = "image") {
     if (!mediaEditorDraft) {
       mediaEditorDraft = {
         id: null,
@@ -6912,7 +7016,7 @@
         <header class="note-editor-head">
           <div class="note-editor-title-wrap">
             <p class="eyebrow" id="note-editor-kicker">${isNew ? (appLanguage === "ar" ? "ملاحظة جديدة" : "NEW NOTE") : appLanguage === "ar" ? "تعديل الملاحظة" : "EDIT NOTE"}</p>
-            <input id="note-editor-title" class="note-title-input" dir="auto" lang="${appLanguage === "ar" ? "ar" : "en"}" maxlength="180" value="${escapeHtml(title)}" placeholder="${appLanguage === "ar" ? "عنوان الملاحظة" : "Note title"}" aria-label="${appLanguage === "ar" ? "عنوان الملاحظة" : "Note title"}" />
+            <input id="note-editor-title" class="note-title-input" dir="auto" lang="${appLanguage === "ar" ? "ar-EG" : "en"}" maxlength="180" value="${escapeHtml(title)}" placeholder="${appLanguage === "ar" ? "عنوان الملاحظة" : "Note title"}" aria-label="${appLanguage === "ar" ? "عنوان الملاحظة" : "Note title"}" />
           </div>
           <button class="modal-close" type="button" data-action="note-close" aria-label="${appLanguage === "ar" ? "إغلاق" : "Close"}">×</button>
         </header>
@@ -6984,7 +7088,7 @@
             ${toolButton("removeFormat", appLanguage === "ar" ? "مسح التنسيق" : "Clear formatting", "⌫")}
           </div>
         </div>
-        <div class="rt-editor" id="note-editor" contenteditable="true" dir="auto" lang="${appLanguage === "ar" ? "ar" : "en"}" data-sz-no-translate role="textbox" aria-multiline="true" aria-label="${appLanguage === "ar" ? "محتوى الملاحظة" : "Note content"}" spellcheck="true">${content}</div>
+        <div class="rt-editor" id="note-editor" contenteditable="true" dir="auto" lang="${appLanguage === "ar" ? "ar-EG" : "en"}" data-sz-no-translate role="textbox" aria-multiline="true" aria-label="${appLanguage === "ar" ? "محتوى الملاحظة" : "Note content"}" spellcheck="true">${content}</div>
         <footer class="note-editor-foot">
           <span id="note-word-count"></span>
           <div class="note-editor-actions">
@@ -7742,7 +7846,7 @@
     if (!modal) {
       document.body.insertAdjacentHTML(
         "beforeend",
-        `<div class="modal-backdrop" id="feature-modal" hidden><section class="modal" role="dialog" aria-modal="true" aria-labelledby="feature-modal-title"><button class="modal-close" type="button" data-close-modal aria-label="Close">×</button><p class="eyebrow">STUDY ZONE</p><h2 id="feature-modal-title"></h2><form id="feature-form" class="form-stack"></form></section></div>`,
+        `<div class="modal-backdrop" id="feature-modal" hidden><section class="modal" role="dialog" aria-modal="true" aria-labelledby="feature-modal-title"><button class="modal-close" type="button" data-close-modal aria-label="Close">×</button><p class="eyebrow">SECOND BRAIN</p><h2 id="feature-modal-title"></h2><form id="feature-form" class="form-stack"></form></section></div>`,
       );
       modal = document.getElementById("feature-modal");
       document
@@ -9044,12 +9148,12 @@
       ${statCard("STUDY TIME", `${formatFocusHours(totalFocusSeconds, focusText[appLanguage])}`, ` across ${dayCount} days`, "◷")}
       ${statCard("DAILY AVERAGE", `${(totalFocusSeconds / dayCount / 3600).toFixed(1)}h`, ` per day`, "⌁")}
       ${statCard("TASK COMPLETION", `${taskRate}%`, ` ${completedTasks.length} of ${tasksInRange.length} tasks`, "✓")}
-      ${statCard("STUDY STREAK", `${streak} ${appLanguage === "ar" ? "يوم" : "day"}${streak !== 1 ? appLanguage === "ar" ? "أيام" : "s" : ""}`, streak > 0 ? appLanguage === "ar" ? "أيام متتالية" : "consecutive days" : " No activity yet", "↗")}
+      ${statCard("STUDY STREAK", `${streak} ${appLanguage === "ar" ? "اليوم" : "day"}${streak !== 1 ? appLanguage === "ar" ? "أيام" : "s" : ""}`, streak > 0 ? appLanguage === "ar" ? "أيام متتالية" : "consecutive days" : " No activity yet", "↗")}
     </div>
     ${heatmapPanel}
     <div class="grid dashboard-grid">
       <section class="panel">${panelHeading(chartTitle, rangeLabel)}<div class="analytics-bars-scroll"><div class="focus-chart analytics-bars" role="img" aria-label="${escapeHtml(chartTitle)}" style="grid-template-columns:repeat(${Math.max(1, chartData.length)},minmax(16px,1fr))">${bars}</div></div></section>
-      <section class="panel">${panelHeading(appLanguage === "ar" ? "أكثر المواد دراسة" : "Top subject", appLanguage === "ar" ? "بناءً على وقت التركيز" : "Based on focus time")}<div class="metric-large">${escapeHtml(topSubject)}</div><p class="metric-caption">${appLanguage === "ar" ? "أكثر مادة قضيتم فيها وقتًا" : "Subject with most focus time in range"}</p></section>
+      <section class="panel">${panelHeading(appLanguage === "ar" ? "أكثر مادة" : "Top subject", appLanguage === "ar" ? "بناءً على وقت التركيز" : "Based on focus time")}<div class="metric-large">${escapeHtml(topSubject)}</div><p class="metric-caption">${appLanguage === "ar" ? "أكثر مادة قضيتم فيها وقتًا" : "Subject with most focus time in range"}</p></section>
     </div>
     <section class="panel section-spacer">${panelHeading(appLanguage === "ar" ? "إنجاز المهام" : "Task completion", appLanguage === "ar" ? "المهام المكتملة في النطاق" : "Completed tasks in range")}
       ${taskRate > 0 ? `<div class="progress-track"><div class="progress-fill" style="width:${taskRate}%"></div></div><span class="metric-large">${taskRate}%<small> · ${completedTasks.length} / ${tasksInRange.length}</small></span>` : `<div class="empty-state">${appLanguage === "ar" ? "لا توجد مهام في هذا النطاق" : "No tasks in this range"}</div>`}
@@ -11405,7 +11509,7 @@
                 <strong dir="auto">${escapeHtml(row.label)}</strong>
                 <small>${appLanguage === "ar" ? "نقاط الفريق" : "Team XP"}</small>
                 <strong class="team-podium-xp">${row.xp}</strong>
-                <small>${row.taskCompletions} ${appLanguage === "ar" ? "مهمة مكتملة" : "tasks"} · ${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(row.focusMinutes)} ${appLanguage === "ar" ? "دقيقة تركيز" : "focus min"}</small>
+                <small>${row.taskCompletions} ${appLanguage === "ar" ? "مهام مكتملة" : "tasks"} · ${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(row.focusMinutes)} ${appLanguage === "ar" ? "دقيقة تركيز" : "focus min"}</small>
               </div>`,
             )
             .join("")}
@@ -12048,8 +12152,8 @@
     }
     showToast(
       appLanguage === "ar"
-        ? "افتح إعدادات الهاتف ← التطبيقات ← Study Zone ← الأذونات ← الميكروفون."
-        : "Open phone Settings → Apps → Study Zone → Permissions → Microphone.",
+        ? "افتح إعدادات الهاتف ← التطبيقات ← Second Brain ← الأذونات ← الميكروفون."
+        : "Open phone Settings → Apps → Second Brain → Permissions → Microphone.",
     );
   }
 
@@ -12531,71 +12635,6 @@
       : current >= start || current < end;
   }
 
-  const ALERT_SOUNDS = [
-    {
-      id: "focus-start",
-      label: { en: "Focus start", ar: "بداية التركيز" },
-      description: {
-        en: "Two-note signal that a focus session has begun.",
-        ar: "نغمة من فتحتين واضحة تعلن بدء جلسة التركيز.",
-      },
-      pattern: {
-        durationMs: 560,
-        tones: [
-          { frequency: 523.25, endFrequency: 392, start: 0, duration: 0.22 },
-          { frequency: 392, endFrequency: 329.63, start: 0.22, duration: 0.34 },
-        ],
-      },
-    },
-    {
-      id: "focus-end",
-      label: { en: "Focus end", ar: "نهاية التركيز" },
-      description: {
-        en: "Deep tone that marks a focus session or Pomodoro cycle as complete.",
-        ar: "نغمة عميقة تميّز اكتمال جلسة التركيز أو دورة البومودورو.",
-      },
-      pattern: {
-        durationMs: 1400,
-        tones: [
-          { frequency: 329.63, endFrequency: 246.94, start: 0, duration: 1.2 },
-        ],
-      },
-    },
-    {
-      id: "task-reminder",
-      label: { en: "Task reminder", ar: "تذكير المهمة" },
-      description: {
-        en: "Two-note alert that pulls a task or appointment back into focus.",
-        ar: "تنبيه من فتحتين يسترجع المهمة أو الموعد إلى التركيز.",
-      },
-      pattern: {
-        durationMs: 900,
-        tones: [
-          { frequency: 659.25, endFrequency: 830.61, start: 0, duration: 0.32 },
-          {
-            frequency: 830.61,
-            endFrequency: 987.77,
-            start: 0.32,
-            duration: 0.42,
-          },
-        ],
-      },
-    },
-    {
-      id: "break-end",
-      label: { en: "Break end", ar: "نهاية الاستراحة" },
-      description: {
-        en: "Soft tone that ends a break and prepares the next focus block.",
-        ar: "نغمة هادئة تنهي الاستراحة وتجهز الجلسة القادمة.",
-      },
-      pattern: {
-        durationMs: 1000,
-        tones: [
-          { frequency: 493.88, endFrequency: 440, start: 0, duration: 0.9 },
-        ],
-      },
-    },
-  ];
 
   let alertAudioContext = null;
   let alertAudioMaster = null;
@@ -12970,7 +13009,7 @@
     {
       id: "original",
       label: "Original",
-      description: "Original Study Zone identity",
+      description: "Original Second Brain identity",
       colors: ["#0C4137", "#06D6A0"],
       meta: "#0C4137",
     },
@@ -13319,7 +13358,7 @@
     const toggleChecked = animationEnabled ? "checked" : "";
     const reducedChecked = reducedMotion ? "checked" : "";
 
-    return `<section class="panel">${panelHeading(translateUiText("Themes"), translateUiText("Themes keep the same layout and only change the color palette."))}<div class="theme-grid" role="group" aria-label="${translateUiText("Choose a color theme")}">${options}</div></section><section class="panel">${panelHeading(translateUiText("Visual Style"), translateUiText("Choose how Study Zone looks. Modern is smooth and clean; Pixel is inspired by retro video games."))}<div class="theme-grid" role="group" aria-label="${translateUiText("Choose a visual style")}">${styleOptions}</div></section><section class="panel">${panelHeading(translateUiText("Animation Settings"), translateUiText("Control how Study Zone moves. Respects your system's reduced motion preference."))}<div class="animation-section"><div class="setting-row"><div><strong>${translateUiText("Enable Animations")}</strong><small>${translateUiText("Turn all motion effects on or off")}</small></div><label class="focus-setting-toggle"><span>${translateUiText("Animations On")}</span><input type="checkbox" name="animation-enabled" ${toggleChecked}><i aria-hidden="true"></i></label></div><div class="setting-row"><div><strong>${translateUiText("Animation Intensity")}</strong><small>${translateUiText("How strong the motion effects are")}</small></div><div role="group" aria-label="${translateUiText("Animation intensity")}">${intensityOptions}</div></div><div class="setting-row"><div><strong>${translateUiText("Animation Speed")}</strong><small>${translateUiText("How quickly animations play")}</small></div><div role="group" aria-label="${translateUiText("Animation speed")}">${speedOptions}</div></div><div class="setting-row"><div><strong>${translateUiText("Reduced Motion")}</strong><small>${translateUiText("Minimize motion for accessibility")}</small></div><label class="focus-setting-toggle"><span>${translateUiText("Reduce Motion")}</span><input type="checkbox" name="reduced-motion" ${reducedChecked}><i aria-hidden="true"></i></label></div><div class="setting-row"><div><strong>${translateUiText("Individual Effects")}</strong><small>${translateUiText("Enable or disable specific animation categories")}</small></div><div class="effect-switches">${effectSwitches}</div></div></div></section>`;
+    return `<section class="panel">${panelHeading(translateUiText("Themes"), translateUiText("Themes keep the same layout and only change the color palette."))}<div class="theme-grid" role="group" aria-label="${translateUiText("Choose a color theme")}">${options}</div></section><section class="panel">${panelHeading(translateUiText("Visual Style"), translateUiText("Choose how Second Brain looks. Modern is smooth and clean; Pixel is inspired by retro video games."))}<div class="theme-grid" role="group" aria-label="${translateUiText("Choose a visual style")}">${styleOptions}</div></section><section class="panel">${panelHeading(translateUiText("Animation Settings"), translateUiText("Control how Second Brain moves. Respects your system's reduced motion preference."))}<div class="animation-section"><div class="setting-row"><div><strong>${translateUiText("Enable Animations")}</strong><small>${translateUiText("Turn all motion effects on or off")}</small></div><label class="focus-setting-toggle"><span>${translateUiText("Animations On")}</span><input type="checkbox" name="animation-enabled" ${toggleChecked}><i aria-hidden="true"></i></label></div><div class="setting-row"><div><strong>${translateUiText("Animation Intensity")}</strong><small>${translateUiText("How strong the motion effects are")}</small></div><div role="group" aria-label="${translateUiText("Animation intensity")}">${intensityOptions}</div></div><div class="setting-row"><div><strong>${translateUiText("Animation Speed")}</strong><small>${translateUiText("How quickly animations play")}</small></div><div role="group" aria-label="${translateUiText("Animation speed")}">${speedOptions}</div></div><div class="setting-row"><div><strong>${translateUiText("Reduced Motion")}</strong><small>${translateUiText("Minimize motion for accessibility")}</small></div><label class="focus-setting-toggle"><span>${translateUiText("Reduce Motion")}</span><input type="checkbox" name="reduced-motion" ${reducedChecked}><i aria-hidden="true"></i></label></div><div class="setting-row"><div><strong>${translateUiText("Individual Effects")}</strong><small>${translateUiText("Enable or disable specific animation categories")}</small></div><div class="effect-switches">${effectSwitches}</div></div></div></section>`;
   }
 
   const notificationTypesKey = "studyzone.notification.types";
@@ -13446,8 +13485,8 @@
     return `<section class="panel" data-clock-settings>${panelHeading(
       ar ? "الساعة وإشعار النظام" : "Clock & system notification",
       ar
-        ? "أضف ساعة Study Zone إلى الشاشة الرئيسية واعرض الوقت في شريط الإشعارات."
-        : "Add the Study Zone clock to your home screen and keep the time in the notification shade.",
+        ? "أضف ساعة Second Brain إلى الشاشة الرئيسية واعرض الوقت في شريط الإشعارات."
+        : "Add the Second Brain clock to your home screen and keep the time in the notification shade.",
     )}<div class="setting-row"><div><strong>${
       ar ? "إشعار الساعة الدائم" : "Persistent clock notification"
     }</strong><small>${
@@ -13461,7 +13500,7 @@
     }><i aria-hidden="true"></i></label></div><p class="data-caption">${
       ar
         ? "أضف ويدجت «الساعة» من قائمة الويدجت في الشاشة الرئيسية. يعرض الوقت الحقيقي ويحدّثه أندرويد حتى بعد إغلاق التطبيق."
-        : "Add the “Flip Clock” widget from your launcher’s widget picker. Android keeps the time live even when Study Zone is closed."
+        : "Add the “Flip Clock” widget from your launcher’s widget picker. Android keeps the time live even when Second Brain is closed."
     }</p><button class="button button-secondary button-small" type="button" data-action="clock-notification-settings">${
       ar ? "إعدادات الإشعارات" : "Notification settings"
     }</button><p class="form-error" data-clock-error role="alert"></p></section>`;
@@ -13537,8 +13576,8 @@
     }
     showToast(
       ar
-        ? "افتح إعدادات الهاتف ← التطبيقات ← Study Zone ← الإشعارات."
-        : "Open phone Settings → Apps → Study Zone → Notifications.",
+        ? "افتح إعدادات الهاتف ← التطبيقات ← Second Brain ← الإشعارات."
+        : "Open phone Settings → Apps → Second Brain → Notifications.",
     );
   }
 
@@ -13567,9 +13606,9 @@
       )
       .join("");
     const reminderForm = session
-      ? `<form id="daily-reminder-form" class="form-stack daily-reminder-form"><label class="focus-setting-toggle"><span>${translateUiText("Enable push reminders")}</span><input type="checkbox" name="enabled" ${dailyReminderPreference.enabled ? "checked" : ""}><i aria-hidden="true"></i></label><p class="data-caption">${translateUiText("Get a daily task check-in plus deadline and achievement notifications, even when Study Zone is closed.")}</p><label>${translateUiText("Reminder time")}<input type="time" name="local_time" value="${escapeHtml(String(dailyReminderPreference.local_time || "09:00").slice(0, 5))}" required></label><small>${translateUiText("Uses this device’s timezone.")}</small><button class="button button-primary button-small" type="submit">${translateUiText("Save reminder")}</button><p class="data-caption">${translateUiText("Push reminders need notification permission and the server setup described in README.md.")}</p><p class="form-error" data-reminder-error role="alert"></p></form>`
+      ? `<form id="daily-reminder-form" class="form-stack daily-reminder-form"><label class="focus-setting-toggle"><span>${translateUiText("Enable push reminders")}</span><input type="checkbox" name="enabled" ${dailyReminderPreference.enabled ? "checked" : ""}><i aria-hidden="true"></i></label><p class="data-caption">${translateUiText("Get a daily task check-in plus deadline and achievement notifications, even when Second Brain is closed.")}</p><label>${translateUiText("Reminder time")}<input type="time" name="local_time" value="${escapeHtml(String(dailyReminderPreference.local_time || "09:00").slice(0, 5))}" required></label><small>${translateUiText("Uses this device’s timezone.")}</small><button class="button button-primary button-small" type="submit">${translateUiText("Save reminder")}</button><p class="data-caption">${translateUiText("Push reminders need notification permission and the server setup described in README.md.")}</p><p class="form-error" data-reminder-error role="alert"></p></form>`
       : `<p class="data-caption">${translateUiText("Sign in to configure daily reminders.")}</p>`;
-    return `${pageHeading("MAKE IT YOURS", "Settings", "Tune Study Zone to the way you like to work.", "")}<div class="grid settings-grid"><section class="panel">${panelHeading("Appearance")}<div class="setting-row"><div><strong>Dark theme</strong><small>Designed for focus, day or night</small></div><button class="toggle on" data-action="theme-toggle" aria-label="Toggle light theme" aria-pressed="false"></button></div><div class="setting-row"><div><strong>Emerald accents</strong><small>Official Study Zone color palette</small></div><span class="subject-color"></span></div><div class="setting-row"><div><strong>Motion & celebrations</strong><small>Choose how much motion Study Zone uses.</small></div></div><div class="motion-options" role="group" aria-label="Animation level">${motionOptions}</div></section>${themeSettingsPanel()}<section class="panel">${panelHeading("Language")}<div class="setting-row"><div><strong>Display language</strong><small>Deadlines appear in the selected language.</small></div></div><div class="language-switcher" role="group" aria-label="Choose language"><span class="language-indicator ${appLanguage === "ar" ? "arabic" : ""}"></span><button class="language-option ${appLanguage === "ar" ? "selected" : ""}" data-language="ar" aria-pressed="${appLanguage === "ar"}">عربي <span>العربية</span></button><button class="language-option ${appLanguage === "en" ? "selected" : ""}" data-language="en" aria-pressed="${appLanguage === "en"}">EN <span>English</span></button></div></section><section class="panel">${panelHeading("Reminders")}<div class="setting-row"><div><strong>Daily study check-in</strong><small>Review your open tasks once a day, even when Study Zone is closed.</small></div></div>${reminderForm}</section>${notificationSettingsPanel()}${notificationPreferencesPanel()}${clockSettingsPanel()}${syncSettingsPanel()}<section class="panel">${panelHeading("Data & privacy")}<div class="setting-row"><div><strong>Account data</strong><small>Stored in your private Supabase account when configured</small></div></div><div class="setting-row"><div><strong>Service keys</strong><small>Only the public anon key belongs in this browser config.</small></div></div></section><section class="panel">${panelHeading("Backup & restore", "Your data, portable")}<p class="panel-copy">Download a private JSON copy of your tasks, routines, notes, journal, focus history, and preferences. Restoring merges new items and skips duplicates.</p><div class="setting-row"><div><strong>Export a backup</strong><small>Nothing leaves this device except the file you download.</small></div><button class="button button-secondary button-small" data-action="backup-export">Download</button></div><div class="setting-row"><div><strong>Restore from a backup</strong><small>Validated first, then merged without overwriting existing records.</small></div><button class="button button-secondary button-small" data-action="backup-import">Choose file</button></div><input id="backup-import-input" type="file" accept="application/json,.json" hidden /><p class="data-caption">Only restore files you exported from Study Zone. Never share a backup publicly.</p></section></div>`;
+    return `${pageHeading("MAKE IT YOURS", "Settings", "Tune Second Brain to the way you like to work.", "")}<div class="grid settings-grid"><section class="panel">${panelHeading("Appearance")}<div class="setting-row"><div><strong>Dark theme</strong><small>Designed for focus, day or night</small></div><button class="toggle on" data-action="theme-toggle" aria-label="Toggle light theme" aria-pressed="false"></button></div><div class="setting-row"><div><strong>Emerald accents</strong><small>Official Second Brain color palette</small></div><span class="subject-color"></span></div><div class="setting-row"><div><strong>Motion & celebrations</strong><small>Choose how much motion Second Brain uses.</small></div></div><div class="motion-options" role="group" aria-label="Animation level">${motionOptions}</div></section>${themeSettingsPanel()}<section class="panel">${panelHeading("Language")}<div class="setting-row"><div><strong>Display language</strong><small>Deadlines appear in the selected language.</small></div></div><div class="language-switcher" role="group" aria-label="Choose language"><span class="language-indicator ${appLanguage === "ar" ? "arabic" : ""}"></span><button class="language-option ${appLanguage === "ar" ? "selected" : ""}" data-language="ar" aria-pressed="${appLanguage === "ar"}">عربي <span>العربية</span></button><button class="language-option ${appLanguage === "en" ? "selected" : ""}" data-language="en" aria-pressed="${appLanguage === "en"}">EN <span>English</span></button></div></section><section class="panel">${panelHeading("Reminders")}<div class="setting-row"><div><strong>Daily study check-in</strong><small>Review your open tasks once a day, even when Second Brain is closed.</small></div></div>${reminderForm}</section>${notificationSettingsPanel()}${notificationPreferencesPanel()}${clockSettingsPanel()}${syncSettingsPanel()}<section class="panel">${panelHeading("Data & privacy")}<div class="setting-row"><div><strong>Account data</strong><small>Stored in your private Supabase account when configured</small></div></div><div class="setting-row"><div><strong>Service keys</strong><small>Only the public anon key belongs in this browser config.</small></div></div></section><section class="panel">${panelHeading("Backup & restore", "Your data, portable")}<p class="panel-copy">Download a private JSON copy of your tasks, routines, notes, journal, focus history, and preferences. Restoring merges new items and skips duplicates.</p><div class="setting-row"><div><strong>Export a backup</strong><small>Nothing leaves this device except the file you download.</small></div><button class="button button-secondary button-small" data-action="backup-export">Download</button></div><div class="setting-row"><div><strong>Restore from a backup</strong><small>Validated first, then merged without overwriting existing records.</small></div><button class="button button-secondary button-small" data-action="backup-import">Choose file</button></div><input id="backup-import-input" type="file" accept="application/json,.json" hidden /><p class="data-caption">Only restore files you exported from Second Brain. Never share a backup publicly.</p></section></div>`;
   }
 
   function formatAdminDate(value) {
@@ -14401,7 +14440,7 @@
 
   function validateBackup(payload) {
     if (!payload || payload.app !== "study-zone" || !Array.isArray(payload.tasks))
-      throw new Error("This file is not a Study Zone backup.");
+      throw new Error("This file is not a Second Brain backup.");
     if (Number(payload.version) < 1)
       throw new Error("This backup version is not supported.");
     for (const key of ["tasks", "routines", "routine_days", "notes", "journal", "focus_records", "distractions"]) {
@@ -14552,6 +14591,14 @@
       window.requestAnimationFrame(() => window.StudyZoneTeamLive?.mount?.());
       return html;
     },
+    "flashcards": () => {
+      const result = window.StudyZoneFlashcards?.renderPage?.();
+      const html = typeof result === "string" ? result : "";
+      window.requestAnimationFrame(() => window.StudyZoneFlashcards?.mount?.());
+      // renderPage() writes into #page-content; return the same string so the
+      // app shell's normal render path is consistent and never inserts a Promise.
+      return html || (document.getElementById("page-content")?.innerHTML || "");
+    },
     teamLeaderboard: teamLeaderboardPage,
     "team-leaderboard": teamLeaderboardPage,
     focus: focusPage,
@@ -14578,6 +14625,7 @@
     teams: "Teams",
     "team-tasks": "My team tasks",
     "team-live": "Team chat & calls",
+    flashcards: "Flashcards",
     teamLeaderboard: "Team leaderboard",
     "team-leaderboard": "Team leaderboard",
     focus: "Focus timer",
@@ -16068,8 +16116,10 @@
     if (language !== "ar" && language !== "en") return;
     appLanguage = language;
     localStorage.setItem("studyflow.language", language);
+    const dir = language === "ar" ? "rtl" : "ltr";
     document.documentElement.lang = language;
-    document.documentElement.dir = language === "ar" ? "rtl" : "ltr";
+    document.documentElement.dir = dir;
+    if (document.body) document.body.dir = dir;
     render();
     if (supabase && session) {
       const { error } = await supabase
@@ -17641,6 +17691,21 @@
     );
   }
 
+  let lastAuthUserId = null;
+
+  // Push registration must be retried whenever a session becomes available.
+  // It used to run only from local-notification permission, so users who
+  // denied task reminders never received incoming-call push.
+  function syncNativePushRegistration() {
+    if (!session?.user) return;
+    try {
+      Promise.resolve(window.StudyZonePush?.register?.()).catch(() => {});
+      Promise.resolve(window.StudyZonePush?.flush?.()).catch(() => {});
+    } catch {
+      /* native shell unavailable (web build) */
+    }
+  }
+
   async function restoreSession() {
     if (!supabase) {
       session = null;
@@ -17652,7 +17717,16 @@
       if (currentPage === "admin") await verifyAdminAccess();
       return;
     }
-    const { data, error } = await supabase.auth.getSession();
+    let authResult;
+    try {
+      authResult = await supabase.auth.getSession();
+    } catch (thrown) {
+      console.error("Could not restore the Supabase session.", thrown);
+      showToast("Could not restore session. Check your connection.");
+      if (currentPage === "admin") await verifyAdminAccess();
+      return;
+    }
+    const { data, error } = authResult;
     if (error) {
       console.error("Could not restore the Supabase session.", error);
       showToast(`Could not restore session: ${error.message}`);
@@ -17664,7 +17738,9 @@
       return;
     }
     session = data.session;
+    lastAuthUserId = session?.user?.id || null;
     window.StudyZoneTeamLive?.syncSession?.(session);
+    window.StudyZoneFlashcards?.syncSession?.(session);
     window.StudyZoneOffline?.setUser?.(session?.user?.id || null);
     if (session) localStorage.setItem(authPromptStorageKey, "seen");
     else if (!localStorage.getItem(authPromptStorageKey)) {
@@ -17672,6 +17748,7 @@
       localStorage.setItem(authPromptStorageKey, "seen");
     }
     updateUserUi();
+    if (session) syncNativePushRegistration();
     await verifyAdminAccess();
     if (session) {
       beginRenderBatch();
@@ -17694,7 +17771,11 @@
     }
     supabase.auth.onAuthStateChange((_event, nextSession) => {
       session = nextSession;
+      const nextUserId = session?.user?.id || null;
+      const userChanged = nextUserId !== lastAuthUserId;
+      lastAuthUserId = nextUserId;
       window.StudyZoneTeamLive?.syncSession?.(session);
+      window.StudyZoneFlashcards?.syncSession?.(session);
       window.StudyZoneOffline?.setUser?.(session?.user?.id || null);
       adminAuthorization = {
         status: "unknown",
@@ -17703,6 +17784,10 @@
       updateUserUi();
       if (currentPage === "admin") render();
       if (session) {
+        syncNativePushRegistration();
+        // TOKEN_REFRESHED/INITIAL_SESSION for the same user must not rebuild
+        // the whole workspace. Only a real account change reloads data.
+        if (!userChanged) return;
         tasks = [];
         subjects = [];
         clearAccountWorkspace();
@@ -19226,7 +19311,7 @@
             permission = await Notification.requestPermission();
           }
           if (permission === "granted") {
-            new Notification("🔔 Study Zone test", {
+            new Notification("🔔 Second Brain test", {
               body:
                 appLanguage === "ar"
                   ? "إذا رأيت هذا الإشعار فالإشعارات تعمل."
@@ -19653,6 +19738,7 @@
       await offlineStore?.clearUser?.(offlineUserId);
       window.StudyZoneNotifications?.cancelAll?.();
       window.StudyZoneTeamLive?.shutdown?.();
+      window.StudyZoneFlashcards?.shutdown?.();
       session = null;
       adminAuthorization = { status: "denied", userId: null };
       adminUsersRequest += 1;
@@ -20217,7 +20303,7 @@
     }
   });
 
-  if ("serviceWorker" in navigator) {
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.protocol === "http:" || location.hostname === "localhost")) {
     window.addEventListener("load", async () => {
       try {
         const registration = await navigator.serviceWorker.register(
@@ -20225,7 +20311,7 @@
           { scope: "./" },
         );
 
-        console.log("Study Zone PWA registered:", registration.scope);
+        console.log("Second Brain PWA registered:", registration.scope);
 
         registration.addEventListener("updatefound", () => {
           const worker = registration.installing;
@@ -20235,12 +20321,12 @@
               worker.state === "installed" &&
               navigator.serviceWorker.controller
             ) {
-              console.log("A new Study Zone version is available.");
+              console.log("A new Second Brain version is available.");
             }
           });
         });
       } catch (error) {
-        console.error("Study Zone PWA registration failed:", error);
+        console.error("Second Brain PWA registration failed:", error);
       }
     });
   }
@@ -20440,6 +20526,74 @@
     loadTeams: (options) => loadTeams(options),
   });
 
+  window.StudyZoneFlashcards?.init?.({
+    getSupabase: () => supabase,
+    getSession: () => session,
+    getSubjects: () => subjects,
+    getNotes: () => notes || [],
+    getLanguage: () => appLanguage,
+    getMotionLevel: () => motionLevel,
+    getMotionPreference: () => (motionLevel === "full" ? "full" : motionLevel === "reduced" ? "subtle" : "off"),
+    getLocal: (key) => {
+      try { return localStorage.getItem(key); } catch { return null; }
+    },
+    shouldAnimate: (effectId) => shouldAnimate(effectId),
+    contentElement: () => document.getElementById("page-content"),
+    navigate: (page) => navigate(page),
+    render: () => render(),
+    showToast,
+    openModal,
+    closeModal,
+    escapeHtml,
+    scheduleRender,
+  });
+
+  // Keep the last runtime failures on the device so a blank screen or a failed
+  // call can be diagnosed without a connected debugger.
+  function recordRuntimeError(kind, value) {
+    let message = "";
+    try {
+      message =
+        value?.stack ||
+        value?.reason?.stack ||
+        value?.message ||
+        value?.reason?.message ||
+        String(value?.reason || value || "");
+    } catch {
+      message = "Unknown runtime error";
+    }
+    if (!message) return;
+    console.error(`[StudyZone:${kind}]`, value);
+    try {
+      const stored = JSON.parse(localStorage.getItem("studyzone.runtime.errors") || "[]");
+      const list = Array.isArray(stored) ? stored : [];
+      list.push({ kind, message: message.slice(0, 2000), at: new Date().toISOString() });
+      while (list.length > 20) list.shift();
+      localStorage.setItem("studyzone.runtime.errors", JSON.stringify(list));
+    } catch {
+      /* storage may be unavailable */
+    }
+  }
+
+  window.StudyZoneDiagnostics = {
+    errors: () => {
+      try {
+        return JSON.parse(localStorage.getItem("studyzone.runtime.errors") || "[]");
+      } catch {
+        return [];
+      }
+    },
+    clear: () => {
+      try { localStorage.removeItem("studyzone.runtime.errors"); } catch {}
+    },
+  };
+  window.addEventListener("error", (event) =>
+    recordRuntimeError("error", event?.error || event?.message),
+  );
+  window.addEventListener("unhandledrejection", (event) =>
+    recordRuntimeError("promise", event),
+  );
+
   currentPage = pageRenderers[window.location.hash.slice(1)]
     ? window.location.hash.slice(1)
     : "dashboard";
@@ -20512,7 +20666,7 @@
       })
       .catch((error) => {
         console.error(
-          "Could not register the Study Zone service worker.",
+          "Could not register the Second Brain service worker.",
           error,
         );
       });

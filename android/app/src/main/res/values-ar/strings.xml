@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="title_activity_main">Study Zone</string>
+    <string name="title_activity_main">Second Brain</string>
     <string name="shortcut_my_tasks">مهامي</string>
     <string name="shortcut_my_tasks_long">افتح قائمة مهامك</string>
     <string name="shortcut_focus_mode">وضع التركيز</string>
@@ -23,9 +23,9 @@
     <string name="widget_description_upcoming_deadlines">المواعيد القادمة - عرض أقرب المواعيد النهائية</string>
     <string name="widget_clock">الساعة</string>
     <string name="widget_description_clock">الساعة - ساعة مباشرة على الشاشة الرئيسية يحدّثها أندرويد</string>
-    <string name="clock_channel_name">ساعة Study Zone</string>
+    <string name="clock_channel_name">ساعة Second Brain</string>
     <string name="clock_channel_description">ساعة اختيارية دائمة تظهر في شريط الإشعارات</string>
-    <string name="clock_notification_title">ساعة Study Zone · %1$s</string>
+    <string name="clock_notification_title">ساعة Second Brain · %1$s</string>
     <string name="clock_notification_text">ساعة مباشرة بنظام 24 ساعة. اضغط لفتح التركيز، أو أوقفها من الزر أدناه.</string>
     <string name="clock_notification_open">فتح الساعة</string>
     <string name="clock_notification_stop">إيقاف</string>

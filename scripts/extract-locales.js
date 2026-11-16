@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Keeps the runtime translation dictionaries in sync with the dictionary
- * embedded in app.js (the original Study Zone i18n source of truth) and the
+ * embedded in app.js (the original Second Brain i18n source of truth) and the
  * additive `extra.*.json` files used by the Android/offline features.
  */
 const fs = require("node:fs");

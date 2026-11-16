@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Downloads the Study Zone webfonts once so both the website and the
+ * Downloads the Second Brain webfonts once so both the website and the
  * installed Android app render identically without a network connection.
  *
  * Run with: node scripts/fetch-fonts.js

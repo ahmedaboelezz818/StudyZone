@@ -31,6 +31,10 @@ const migration6Path = "supabase/migrations/006_team_live_communication.sql";
 const migration6 = existsSync(join(root, migration6Path))
   ? read(migration6Path)
   : "";
+const migration8Path = "supabase/migrations/008_team_live_reactions_and_rpc_compat.sql";
+const migration8 = existsSync(join(root, migration8Path))
+  ? read(migration8Path)
+  : "";
 const teamLive = read("team-live.js");
 const teamLiveCore = read("team-live-core.js");
 const teamLiveCss = read("team-live.css");
@@ -76,7 +80,7 @@ check("Notification preferences form exists", app.includes('id="notification-pre
 check("Team creation exists", /\.from\(\s*["']teams["']\s*\)\s*\.insert\(/.test(app));
 check("Team join RPC exists", app.includes('rpc("join_team"'));
 check("No service-role key assignment in browser files", !/service_role\s*[:=]/i.test(app + html + read("supabase-config.js")) && !/serviceRole/i.test(app + html + read("supabase-config.js")));
-check("Service worker cache was bumped", sw.includes("studyzone-shell-v28"));
+check("Service worker cache was bumped", sw.includes("studyzone-shell-v35"));
 
 check("Web app manifest keeps standalone display", /"display"\s*:\s*"standalone"/.test(manifest));
 check("Web app manifest has a start url and scope", /"start_url"\s*:/.test(manifest) && /"scope"\s*:/.test(manifest));
@@ -174,7 +178,7 @@ check("Index has global search modal", html.includes('id="global-search-modal"')
 check("Index has focus preparation modal", html.includes('id="focus-prep-modal"'));
 check("Index has distraction modal", html.includes('id="distraction-modal"'));
 check("Index has shortcuts modal", html.includes('id="shortcuts-modal"'));
-check("Index has quick capture button", html.includes('data-action="quick-capture-open"'));
+check("Index no longer ships the quick capture floating button", !html.includes('class="quick-capture-fab"') && !html.includes('data-action="quick-capture-open"'));
 check("Index has journal navigation", html.includes('data-page="journal"'));
 check("New components have styles", css.includes("/* ---- Focus intelligence, routines, journal, search additions"));
 
@@ -343,7 +347,7 @@ check(
   "Team Live supports direct, group and task conversations",
   teamLive.includes("team_chat_conversations") &&
     teamLive.includes("team_live_open_direct") &&
-    teamLive.includes("team_live_open_task_conversation") &&
+    teamLive.includes("team_live_open_task_chat") &&
     teamLive.includes("team_live_ensure_group"),
 );
 check(
@@ -451,11 +455,63 @@ check(
     migration6.includes("Messages can only be soft-deleted"),
 );
 check(
+  "Reaction migration exists and enforces one emoji per user per message",
+  Boolean(migration8) &&
+    /create unique index if not exists team_message_reactions_one_per_user/i.test(migration8) &&
+    /on public\.team_message_reactions \(message_id, user_id\)/i.test(migration8) &&
+    /alter table public\.team_message_reactions enable row level security/i.test(migration8) &&
+    /replica identity full/i.test(migration8),
+);
+check(
+  "Reaction migration ships the RPC overloads used by the client",
+  [
+    "team_live_join_call(p_call_id uuid)",
+    "team_live_leave_call(p_call_id uuid)",
+    "team_live_respond_call(p_call_id uuid, p_accept boolean)",
+    "team_live_pending_invites()",
+    "team_chat_mark_read(",
+  ].every((signature) => migration8.includes(signature)),
+);
+check(
+  "Reaction migration is additive and re-runnable",
+  !/\bdrop table\b|\btruncate\b|\bdrop column\b|\bdisable row level security\b/i.test(migration8) &&
+    /create table if not exists public\.team_message_reactions/i.test(migration8) &&
+    /drop policy if exists/i.test(migration8),
+);
+check(
+  "Reaction UI replaces a user's previous emoji and updates optimistically",
+  teamLive.includes("setLocalUserReaction") &&
+    teamLive.includes("S.reactionBusy.has(id)") &&
+    teamLive.includes(".delete()") &&
+    teamLive.includes("const removing = Boolean(existing && existing.emoji === emoji)"),
+);
+check(
   "Team Live files are included in the Capacitor build and service worker",
   read("scripts/build-web.js").includes('"team-live.js"') &&
     read("scripts/build-web.js").includes('"team-live.css"') &&
     sw.includes('"./team-live.js"') &&
     sw.includes('"./team-live.css"'),
+);
+check(
+  "Flashcards core, database, sync and UI files are present and wired into the shell",
+  ["flashcards-core.js", "flashcards-db.js", "flashcards-sync.js", "flashcards.js", "flashcards.css"].every((file) =>
+    existsSync(join(root, file)),
+  ) &&
+    html.includes("flashcards-core.js") &&
+    html.includes("flashcards-db.js") &&
+    html.includes("flashcards-sync.js") &&
+    html.includes("flashcards.js") &&
+    html.includes("flashcards.css") &&
+    html.includes('data-page="flashcards"'),
+);
+check(
+  "Flashcards use a real spaced repetition core and local persistence",
+  read("flashcards-core.js").includes("learning_steps") &&
+    read("flashcards-core.js").includes("relearning_steps") &&
+    read("flashcards-core.js").includes("estimateButtonIntervals") &&
+    read("flashcards-db.js").includes("indexedDB") &&
+    read("flashcards-sync.js").includes("flashcard_cards") &&
+    read("flashcards.js").includes("Start review"),
 );
 check(
   "Android declares camera and microphone hardware support",

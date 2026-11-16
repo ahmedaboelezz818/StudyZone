@@ -120,5 +120,5 @@
         android:maxLines="1"
         android:ellipsize="end"
         android:textColor="@color/widget_muted"
-        android:text="Study Zone" />
+        android:text="Second Brain" />
 </LinearLayout>

@@ -170,11 +170,11 @@ async function createDailyNotifications(
       const title = isArabic ? "حان وقت مراجعة مهامك" : "Time to check your study plan";
       const message = isArabic
         ? openCount > 0
-          ? `لديك ${openCount} مهام مفتوحة. افتح Study Zone لمراجعة ما عليك.`
-          : "لا توجد مهام مفتوحة الآن. افتح Study Zone لمراجعة خطتك والحفاظ على تقدمك."
+          ? `لديك ${openCount} مهام مفتوحة. افتح Second Brain لمراجعة ما عليك.`
+          : "لا توجد مهام مفتوحة الآن. افتح Second Brain لمراجعة خطتك والحفاظ على تقدمك."
         : openCount > 0
-          ? `You have ${openCount} open task${openCount === 1 ? "" : "s"}. Open Study Zone to review what is due.`
-          : "No open tasks right now. Open Study Zone to review your plan and keep your progress going.";
+          ? `You have ${openCount} open task${openCount === 1 ? "" : "s"}. Open Second Brain to review what is due.`
+          : "No open tasks right now. Open Second Brain to review your plan and keep your progress going.";
 
       const { data: inserted, error: insertError } = await supabase.from("notifications").insert({
         user_id: preference.user_id,

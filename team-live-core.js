@@ -1,5 +1,5 @@
 /*
- * Study Zone — Team Live core helpers.
+ * Second Brain — Team Live core helpers.
  *
  * These functions are deliberately dependency-free and side-effect-free so the
  * browser, the Android WebView and Node tests all exercise the same rules.

@@ -1,4 +1,4 @@
-// Study Zone — short-lived TURN credentials.
+// Second Brain — short-lived TURN credentials.
 //
 // The browser/APK never receives the TURN shared secret. It authenticates with
 // its Supabase access token, and this function mints coturn REST-style

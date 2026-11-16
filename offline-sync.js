@@ -1,5 +1,5 @@
 /*
- * Study Zone offline-first data layer.
+ * Second Brain offline-first data layer.
  *
  * The existing app talks to Supabase through supabase-js. This module wraps
  * window.fetch *before* the Supabase client is created, so every REST read

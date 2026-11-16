@@ -1,5 +1,5 @@
 /*
- * Study Zone native Android shell.
+ * Second Brain native Android shell.
  *
  * Loaded only inside the Capacitor WebView (it is a no-op on the website).
  * Responsibilities:
@@ -217,12 +217,14 @@
         this.permission = status?.display || "prompt";
         await this.createChannels();
         this.ready = true;
-        if (this.permission === "granted") {
-          this.scheduleFromApp();
-          void push.register();
-        }
+        if (this.permission === "granted") this.scheduleFromApp();
+        // Call push is independent of local-notification scheduling. Register
+        // even when the local permission is still "prompt": the push plugin
+        // owns its own Android 13+ permission request.
+        void push.register();
       } catch (error) {
         console.warn("[StudyZoneNotifications] init failed", error);
+        void push.register();
       }
     },
     async createChannels(accentColor) {
@@ -285,8 +287,8 @@
           CHANNEL_GENERAL,
           "General notifications",
           "إشعارات عامة",
-          "Other Study Zone updates",
-          "تحديثات Study Zone الأخرى",
+          "Other Second Brain updates",
+          "تحديثات Second Brain الأخرى",
           3,
         ),
       ]).catch(() => {});
@@ -363,8 +365,8 @@
           notifications.push({
             id: stableId(100000, `task:${task.id || task.title}:${due}`),
             title: text(
-              "⏰ Study Zone task",
-              "⏰ مهمة في Study Zone",
+              "⏰ Second Brain task",
+              "⏰ مهمة في Second Brain",
             ),
             body: subject
               ? text(
@@ -533,7 +535,7 @@
           notifications: [
             {
               id,
-              title: text("🔔 Study Zone test", "🔔 اختبار Study Zone"),
+              title: text("🔔 Second Brain test", "🔔 اختبار Second Brain"),
               body: text(
                 "If you can hear this bell, notification sound works.",
                 "إذا سمعت هذا الجرس، فصوت الإشعارات يعمل.",
@@ -557,36 +559,53 @@
   };
 
   // ---- Push (FCM) ---------------------------------------------------------
-  async function removeDevicePushToken(token) {
-    const value = token || localStorage.getItem(PUSH_TOKEN_KEY) || "";
-    if (!value) return;
+  async function deleteServerPushToken(value) {
+    if (!value) return false;
     const userId = readUserId();
     const accessToken = readAccessToken();
-    if (!userId || !accessToken || !config.url || !config.anonKey) return;
+    if (!userId || !accessToken || !config.url || !config.anonKey) return false;
     try {
-      await fetch(`${config.url}/rest/v1/device_push_tokens?token=eq.${encodeURIComponent(value)}&user_id=eq.${encodeURIComponent(userId)}`, {
-        method: "DELETE",
-        headers: {
-          apikey: config.anonKey,
-          authorization: `Bearer ${accessToken}`,
+      const response = await fetch(
+        `${config.url}/rest/v1/device_push_tokens?token=eq.${encodeURIComponent(value)}&user_id=eq.${encodeURIComponent(userId)}`,
+        {
+          method: "DELETE",
+          headers: {
+            apikey: config.anonKey,
+            authorization: `Bearer ${accessToken}`,
+          },
         },
-      });
+      );
+      return response.ok;
     } catch (error) {
       console.warn("[StudyZonePush] could not delete push token", error);
-    } finally {
-      try { localStorage.removeItem(PUSH_TOKEN_KEY); } catch {}
+      return false;
     }
   }
 
+  async function removeDevicePushToken(token) {
+    const value = token || localStorage.getItem(PUSH_TOKEN_KEY) || "";
+    if (!value) return;
+    await deleteServerPushToken(value);
+    try { localStorage.removeItem(PUSH_TOKEN_KEY); } catch {}
+  }
+
   const push = {
+    registering: false,
     async register() {
-      if (!PushNotifications) return null;
+      if (!PushNotifications || this.registering) return null;
+      this.registering = true;
       try {
         let permission = await PushNotifications.checkPermissions();
         if (permission?.receive !== "granted")
           permission = await PushNotifications.requestPermissions();
-        if (permission?.receive !== "granted") return null;
+        if (permission?.receive !== "granted") {
+          console.info("[StudyZonePush] notification permission was not granted");
+          return null;
+        }
         await PushNotifications.register();
+        // The registration listener saves the token. If the user was not signed
+        // in yet, or the network was down, retry the stored token here.
+        await this.flushToken();
         return permission;
       } catch (error) {
         console.warn(
@@ -594,33 +613,62 @@
           error,
         );
         return null;
+      } finally {
+        this.registering = false;
+      }
+    },
+    /**
+     * Saves the newest token and retries the stored token whenever the user is
+     * signed in and online. Supabase's upsert must target (user_id, token);
+     * without on_conflict the request has no conflict target and fails.
+     */
+    async flushToken() {
+      const token = localStorage.getItem(PUSH_TOKEN_KEY) || "";
+      if (!token) return false;
+      const userId = readUserId();
+      const accessToken = readAccessToken();
+      if (!userId || !accessToken || !config.url || !config.anonKey) return false;
+      try {
+        const response = await fetch(
+          `${config.url}/rest/v1/device_push_tokens?on_conflict=user_id,token`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              apikey: config.anonKey,
+              authorization: `Bearer ${accessToken}`,
+              prefer: "resolution=merge-duplicates,return=minimal",
+            },
+            body: JSON.stringify({
+              user_id: userId,
+              token,
+              platform: "android",
+              updated_at: new Date().toISOString(),
+            }),
+          },
+        );
+        if (!response.ok) {
+          const detail = await response.text().catch(() => "");
+          console.warn(
+            "[StudyZonePush] could not store push token",
+            response.status,
+            detail,
+          );
+          return false;
+        }
+        return true;
+      } catch (error) {
+        console.warn("[StudyZonePush] could not store push token", error);
+        return false;
       }
     },
     async saveToken(token) {
-      if (!token) return;
-      localStorage.setItem(PUSH_TOKEN_KEY, token);
-      const userId = readUserId();
-      const accessToken = readAccessToken();
-      if (!userId || !accessToken || !config.url || !config.anonKey) return;
-      try {
-        await fetch(`${config.url}/rest/v1/device_push_tokens`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            apikey: config.anonKey,
-            authorization: `Bearer ${accessToken}`,
-            prefer: "resolution=merge-duplicates,return=minimal",
-          },
-          body: JSON.stringify({
-            user_id: userId,
-            token,
-            platform: "android",
-            updated_at: new Date().toISOString(),
-          }),
-        });
-      } catch (error) {
-        console.warn("[StudyZonePush] could not store push token", error);
-      }
+      const value = String(token || "").trim();
+      if (!value) return false;
+      const previous = localStorage.getItem(PUSH_TOKEN_KEY) || "";
+      localStorage.setItem(PUSH_TOKEN_KEY, value);
+      if (previous && previous !== value) void deleteServerPushToken(previous);
+      return this.flushToken();
     },
     async init() {
       if (!PushNotifications) return;
@@ -680,9 +728,10 @@
           if (page) window.StudyZoneApp?.navigate?.(page);
         },
       );
-      if (localStorage.getItem(PUSH_TOKEN_KEY)) return;
-      // Registration is attempted after notification permission is granted so
-      // Android 13+ does not silently drop the request.
+      // If a token is already cached from a previous launch, retry saving it
+      // now that the session may be available. Notifications.init() starts the
+      // actual FCM registration.
+      void this.flushToken();
     },
   };
   void push.init();
@@ -690,6 +739,8 @@
   // ---- Lifecycle ----------------------------------------------------------
   window.StudyZonePush = {
     register: () => push.register(),
+    flush: () => push.flushToken(),
+    saveToken: (token) => push.saveToken(token),
     unregister: () => removeDevicePushToken(localStorage.getItem(PUSH_TOKEN_KEY)),
   };
   let lastBackAt = 0;
@@ -747,6 +798,10 @@
     window.StudyZoneOffline?.syncNow?.();
     window.StudyZoneApp?.syncReminders?.();
     notifications.syncFocusReminder(window.StudyZoneApp?.focus);
+    // Retry FCM registration/token upload after the app returns from the
+    // background or the user signs in while the app is open.
+    void push.register();
+    void push.flushToken();
   }
 
   function onPause() {
@@ -774,6 +829,7 @@
     if (status?.connected) {
       window.dispatchEvent(new Event("online"));
       void window.StudyZoneOffline?.syncNow?.();
+      void push.flushToken();
     } else {
       window.dispatchEvent(new Event("offline"));
     }

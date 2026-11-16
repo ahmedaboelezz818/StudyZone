@@ -1,5 +1,5 @@
 /*
- * Study Zone — Team Live.
+ * Second Brain — Team Live.
  *
  * Chat, call orchestration and WebRTC for the Team section. This module is
  * initialized by app.js, which supplies the existing session, Supabase client,
@@ -45,6 +45,13 @@
     reactionChannel: null,
     reactionChannelId: null,
     openReactionPickerMessageId: null,
+    // One in-flight reaction write per message keeps repeated taps and slow
+    // network retries from creating a second reaction for the same user.
+    reactionBusy: new Set(),
+    // A single shared media request prevents two UI actions (start call,
+    // accept call, voice note) from opening the microphone at the same time.
+    mediaPermissionPromise: null,
+    mediaAcquirePromise: null,
     callInfo: new Map(),
     signed: new Map(),
     signedAt: new Map(),
@@ -111,6 +118,22 @@
     pendingConversationId: null,
     pendingDirectUserId: null,
     chatFocus: false,
+    // Microphone / audio input device state shared across the call UI.
+    // Populated by enumerateDevices() AFTER a real permission grant so labels
+    // are present. Falls back to an empty list (never "no microphone") when
+    // permission has not been granted yet — an empty list pre-grant is NOT an
+    // error, it is just the pre-permission state.
+    mic: {
+      devices: [],
+      selectedDeviceId: "",
+      permission: "unknown", // granted | denied | prompt | unknown
+      deviceMissing: false,
+      pickerOpen: false,
+      meterLevel: 0,
+      meterTimer: 0,
+      testStream: null,
+      status: "unknown", // connected | muted | no-permission | no-device | unsupported
+    },
     destroyed: false,
   };
 
@@ -257,6 +280,38 @@
     S.endedCallIds.add(id);
     S.invites = (S.invites || []).filter((row) => String(row.call_id) !== id);
     if (String(S.incomingCallId || "") === id) setIncomingCall(null);
+    persistEndedIds();
+  }
+
+  // Keep the list of ended call ids in sessionStorage so a page refresh cannot
+  // resurrect an already-terminated call (e.g. from a stale cached invite).
+  // The list is capped and lives only in this tab session.
+  const ENDED_CALLS_KEY = "studyzone.endedCallIds.v1";
+
+  function persistEndedIds() {
+    try {
+      if (typeof sessionStorage === "undefined") return;
+      const ids = Array.from(S.endedCallIds).slice(-60);
+      sessionStorage.setItem(ENDED_CALLS_KEY, JSON.stringify(ids));
+    } catch (_) { /* storage unavailable — in-memory only */ }
+  }
+
+  function restoreEndedIds() {
+    try {
+      if (typeof sessionStorage === "undefined") return;
+      const parsed = JSON.parse(sessionStorage.getItem(ENDED_CALLS_KEY) || "[]");
+      if (!Array.isArray(parsed)) return;
+      for (const id of parsed) {
+        if (id) S.endedCallIds.add(String(id));
+      }
+    } catch (_) { /* ignore corrupt data */ }
+  }
+
+  // Match server-side join/respond errors for ended calls (migration 012 raises
+  // CALL_ALREADY_ENDED; older deployments raised "This call has ended").
+  function isCallEndedError(error) {
+    const text = String((error && error.message) || (error && typeof error === "object" ? error.error : "") || error || "");
+    return /CALL_ALREADY_ENDED|call[_ ]already[_ ]ended|this call has ended|call .* ended|already ended/i.test(text);
   }
 
   function isCallKnownEnded(callId) {
@@ -345,6 +400,7 @@
   function conversationTitle(conversation) {
     if (!conversation) return t("Conversation", "محادثة");
     if (conversation.kind === "direct") {
+      if (conversation.peer_name) return conversation.peer_name;
       return memberName(conversation.participant_id);
     }
     if (conversation.kind === "task") {
@@ -385,8 +441,15 @@
         const other = String(normalized.other_user_id || normalized.user_id || "");
         if (other && other !== uid) normalized.participant_id = other;
       } else if (normalized.title && /^[0-9a-f-]{36}$/i.test(String(normalized.title))) {
+        // Direct conversations store the OTHER member's uuid as the title
+        // (created by the caller). Resolve per viewer direction:
+        //   - title != me  → the other member is the title (I created it for them)
+        //   - title == me  → the other member is the creator (they created it for me)
         const maybe = String(normalized.title);
         if (maybe !== uid) normalized.participant_id = maybe;
+        else if (normalized.created_by && String(normalized.created_by) !== uid) {
+          normalized.participant_id = String(normalized.created_by);
+        }
       }
     }
     return normalized;
@@ -416,11 +479,53 @@
     return data;
   }
 
+  // Private one-to-one calls live entirely in the pair's private stack; route
+  // each operation to the right RPC based on whether the call carries a team.
+  function isPrivateCall(row) {
+    return Boolean(row) && String(row.scope || "") === "direct" && (row.team_id == null || row.team_id === "");
+  }
+
+  async function respondToInviteRpc(callId, accept) {
+    let priv = false;
+    try {
+      const row = await loadCallRow(callId);
+      priv = row ? isPrivateCall(row) : false;
+    } catch { /* fall back to team RPC (best-effort) */ }
+    return rpc(priv ? "private_call_respond" : "team_live_respond_call", {
+      p_call_id: callId,
+      p_accept: accept,
+    });
+  }
+
+  async function joinCallRpc(callId) {
+    let priv = false;
+    try {
+      const row = await loadCallRow(callId);
+      priv = row ? isPrivateCall(row) : false;
+    } catch { /* fall back to team RPC */ }
+    return rpc(priv ? "private_call_join" : "team_live_join_call", {
+      p_call_id: callId,
+    });
+  }
+
+  async function endCallRpc(callId) {
+    let priv = false;
+    try {
+      const row = await loadCallRow(callId);
+      priv = row ? isPrivateCall(row) : false;
+    } catch { /* fall back to team RPC */ }
+    return rpc(priv ? "private_call_end" : "team_live_end_call", {
+      p_call_id: callId,
+    });
+  }
+
   async function loadConversations({ silent = false } = {}) {
     const client = sb();
     const user = me();
     const teamId = S.teamId;
-    if (!client || !user || !teamId) return;
+    // Private one-to-one conversations work even without any shared team,
+    // so do not bail out when teamId is absent — union the private list below.
+    if (!client || !user) return;
     const seq = (S.conversationsSeq = (S.conversationsSeq || 0) + 1);
     S.conversationsLoading = true;
     if (!silent && !S.conversationsLoaded) {
@@ -430,9 +535,24 @@
       S.conversationsError = "";
     }
     try {
-      const rows = await rpc("team_chat_conversations", { p_team_id: teamId });
-      if (seq !== S.conversationsSeq || String(S.teamId) !== String(teamId)) return;
-      S.conversations = (Array.isArray(rows) ? rows : []).map(normalizeConversationRow);
+      const rows = teamId
+        ? await rpc("team_chat_conversations", { p_team_id: teamId })
+        : [];
+      const privateRows = await rpc("private_conversations", {}).catch(() => []);
+      const merged = [
+        ...(Array.isArray(rows) ? rows : []),
+        ...(Array.isArray(privateRows) ? privateRows : []).map((row) => ({
+          ...row,
+          kind: "direct",
+          team_id: null,
+          participant_id: row.peer_id || row.title,
+          peer_name: row.peer_name || null,
+          peer_avatar_url: row.peer_avatar_url || null,
+          private: true,
+        })),
+      ];
+      if (seq !== S.conversationsSeq || String(S.teamId || "") !== String(teamId || "")) return;
+      S.conversations = merged.map(normalizeConversationRow);
       S.migrationMissing = false;
       S.conversationsLoaded = true;
       // Keep active chat open even if the conversation list is temporarily
@@ -504,6 +624,7 @@
     S.hasMoreMessages = true;
     S.loadingOlder = false;
     S.reactions.clear();
+    S.reactionBusy.clear();
     S.openReactionPickerMessageId = null;
     syncChatSurface();
     applyChatFocusState();
@@ -629,8 +750,9 @@
   async function markConversationRead(conversationId) {
     if (!conversationId) return;
     const last = S.messages[S.messages.length - 1];
+    const priv = Boolean(conversationById(conversationId)?.private);
     try {
-      await rpc("team_chat_mark_read", {
+      await rpc(priv ? "private_chat_mark_read" : "team_chat_mark_read", {
         p_conversation_id: conversationId,
         p_at: new Date().toISOString(),
         p_message_id: last ? last.id : null,
@@ -666,17 +788,37 @@
     if (replace) {
       for (const id of ids) S.reactions.set(id, []);
     }
-    for (const raw of rows || []) {
-      const row = normalizeReactionRow(raw);
-      if (!row || !row.message_id || !row.emoji || !row.user_id) continue;
+    // Apply oldest first so that, if an older schema still contains several
+    // reactions for the same user, the newest row wins and the UI never shows
+    // more than one emoji per person per message.
+    const ordered = (rows || [])
+      .map(normalizeReactionRow)
+      .filter((row) => row && row.message_id && row.emoji && row.user_id)
+      .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
+    for (const row of ordered) {
       if (ids.size && !ids.has(row.message_id)) continue;
-      const list = S.reactions.get(row.message_id) || [];
-      const exists = list.some(
-        (item) => item.user_id === row.user_id && item.emoji === row.emoji,
-      );
-      if (!exists) list.push(row);
+      const list = (S.reactions.get(row.message_id) || []).filter((item) => item.user_id !== row.user_id);
+      list.push(row);
       S.reactions.set(row.message_id, list);
     }
+  }
+
+  function setLocalUserReaction(messageId, userId, emoji) {
+    const id = String(messageId);
+    const uid = String(userId);
+    const list = (S.reactions.get(id) || []).slice().filter((item) => item.user_id !== uid);
+    if (emoji) {
+      list.push({
+        id: `local-${uid}-${Date.now()}`,
+        message_id: id,
+        conversation_id: String(S.activeId || ""),
+        user_id: uid,
+        emoji: String(emoji),
+        created_at: new Date().toISOString(),
+        pending: true,
+      });
+    }
+    S.reactions.set(id, list);
   }
 
   async function loadReactionsForMessages(conversationId, messageIds, { merge = false } = {}) {
@@ -692,7 +834,8 @@
         .from("team_message_reactions")
         .select("id,message_id,conversation_id,user_id,emoji,created_at")
         .eq("conversation_id", conversationId)
-        .in("message_id", ids);
+        .in("message_id", ids)
+        .order("created_at", { ascending: true });
       if (error) throw error;
       setReactionsForMessages(ids, data || [], { replace: !merge });
     } catch (error) {
@@ -719,44 +862,57 @@
     const conversationId = S.activeId;
     if (!client || !user || !conversationId || !messageId || !emoji) return;
     const id = String(messageId);
-    const rows = S.reactions.get(id) || [];
-    const mine = rows.find((row) => row.user_id === String(user.id) && row.emoji === emoji);
+    const userId = String(user.id);
+    // One write per message at a time: fast double-taps or a burst of taps on
+    // different emojis cannot produce two rows for the same person.
+    if (S.reactionBusy.has(id)) return;
+    const before = (S.reactions.get(id) || []).map((row) => ({ ...row }));
+    const existing = before.find((row) => row.user_id === userId);
+    const removing = Boolean(existing && existing.emoji === emoji);
+    const nextEmoji = removing ? null : String(emoji);
+    S.reactionBusy.add(id);
+    // Optimistic update: the chip reacts immediately, then the server result
+    // (or a revert on failure) replaces it.
+    setLocalUserReaction(id, userId, nextEmoji);
+    S.openReactionPickerMessageId = null;
+    renderMessages();
     try {
-      if (mine) {
-        const { error } = await client
-          .from("team_message_reactions")
-          .delete()
-          .eq("message_id", id)
-          .eq("user_id", user.id)
-          .eq("emoji", emoji);
-        if (error) throw error;
-        S.reactions.set(
-          id,
-          rows.filter((row) => !(row.user_id === String(user.id) && row.emoji === emoji)),
-        );
-      } else {
+      // Delete first so replacing an emoji never hits the one-reaction-per-user
+      // unique constraint, and toggling the same emoji removes it.
+      const { error: deleteError } = await client
+        .from("team_message_reactions")
+        .delete()
+        .eq("message_id", id)
+        .eq("user_id", user.id);
+      if (deleteError) throw deleteError;
+      if (nextEmoji) {
         const { data, error } = await client
           .from("team_message_reactions")
           .insert({
             message_id: id,
             conversation_id: conversationId,
             user_id: user.id,
-            emoji,
+            emoji: nextEmoji,
           })
           .select("id,message_id,conversation_id,user_id,emoji,created_at")
           .single();
         if (error) throw error;
-        const next = rows.slice();
         const normalized = normalizeReactionRow(data);
-        if (normalized && !next.some((r) => r.user_id === normalized.user_id && r.emoji === normalized.emoji)) {
-          next.push(normalized);
+        if (normalized && String(S.activeId || "") === String(conversationId)) {
+          const list = (S.reactions.get(id) || []).filter((row) => row.user_id !== userId);
+          list.push(normalized);
+          S.reactions.set(id, list);
+          renderMessages();
         }
-        S.reactions.set(id, next);
       }
-      S.openReactionPickerMessageId = null;
-      renderMessages();
     } catch (error) {
+      if (String(S.activeId || "") === String(conversationId)) {
+        S.reactions.set(id, before);
+        renderMessages();
+      }
       notifyError(t("Could not update reaction.", "تعذّر تحديث التفاعل."), error);
+    } finally {
+      S.reactionBusy.delete(id);
     }
   }
 
@@ -766,13 +922,17 @@
     if (S.activeId && row.conversation_id && String(row.conversation_id) !== String(S.activeId)) return;
     const list = (S.reactions.get(row.message_id) || []).slice();
     if (payload.eventType === "DELETE") {
-      S.reactions.set(
-        row.message_id,
-        list.filter((item) => !(item.user_id === row.user_id && item.emoji === row.emoji)),
-      );
+      // Replica identity may only expose the primary key, so fall back to the
+      // row id when user/emoji are unavailable.
+      const next = row.id
+        ? list.filter((item) => item.id !== row.id && !(row.user_id && row.emoji && item.user_id === row.user_id && item.emoji === row.emoji))
+        : list.filter((item) => !(item.user_id === row.user_id && item.emoji === row.emoji));
+      S.reactions.set(row.message_id, next);
     } else {
-      if (!list.some((item) => item.user_id === row.user_id && item.emoji === row.emoji)) list.push(row);
-      S.reactions.set(row.message_id, list);
+      // Replacement semantics: a user can only have one emoji per message.
+      const withoutUser = list.filter((item) => item.user_id !== row.user_id && item.id !== row.id);
+      withoutUser.push(row);
+      S.reactions.set(row.message_id, withoutUser);
     }
     // Re-render only if messages for this conversation are shown.
     if (S.messages.some((m) => String(m.id) === row.message_id)) renderMessages();
@@ -1134,6 +1294,7 @@
     S.messages = [];
     S.messagesError = "";
     S.reactions.clear();
+    S.reactionBusy.clear();
     S.openReactionPickerMessageId = null;
     teardownReadChannel();
     teardownReactionChannel();
@@ -1235,7 +1396,8 @@
       !query || conversationTitle(row).toLowerCase().includes(query);
     const groups = S.conversations.filter((row) => row.kind === "group" && matches(row));
     const tasks = S.conversations.filter((row) => row.kind === "task" && matches(row));
-    const directs = S.conversations.filter((row) => row.kind === "direct" && matches(row));
+    const directs = S.conversations.filter((row) => row.kind === "direct" && !row.private && matches(row));
+    const privates = S.conversations.filter((row) => row.private && matches(row));
 
     const directIds = new Set(directs.map((row) => String(row.participant_id)));
     const teammates = teamMembersOf(S.teamId).filter(
@@ -1246,6 +1408,10 @@
       rows.length
         ? `<div class="live-section-label">${esc(label)}</div>${rows.map(conversationRowMarkup).join("")}`
         : "";
+
+    const privateSection = `<div class="live-section-label live-section-label-flex">${esc(t("Private messages", "رسائل خاصة"))}
+      <button type="button" class="live-icon-button live-icon-button-xs" data-live-action="open-private-dm" title="${esc(t("New private chat", "محادثة خاصة جديدة"))}" aria-label="${esc(t("New private chat", "محادثة خاصة جديدة"))}">＋</button>
+    </div>${privates.length ? privates.map(conversationRowMarkup).join("") : `<p class="live-conv-empty-hint" dir="auto">${esc(t("Message someone privately — no team required.", "راسل أي شخص بشكل خاص — دون الحاجة إلى فريق."))}</p><button type="button" class="live-conv-row live-conv-person" data-live-action="open-private-dm"><span class="live-conv-icon" aria-hidden="true">＋</span><span class="live-conv-copy"><strong>${esc(t("Start a private chat", "ابدأ محادثة خاصة"))}</strong><small dir="auto">${esc(t("Works without a shared team", "تعمل دون فريق مشترك"))}</small></span></button>`}`;
 
     const teammateSection = teammates.length
       ? `<div class="live-section-label">${esc(t("Start a direct chat", "ابدأ محادثة مباشرة"))}</div>${teammates
@@ -1259,7 +1425,7 @@
           .join("")}`
       : "";
 
-    const body = `${section(t("Team", "الفريق"), groups)}${section(t("Task chats", "محادثات المهام"), tasks)}${section(t("Direct messages", "الرسائل المباشرة"), directs)}${teammateSection}`;
+    const body = `${section(t("Direct messages", "الرسائل المباشرة"), directs)}${privateSection}${teammateSection}${section(t("Team", "الفريق"), groups)}${section(t("Task chats", "محادثات المهام"), tasks)}`;
 
     if (!body) {
       return `<div class="live-empty-list"><p>${esc(t("No conversations match.", "لا توجد محادثات مطابقة."))}</p><button type="button" class="button button-secondary button-small" data-live-action="open-group-chat">${esc(t("Open team chat", "فتح محادثة الفريق"))}</button></div>`;
@@ -1441,7 +1607,8 @@
     if (textarea) {
       textarea.value = S.draft;
       autoGrow(textarea);
-      textarea.focus();
+      const voiceState = S.voice?.state || "idle";
+      if (voiceState === "idle") textarea.focus();
     }
   }
 
@@ -1843,6 +2010,7 @@
     if (preview) { try { preview.pause(); preview.src = ""; } catch {} }
     setVoiceWaveLevel(0);
     updateVoiceComposerUi();
+    refreshComposer();
   }
 
   async function ensureMicrophonePermission() {
@@ -1930,6 +2098,7 @@
         }
         v.busy = false;
         updateVoiceComposerUi();
+        refreshComposer();
       };
       recorder.onerror = () => {
         v.error = t("Recording failed. Please try again.", "فشل التسجيل. يرجى المحاولة مرة أخرى.");
@@ -1943,6 +2112,7 @@
       v.busy = false;
       startVoiceTimer();
       updateVoiceComposerUi();
+      refreshComposer();
     } catch (error) {
       v.busy = false;
       const name = String(error?.name || "");
@@ -1952,6 +2122,7 @@
       releaseVoiceStream();
       v.state = "idle";
       updateVoiceComposerUi();
+      refreshComposer();
     }
   }
 
@@ -1965,6 +2136,7 @@
       }
     } catch {}
     updateVoiceComposerUi();
+    refreshComposer();
   }
 
   async function stopVoiceRecording() {
@@ -1993,6 +2165,20 @@
     const client = sb();
     const v = S.voice;
     if (!user || !client || !conversationId || S.uploading || !v?.blob || v.state !== "ready") return;
+    if (!v.blob || !v.blob.size) {
+      resetVoiceRecording({ keepError: true });
+      v.error = t("No audio was captured for this message.", "لم يتم التقاط صوت لهذه الرسالة.");
+      updateVoiceComposerUi();
+      refreshComposer();
+      return;
+    }
+    if (v.blob.size < 512) {
+      resetVoiceRecording({ keepError: true });
+      v.error = t("The recording is too short to send.", "التسجيل قصير جدًا لإرساله.");
+      updateVoiceComposerUi();
+      refreshComposer();
+      return;
+    }
     if (!navigator.onLine) {
       toast(t("Voice messages need an internet connection.", "الرسائل الصوتية تحتاج اتصالًا بالإنترنت."));
       return;
@@ -2003,10 +2189,26 @@
       const ext = voiceExtensionFromMime(v.mimeType || v.blob.type);
       const safeName = `voice-message-${Date.now()}.${ext}`;
       const path = `${conversationId}/${uid()}-${safeName}`;
-      const contentType = core ? core.normalizeMime(v.mimeType || v.blob.type || "audio/webm") : (v.mimeType || "audio/webm");
-      const { error: uploadError } = await client.storage
+      const baseType = core ? core.normalizeMime(v.mimeType || v.blob.type || "audio/webm") : String(v.mimeType || v.blob.type || "audio/webm").split(";")[0].trim().toLowerCase();
+      const contentType = baseType || "audio/webm";
+
+      let uploadError = null;
+      let uploadContentType = contentType;
+      ({ error: uploadError } = await client.storage
         .from("team-chat")
-        .upload(path, v.blob, { contentType, upsert: false, cacheControl: "3600" });
+        .upload(path, v.blob, { contentType: uploadContentType, upsert: false, cacheControl: "3600" }));
+
+      // Some storage bucket configs reject specific audio MIME types (e.g. audio/webm).
+      // Retry once with a generic binary type so the message can still be sent.
+      if (uploadError) {
+        const msg = String(uploadError.message || uploadError.error_description || uploadError || "").toLowerCase();
+        if (msg.includes("mime") && msg.includes("not supported")) {
+          uploadContentType = "application/octet-stream";
+          ({ error: uploadError } = await client.storage
+            .from("team-chat")
+            .upload(path, v.blob, { contentType: uploadContentType, upsert: false, cacheControl: "3600" }));
+        }
+      }
       if (uploadError) throw uploadError;
 
       const durationSeconds = Math.max(0, Math.round((v.durationMs || voiceElapsedMs()) / 1000));
@@ -2436,6 +2638,39 @@
     renderSidebar();
   }
 
+  async function openPrivateConversation(form) {
+    const emailInput = (form || document.getElementById("private-dm-form"))?.querySelector?.('input[name="email"]');
+    const email = String(emailInput?.value || "").trim();
+    const errorBox = document.getElementById("private-dm-error");
+    if (!emailInput) return;
+    if (!email || !email.includes("@")) {
+      if (errorBox) errorBox.textContent = t("Enter a valid email.", "أدخل بريدًا إلكترونيًا صحيحًا.");
+      return;
+    }
+    if (errorBox) errorBox.textContent = "";
+    try {
+      const result = await rpc("private_conversation_open_by_email", { p_email: email });
+      const row = Array.isArray(result) ? result[0] : result;
+      const conversationId = String((row && (row.conversation_id || row.id)) || result || "");
+      if (!conversationId) throw new Error(t("Could not open the private conversation.", "تعذّر فتح المحادثة الخاصة."));
+      deps?.closeModal?.(document.getElementById("private-dm-modal"));
+      if (deps?.getCurrentPage && deps.getCurrentPage() !== "team-live") {
+        deps.navigate("team-live");
+      }
+      const peerName = row && row.peer_name ? String(row.peer_name) : "";
+      S.pendingDirectUserId = null;
+      await loadConversations({ silent: true });
+      await openConversation(conversationId);
+      renderSidebar();
+      syncChatSurface();
+      if (peerName) toast(t(`Private chat with ${peerName} opened.`, `فتحت محادثة خاصة مع ${peerName}.`));
+    } catch (error) {
+      console.error("Could not open the private conversation.", error);
+      const message = String((error && error.message) || error || "");
+      if (errorBox) errorBox.textContent = message;
+    }
+  }
+
   async function openDirect(userId) {
     if (!S.teamId || !userId) return;
     const otherUserId = String(userId);
@@ -2501,7 +2736,7 @@
   async function openTaskConversation(taskId) {
     if (!S.teamId || !taskId) return;
     try {
-      const conversationId = await rpc("team_live_open_task_conversation", {
+      const conversationId = await rpc("team_live_open_task_chat", {
         p_team_id: S.teamId,
         p_task_id: taskId,
       });
@@ -2663,6 +2898,16 @@
       case "open-direct":
         void openDirect(target.dataset.userId);
         return;
+      case "open-private-dm": {
+        const modal = document.getElementById("private-dm-modal");
+        const input = document.getElementById("private-dm-email");
+        if (modal && input) {
+          modal.hidden = false;
+          deps?.openModal?.(modal);
+          window.setTimeout(() => input.focus(), 50);
+        }
+        return;
+      }
       case "reload-messages":
         if (S.activeId) void loadMessages(S.activeId);
         return;
@@ -2799,6 +3044,28 @@
       case "toggle-mute":
         toggleMute();
         return;
+      case "toggle-mic-picker": {
+        const host = document.querySelector("[data-live-mic-picker]");
+        if (!host) return;
+        const willOpen = !host.classList.contains("open");
+        toggleMicPicker(willOpen);
+        return;
+      }
+      case "mic-select-device":
+        void switchMicDevice(String(target.getAttribute("data-mic-device-id") || ""));
+        return;
+      case "mic-test-start":
+        void micTestStart();
+        return;
+      case "mic-test-stop":
+        void stopMicTest();
+        return;
+      case "mic-rescan":
+        void rescanMicDevices();
+        return;
+      case "mic-open-settings":
+        void micOpenSettings();
+        return;
       case "toggle-camera":
         void toggleCamera();
         return;
@@ -2917,6 +3184,8 @@
     deps = nextDeps || {};
     initialized = true;
     S.destroyed = false;
+    restoreEndedIds();
+    installDeviceChangeListener();
 
     if (!document.getElementById("team-live-modal")) {
       const modal = document.createElement("div");
@@ -3002,6 +3271,7 @@
       else if (kind === "call-chat") void sendCallChat();
       else if (kind === "start-call") void startCallFromSheet();
       else if (kind === "invite-call-members") void inviteMembersFromSheet();
+      else if (kind === "private-dm") void openPrivateConversation(form);
     });
 
     document.addEventListener("keydown", (event) => {
@@ -3304,49 +3574,650 @@
   // Media and ICE
   // -------------------------------------------------------------------------
 
-  function mediaErrorMessage(error) {
+  function mediaErrorCode(error) {
     const name = String(error?.name || "");
-    if (name === "NotAllowedError" || name === "SecurityError" || name === "PermissionDeniedError") {
-      return t(
-        "Microphone or camera permission was blocked. Allow it in your browser or app settings and try again.",
-        "تم حظر إذن الميكروفون أو الكاميرا. اسمح به من إعدادات المتصفح أو التطبيق ثم حاول مرة أخرى.",
-      );
-    }
-    if (name === "NotFoundError" || name === "DevicesNotFoundError" || name === "OverconstrainedError") {
-      return t(
-        "No usable microphone or camera was found on this device.",
-        "لم يتم العثور على ميكروفون أو كاميرا صالحة على هذا الجهاز.",
-      );
-    }
-    if (name === "NotReadableError" || name === "TrackStartError") {
-      return t(
-        "Another app may be using the microphone or camera. Close it and try again.",
-        "قد يستخدم تطبيق آخر الميكروفون أو الكاميرا. أغلقه ثم حاول مرة أخرى.",
-      );
-    }
-    return t("Could not start the microphone or camera.", "تعذّر تشغيل الميكروفون أو الكاميرا.");
+    if (name) return name;
+    const code = Number(error?.code || 0);
+    if (code === 1) return "NotAllowedError";
+    if (code === 8) return "NotFoundError";
+    if (code === 9) return "NotReadableError";
+    return "";
   }
 
-  async function listVideoInputDevices() {
-    try {
-      if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== "function") {
-        return [];
+  function isPermissionError(error) {
+    return ["NotAllowedError", "SecurityError", "PermissionDeniedError"].includes(mediaErrorCode(error));
+  }
+
+  function mediaErrorWithName(name, message) {
+    const error = new Error(message);
+    error.name = name || "Error";
+    return error;
+  }
+
+  function mediaErrorMessage(error, target = "media") {
+    const name = mediaErrorCode(error);
+    const audio = target !== "video";
+    if (name === "NotAllowedError" || name === "SecurityError" || name === "PermissionDeniedError") {
+      return audio
+        ? t(
+            "Microphone permission is blocked. Allow microphone access in your browser or Android app settings, then try again.",
+            "إذن الميكروفون محظور. اسمح بالوصول إلى الميكروفون من إعدادات المتصفح أو تطبيق أندرويد ثم حاول مرة أخرى.",
+          )
+        : t(
+            "Camera permission is blocked. Allow camera access in your browser or Android app settings, or continue with audio only.",
+            "إذن الكاميرا محظور. اسمح بالوصول إلى الكاميرا من إعدادات المتصفح أو تطبيق أندرويد، أو تابع بالصوت فقط.",
+          );
+    }
+    if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+      return audio
+        ? t(
+            "No microphone was found on this device. Check that it is connected and not disabled.",
+            "لم يتم العثور على ميكروفون على هذا الجهاز. تأكد من توصيله وأنه غير معطّل.",
+          )
+        : t(
+            "No camera was found on this device. You can continue with an audio-only call.",
+            "لم يتم العثور على كاميرا على هذا الجهاز. يمكنك متابعة مكالمة صوتية فقط.",
+          );
+    }
+    if (name === "OverconstrainedError") {
+      return audio
+        ? t(
+            "This device could not start the microphone with the requested settings. Try again.",
+            "تعذّر تشغيل الميكروفون بالإعدادات المطلوبة على هذا الجهاز. حاول مرة أخرى.",
+          )
+        : t(
+            "This camera does not support the requested video settings. You can continue with audio only.",
+            "هذه الكاميرا لا تدعم إعدادات الفيديو المطلوبة. يمكنك متابعة الصوت فقط.",
+          );
+    }
+    if (name === "NotReadableError" || name === "TrackStartError" || name === "AbortError") {
+      return audio
+        ? t(
+            "Another app or the system is using the microphone. Close it, then try again.",
+            "يستخدم تطبيق آخر أو النظام الميكروفون. أغلقه ثم حاول مرة أخرى.",
+          )
+        : t(
+            "Another app or the system is using the camera. Close it, or continue with audio only.",
+            "يستخدم تطبيق آخر أو النظام الكاميرا. أغلقه أو تابع بالصوت فقط.",
+          );
+    }
+    if (name === "NotSupportedError") {
+      return t(
+        "This device or Android WebView does not support microphone or camera access. Update Android System WebView and try again.",
+        "هذا الجهاز أو Android WebView لا يدعم الوصول إلى الميكروفون أو الكاميرا. حدّث Android System WebView ثم حاول مرة أخرى.",
+      );
+    }
+    return target === "video"
+      ? t("Could not start the camera. You can continue with audio only.", "تعذّر تشغيل الكاميرا. يمكنك المتابعة بالصوت فقط.")
+      : t("Could not start the microphone.", "تعذّر تشغيل الميكروفون.");
+  }
+
+  function micPermissionPlugin() {
+    const plugin = window.Capacitor?.Plugins?.StudyZonePermissions;
+    if (!plugin) return null;
+    return plugin;
+  }
+
+  // Ask Android for RECORD_AUDIO/CAMERA before WebRTC opens the devices. This
+  // removes the race between the WebView permission callback and getUserMedia,
+  // and lets the UI explain a permanent denial instead of an endless retry.
+  async function ensureCallMediaPermission(callType) {
+    const plugin = micPermissionPlugin();
+    if (!plugin) return { skipped: true, micGranted: true, cameraGranted: true };
+    const wantsVideo = callType === "video";
+    if (S.mediaPermissionPromise) return S.mediaPermissionPromise;
+    const request = (async () => {
+      try {
+        if (typeof plugin.requestCallPermissions === "function") {
+          const result = await plugin.requestCallPermissions({ video: wantsVideo });
+          return {
+            micGranted: result?.microphoneGranted !== false,
+            cameraGranted: result?.cameraGranted !== false,
+            micBlocked: Boolean(result?.microphoneBlocked),
+            cameraBlocked: Boolean(result?.cameraBlocked),
+          };
+        }
+        if (typeof plugin.requestMicrophone === "function") {
+          const result = await plugin.requestMicrophone();
+          return {
+            micGranted: result?.granted !== false && !result?.blocked,
+            cameraGranted: true,
+            micBlocked: Boolean(result?.blocked),
+            cameraBlocked: false,
+          };
+        }
+      } catch (error) {
+        // The native bridge is an optimisation. If it is unavailable the
+        // WebView getUserMedia permission flow still works, so never abort.
+        console.warn("Native media permission request was unavailable.", error);
       }
+      return { skipped: true, micGranted: true, cameraGranted: true };
+    })();
+    S.mediaPermissionPromise = request;
+    try {
+      return await request;
+    } finally {
+      if (S.mediaPermissionPromise === request) S.mediaPermissionPromise = null;
+    }
+  }
+
+  function showMediaRetryDialog(message, retry, onClose, listener) {
+    if (typeof retry !== "function") {
+      toast(message);
+      return;
+    }
+    let closed = false;
+    const existing = document.getElementById("team-live-media-error");
+    if (existing) existing.remove();
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+    backdrop.id = "team-live-media-error";
+    backdrop.innerHTML = `<section class="modal live-sheet" role="dialog" aria-modal="true" aria-labelledby="live-media-error-title">
+      <button class="modal-close" type="button" data-media-error-close aria-label="${esc(t("Close", "إغلاق"))}">×</button>
+      <p class="eyebrow">${esc(t("CALL SETUP", "إعداد المكالمة"))}</p>
+      <h2 id="live-media-error-title">${esc(t("Microphone unavailable", "الميكروفون غير متاح"))}</h2>
+      <p class="modal-subtitle">${esc(message)}</p>
+      <p class="data-caption">${esc(
+        t(
+          "Messaging, notes and your other Second Brain features still work without the microphone. You can also join with a silent microphone.",
+          "الرسائل والملاحظات وبقية ميزات Second Brain تعمل بدون الميكروفون. ويمكنك الانضمام بدون تشغيل الميكروفون.",
+        ),
+      )}</p>
+      <p class="data-caption" dir="auto">${esc(
+        t(
+          "On Chrome/Edge: Settings → Privacy and security → Site settings → Microphone → Allow, then reload the page.",
+          "على Chrome/Edge: الإعدادات → الخصوصية والأمان → إعدادات المواقع → الميكروفون → سماح، ثم أعد تحميل الصفحة.",
+        ),
+      )}</p>
+      <div class="modal-actions">
+        <button type="button" class="button button-secondary" data-media-error-close>${esc(t("Close", "إغلاق"))}</button>
+        ${typeof listener === "function" ? `<button type="button" class="button button-quiet" data-media-error-listener>${esc(t("Join without microphone", "انضم بدون ميكروفون"))}</button>` : ""}
+        <button type="button" class="button button-primary" data-media-error-retry>${esc(t("Try again", "حاول مرة أخرى"))}</button>
+      </div>
+    </section>`;
+    const close = (retrying = false) => {
+      if (closed) return;
+      closed = true;
+      try {
+        deps?.closeModal?.(backdrop);
+      } catch {
+        /* ignore */
+      }
+      backdrop.remove();
+      if (!retrying && typeof onClose === "function") {
+        try { onClose(); } catch { /* ignore */ }
+      }
+    };
+    backdrop.querySelectorAll("[data-media-error-close]").forEach((button) => {
+      button.addEventListener("click", () => close(false));
+    });
+    backdrop.querySelector("[data-media-error-retry]")?.addEventListener("click", () => {
+      close(true);
+      void retry();
+    });
+    backdrop.querySelector("[data-media-error-listener]")?.addEventListener("click", () => {
+      close(true);
+      if (typeof listener === "function") {
+        try { void listener(); } catch (error) { console.warn("Listener join failed.", error); }
+      }
+    });
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) close(false);
+    });
+    document.body.appendChild(backdrop);
+    try {
+      deps?.openModal?.(backdrop);
+    } catch {
+      /* The modal is already visible; a missing animator must not block it. */
+    }
+  }
+
+  function audioConstraints() {
+    // These are ideals, not hard requirements. Older Android WebViews and
+    // low-end DSPs are allowed to ignore echo cancellation/noise suppression.
+    return {
+      echoCancellation: { ideal: true },
+      noiseSuppression: { ideal: true },
+      autoGainControl: { ideal: true },
+      channelCount: { ideal: 1 },
+    };
+  }
+
+  async function requestAudioStream() {
+    // Prefer the device the user picked (falls back to the system default if lost).
+    return requestAudioStreamForDevice(preferredMicDeviceId() || "");
+  }
+
+  // ------------------------------------------------------------------ microphone
+  const PREFERRED_MIC_KEY = "studyzone.preferredMicDeviceId";
+
+  function preferredMicDeviceId() {
+    try { return window.localStorage?.getItem(PREFERRED_MIC_KEY) || ""; } catch { return ""; }
+  }
+  function savePreferredMicDeviceId(id) {
+    try {
+      if (id) window.localStorage.setItem(PREFERRED_MIC_KEY, id);
+      else window.localStorage.removeItem(PREFERRED_MIC_KEY);
+    } catch { /* ignore */ }
+  }
+
+  async function queryMicPermission() {
+    try {
+      if (!navigator.permissions || typeof navigator.permissions.query !== "function") return "unknown";
+      // Some browsers (Firefox) do not support the "microphone" name.
+      try {
+        const status = await navigator.permissions.query({ name: "microphone" });
+        if (status && typeof status.addEventListener === "function") {
+          status.addEventListener("change", () => {
+            S.mic.permission = String(status.state || "unknown");
+            if (S.call) updateCallControls();
+            else renderMicPicker();
+          });
+        }
+        return status?.state || "unknown";
+      } catch {
+        return "unknown";
+      }
+    } catch {
+      return "unknown";
+    }
+  }
+
+  async function listAudioInputDevices() {
+    try {
+      if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== "function") return [];
       const devices = await navigator.mediaDevices.enumerateDevices();
-      return (devices || []).filter((device) => device.kind === "videoinput");
+      return (devices || []).filter((device) => device && device.kind === "audioinput");
     } catch (error) {
-      console.warn("Could not enumerate video input devices.", error);
+      console.warn("Could not enumerate audio input devices.", error);
       return [];
     }
   }
 
-  async function acquireVideoTrack(facing = "user") {
-    const strict = { audio: false, video: { facingMode: { exact: facing }, width: { ideal: 1280 }, height: { ideal: 720 } } };
+  async function queryMicPermissionAndDevices(force) {
+    if (!force && S.mic.devices.length) return S.mic;
+    const permission = await queryMicPermission();
+    S.mic.permission = permission;
+    // Enumerating devices before a permission grant returns a list whose labels
+    // are blank — never treat that list as "no microphone".
+    if (permission === "granted") {
+      const devices = await listAudioInputDevices();
+      S.mic.devices = devices;
+      const preferred = preferredMicDeviceId();
+      const preferredExists = devices.some((d) => d.deviceId && d.deviceId === preferred);
+      S.mic.selectedDeviceId = preferredExists ? preferred : (devices[0]?.deviceId || "");
+      S.mic.deviceMissing = false;
+      S.mic.status = "connected";
+    } else {
+      S.mic.devices = [];
+      S.mic.deviceMissing = permission === "denied";
+      S.mic.status = permission === "denied" ? "no-permission" : "unknown";
+    }
+    return S.mic;
+  }
+
+  function micStatusText() {
+    const call = S.call;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      return t("Microphone is not supported on this browser.", "الميكروفون غير مدعوم في هذا المتصفح.");
+    }
+    if (S.mic.permission === "denied") {
+      return t("Microphone permission is blocked. Allow it in browser settings.", "إذن الميكروفون محظور. اسمح به من إعدادات المتصفح.");
+    }
+    if (call && call.micAvailable === false) {
+      return t("Microphone disconnected. Reconnect it or pick another.", "انقطع الميكروفون. أعد توصيله أو اختر آخر.");
+    }
+    if (call && call.muted) {
+      return t("Microphone muted.", "الميكروفون مكتوم.");
+    }
+    if (S.mic.permission === "prompt" || S.mic.permission === "unknown") {
+      return t("Microphone access not granted yet.", "لم يتم منح إذن الميكروفون بعد.");
+    }
+    if (S.mic.devices.length === 0) {
+      return t("No microphone detected — is it connected?", "لا يوجد ميكروفون — هل هو متصل؟");
+    }
+    return t("Microphone connected.", "الميكروفون متصل.");
+  }
+
+  function micDeviceLabel(device) {
+    const raw = String(device?.label || "").trim();
+    if (raw) return raw;
+    if (S.mic.permission !== "granted") return t("Microphone (grant access to see the name)", "ميكروفون (امنح الإذن لمعرفة الاسم)");
+    return t("Unknown microphone", "ميكروفون غير معروف");
+  }
+
+  // Acquire an audio stream for a specific deviceId (exact) with safe fallbacks.
+  async function requestAudioStreamForDevice(deviceId) {
+    const base = audioConstraints();
+    const audioOpts = deviceId ? { ...base, deviceId: { exact: deviceId } } : base;
     try {
-      const media = await navigator.mediaDevices.getUserMedia(strict);
+      return await navigator.mediaDevices.getUserMedia({ audio: audioOpts, video: false });
+    } catch (error) {
+      const code = mediaErrorCode(error);
+      if (deviceId && ["OverconstrainedError", "NotFoundError", "NotReadableError", "NotAllowedError"].includes(code)) {
+        console.warn(`Microphone "${deviceId}" unavailable (${code}); falling back to default.`);
+        // The chosen device vanished or is busy: fall back to the system default.
+        return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      }
+      if (["OverconstrainedError", "TypeError", "NotSupportedError"].includes(code)) {
+        return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      }
+      throw error;
+    }
+  }
+
+  async function switchMicDevice(deviceId) {
+    const call = S.call;
+    if (!call) return false;
+    if (call.cameraSwitchingMic) return false; // serialise repeated taps
+    call.cameraSwitchingMic = true;
+    try {
+      savePreferredMicDeviceId(deviceId);
+      S.mic.selectedDeviceId = deviceId;
+      const stream = await requestAudioStreamForDevice(deviceId);
+      const track = stream.getAudioTracks()[0];
+      if (!track || track.readyState !== "live") {
+        stream.getTracks().forEach((t) => { try { t.stop(); } catch { /* ignore */ } });
+        toast(mediaErrorMessage({ name: "NotFoundError" }, "audio"));
+        return false;
+      }
+      const oldTrack = call.audioTrack;
+      track.enabled = !call.muted;
+      // Replace on every peer connection (or add if missing).
+      for (const peer of call.peers.values()) {
+        try {
+          if (peer.audioSender) await peer.audioSender.replaceTrack(track);
+          else peer.audioSender = peer.pc.addTrack(track, call.localStream);
+        } catch (error) {
+          console.warn("Could not apply the microphone change for a peer.", error);
+        }
+      }
+      if (call.localStream) {
+        try { call.localStream.addTrack(track); } catch { /* ignore */ }
+        if (oldTrack) {
+          try { call.localStream.removeTrack(oldTrack); } catch { /* ignore */ }
+        }
+      }
+      if (oldTrack) { try { oldTrack.stop(); } catch { /* ignore */ } }
+      call.audioTrack = track;
+      call.micAvailable = true;
+      call.audioRecoveryAttempts = 0;
+      S.mic.deviceMissing = false;
+      S.mic.status = "connected";
+      call.trackWatchers = (call.trackWatchers || []).filter((watcher) => watcher.track !== oldTrack);
+      const listen = (event, handler) => {
+        track.addEventListener(event, handler);
+        call.trackWatchers.push({ track, event, handler });
+      };
+      listen("ended", () => handleLocalAudioEnded(call));
+      listen("mute", () => {
+        if (S.call !== call) return;
+        call.micAvailable = false;
+        updateCallControls();
+        updateTileFlags();
+      });
+      listen("unmute", () => {
+        if (S.call !== call) return;
+        call.micAvailable = true;
+        updateCallControls();
+        updateTileFlags();
+      });
+      startLocalMeter(); // restart the analyser on the new device
+      renderMicPicker();
+      updateCallControls();
+      updateTileFlags();
+      toast(
+        deviceId
+          ? t("Microphone switched.", "تم تبديل الميكروفون.")
+          : t("Microphone refreshed.", "تم تحديث الميكروفون."),
+      );
+      return true;
+    } catch (error) {
+      console.warn("Could not switch the microphone.", error);
+      toast(mediaErrorMessage(error, "audio"));
+      return false;
+    } finally {
+      call.cameraSwitchingMic = false;
+      updateCallControls();
+    }
+  }
+
+  async function micTestStart() {
+    const call = S.call;
+    await stopMicTest();
+    try {
+      const deviceId = S.mic.selectedDeviceId || preferredMicDeviceId() || "";
+      const stream = await requestAudioStreamForDevice(deviceId || "");
+      S.mic.testStream = stream;
+      S.mic.meterTimer = window.setInterval(() => {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        const testAnalyser = S.mic.testAnalyser;
+        if (!Ctx || !testAnalyser) return;
+        const data = new Uint8Array(testAnalyser.fftSize);
+        testAnalyser.getByteTimeDomainData(data);
+        let peak = 0;
+        for (let i = 0; i < data.length; i += 1) {
+          const v = Math.abs((data[i] - 128) / 128);
+          if (v > peak) peak = v;
+        }
+        S.mic.meterLevel = Math.min(100, Math.round(peak * 100));
+        const bar = document.querySelector("[data-live-mic-level]");
+        if (bar) bar.style.width = `${S.mic.meterLevel}%`;
+      }, 80);
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) {
+        const context = new Ctx();
+        const source = context.createMediaStreamSource(stream);
+        const analyser = context.createAnalyser();
+        analyser.fftSize = 512;
+        source.connect(analyser);
+        S.mic.testAnalyser = analyser;
+        S.mic.testContext = context;
+      }
+      renderMicPicker();
+    } catch (error) {
+      console.warn("Mic test failed.", error);
+      toast(mediaErrorMessage(error, "audio"));
+    }
+  }
+
+  async function stopMicTest() {
+    window.clearInterval(S.mic.meterTimer);
+    S.mic.meterTimer = 0;
+    S.mic.meterLevel = 0;
+    const bar = document.querySelector("[data-live-mic-level]");
+    if (bar) bar.style.width = "0%";
+    try {
+      S.mic.testStream?.getTracks().forEach((track) => { try { track.stop(); } catch { /* ignore */ } });
+      S.mic.testContext?.close?.();
+    } catch { /* ignore */ }
+    S.mic.testStream = null;
+    S.mic.testAnalyser = null;
+    S.mic.testContext = null;
+  }
+
+  function renderMicPicker() {
+    const host = document.querySelector("[data-live-mic-picker]");
+    if (!host) return;
+    const status = S.call ? (S.call.micAvailable === false ? "no-device" : S.call.muted ? "muted" : S.mic.status || "connected") : S.mic.status || "unknown";
+    const statusLabel = {
+      connected: t("Microphone connected", "الميكروفون متصل"),
+      muted: t("Microphone muted", "الميكروفون مكتوم"),
+      "no-permission": t("No microphone permission", "لا توجد صلاحية للميكروفون"),
+      "no-device": t("No microphone found", "لا يوجد ميكروفون"),
+      unknown: t("Not granted", "لم يتم الإذن بعد"),
+    }[status] || t("Unknown", "غير معروف");
+    const deviceButtons = S.mic.devices.map((device) => {
+      const active = String(device.deviceId) === String(S.mic.selectedDeviceId);
+      return `<button type="button" class="live-mic-device ${active ? "is-active" : ""}" data-live-action="mic-select-device" data-mic-device-id="${esc(device.deviceId)}">
+        <span class="live-mic-dot" aria-hidden="true"></span>
+        <span class="live-mic-device-name" dir="auto">${esc(micDeviceLabel(device))}</span>
+        ${active ? `<span class="live-mic-check" aria-hidden="true">✓</span>` : ""}
+      </button>`;
+    }).join("");
+    const guidance = S.mic.permission === "denied" || S.mic.permission === "default"
+      ? `<div class="live-mic-guidance">
+          <strong>${esc(t("How to enable the microphone", "كيفية تفعيل الميكروفون"))}</strong>
+          <ol>
+            <li>${esc(t("Click the lock/microphone icon in the browser address bar.", "اضغط على أيقونة القفل/الميكروفون في شريط عنوان المتصفح."))}</li>
+            <li>${esc(t("Set Microphone to Allow, then reload the page.", "اضبط الميكروفون على السماح، ثم أعد تحميل الصفحة."))}</li>
+            <li>${esc(t("On Chrome/Edge: Settings → Privacy and security → Site Settings → Microphone → Allow.", "على Chrome/Edge: الإعدادات → الخصوصية والأمان → إعدادات المواقع → الميكروفون → سماح."))}</li>
+            <li dir="ltr">${esc(t("URL: chrome://settings/content/microphone", "chrome://settings/content/microphone"))}</li>
+          </ol>
+          <button type="button" class="button button-secondary button-small" data-live-action="mic-open-settings">${esc(t("Open microphone settings", "فتح إعدادات الميكروفون"))}</button>
+        </div>`
+      : (S.mic.permission === "unknown" || S.mic.permission === "prompt"
+        ? `<p class="live-mic-guidance-note" dir="auto">${esc(micStatusText())}</p>`
+        : (S.mic.devices.length === 0
+          ? `<p class="live-mic-guidance-note" dir="auto">${esc(micStatusText())}</p>
+             <button type="button" class="button button-secondary button-small" data-live-action="mic-rescan">${esc(t("Rescan microphones", "إعادة فحص الميكروفونات"))}</button>`
+          : ""));
+    host.innerHTML = `
+      <div class="live-mic-panel" role="dialog" aria-label="${esc(t("Microphone options", "خيارات الميكروفون"))}">
+        <header class="live-mic-head">
+          <div>
+            <strong>${esc(t("Microphone", "الميكروفون"))}</strong>
+            <small>${esc(micStatusText())}</small>
+          </div>
+          <span class="live-mic-pill live-mic-pill-${esc(status)}" role="status">${esc(statusLabel)}</span>
+          <button type="button" class="live-icon-button live-icon-button-small" data-live-action="toggle-mic-picker" aria-label="${esc(t("Close", "إغلاق"))}">×</button>
+        </header>
+        <div class="live-mic-meter" aria-hidden="true"><span data-live-mic-level style="width:${esc(String(S.mic.meterLevel || 0))}%"></span></div>
+        <div class="live-mic-actions">
+          <button type="button" class="button button-secondary button-small" data-live-action="mic-test-start">${esc(t("Test microphone", "اختبر الميكروفون"))}</button>
+          <button type="button" class="button button-quiet button-small" data-live-action="mic-test-stop">${esc(t("Stop test", "إيقاف الاختبار"))}</button>
+        </div>
+        <div class="live-mic-devices" role="radiogroup" aria-label="${esc(t("Available microphones", "الميكروفونات المتاحة"))}">
+          ${deviceButtons || `<p class="live-mic-empty" dir="auto">${esc(t("No microphones visible. Grant permission first.", "لا تظهر أي ميكروفونات. امنح الإذن أولًا."))}</p>`}
+        </div>
+        ${guidance}
+      </div>`;
+  }
+
+  async function rescanMicDevices() {
+    await queryMicPermissionAndDevices(true);
+    renderMicPicker();
+    updateCallControls();
+  }
+
+  function toggleMicPicker(force) {
+    const next = typeof force === "boolean" ? force : !S.mic.pickerOpen;
+    S.mic.pickerOpen = next;
+    const host = document.querySelector("[data-live-mic-picker]");
+    if (host) host.classList.toggle("open", next);
+    if (next) {
+      void queryMicPermissionAndDevices(true).then(() => renderMicPicker());
+    } else {
+      void stopMicTest();
+    }
+  }
+
+  function installDeviceChangeListener() {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.addEventListener) return;
+      if (S.deviceChangeAttached) return;
+      S.deviceChangeAttached = true;
+      navigator.mediaDevices.addEventListener("devicechange", () => {
+        void rescanMicDevices();
+        const call = S.call;
+        if (call) {
+          // If the current mic vanished, swap in the best remaining device.
+          const track = call.audioTrack;
+          if (track && track.readyState === "ended") {
+            void recoverAudioTrack(call);
+          } else if (track && !S.mic.devices.some((d) => d.deviceId && d.deviceId === S.mic.selectedDeviceId)) {
+            // The selected device is gone — adopt whatever exists now.
+            void switchMicDevice("");
+          }
+        }
+      });
+    } catch (error) {
+      console.warn("devicechange listener unavailable.", error);
+    }
+  }
+
+  async function micOpenSettings() {
+    // Open the browser site-settings page where possible; otherwise show a toast with the URL.
+    const url = "chrome://settings/content/microphone";
+    try {
+      if (typeof window !== "undefined" && /Android|iPhone|iPad/i.test(window.navigator?.userAgent || "")) {
+        toast(t("Open the browser menu → Site settings → Microphone → Allow.", "افتح قائمة المتصفح → إعدادات الموقع → الميكروفون → سماح."));
+        return;
+      }
+      // Best effort: focus the permission prompt, and point the user to the page.
+      toast(t(`Open ${url} and set Microphone to Allow, then reload.`, `افتح ${url} واضبط الميكروفون على السماح ثم أعد التحميل.`));
+    } catch { /* ignore */ }
+  }
+
+  async function collectMedia(audioStream, wantVideo, facing) {
+    const audioTracks = audioStream.getAudioTracks();
+    const audioTrack = audioTracks[0] || null;
+    if (!audioTrack || audioTrack.readyState !== "live") {
+      audioStream.getTracks().forEach((track) => {
+        try { track.stop(); } catch { /* ignore */ }
+      });
+      throw mediaErrorWithName("NotFoundError", mediaErrorMessage({ name: "NotFoundError" }, "audio"));
+    }
+    // Only one audio track is sent; stop extras.
+    for (let index = 1; index < audioTracks.length; index += 1) {
+      try { audioTracks[index].stop(); } catch { /* ignore */ }
+    }
+    if (audioTrack.enabled === false) audioTrack.enabled = true;
+
+    let videoTrack = null;
+    let videoStream = null;
+    let cameraWarning = "";
+    if (wantVideo) {
+      const permission = await ensureCallMediaPermission("video");
+      if (permission.cameraGranted === false) {
+        cameraWarning = mediaErrorMessage({ name: "NotAllowedError" }, "video");
+      } else {
+        try {
+          const result = await acquireVideoTrack(facing || "user");
+          videoStream = result.stream;
+          videoTrack = result.track;
+          if (!videoTrack || videoTrack.readyState !== "live") {
+            videoStream?.getTracks().forEach((track) => {
+              try { track.stop(); } catch { /* ignore */ }
+            });
+            videoTrack = null;
+            videoStream = null;
+            cameraWarning = mediaErrorMessage({ name: "NotFoundError" }, "video");
+          }
+        } catch (error) {
+          cameraWarning = mediaErrorMessage(error, "video");
+          videoTrack = null;
+          videoStream = null;
+        }
+      }
+    }
+
+    const stream = new MediaStream();
+    stream.addTrack(audioTrack);
+    if (videoTrack) {
+      stream.addTrack(videoTrack);
+      videoStream?.getTracks().forEach((track) => {
+        if (track !== videoTrack) {
+          try { track.stop(); } catch { /* ignore */ }
+        }
+      });
+    }
+    return { stream, audioTrack, videoTrack, cameraWarning, facing: facing || "user" };
+  }
+
+
+  async function acquireVideoTrack(facing = "user") {
+    const videoSettings = {
+      facingMode: { exact: facing },
+      width: { ideal: 960 },
+      height: { ideal: 540 },
+      frameRate: { ideal: 24, max: 30 },
+    };
+    try {
+      const media = await navigator.mediaDevices.getUserMedia({ audio: false, video: videoSettings });
       return { stream: media, track: media.getVideoTracks()[0] || null, deviceId: null };
     } catch (error) {
-      const name = String(error?.name || "");
+      const name = mediaErrorCode(error);
       if (name === "OverconstrainedError" || name === "NotFoundError" || name === "NotReadableError") {
         // Exact facingMode is not available everywhere (some WebViews expose an
         // unnamed camera set). Try the deviceId that matches the facing mode.
@@ -3362,14 +4233,24 @@
         if (chosen?.deviceId) {
           const media = await navigator.mediaDevices.getUserMedia({
             audio: false,
-            video: { deviceId: { exact: chosen.deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } },
+            video: {
+              deviceId: { exact: chosen.deviceId },
+              width: { ideal: 960 },
+              height: { ideal: 540 },
+              frameRate: { ideal: 24, max: 30 },
+            },
           });
           return { stream: media, track: media.getVideoTracks()[0] || null, deviceId: chosen.deviceId };
         }
         // Final fallback: ideal facingMode, the browser picks the closest camera.
         const media = await navigator.mediaDevices.getUserMedia({
           audio: false,
-          video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          video: {
+            facingMode: { ideal: facing },
+            width: { ideal: 960 },
+            height: { ideal: 540 },
+            frameRate: { ideal: 24, max: 30 },
+          },
         });
         return { stream: media, track: media.getVideoTracks()[0] || null, deviceId: null };
       }
@@ -3378,54 +4259,42 @@
   }
 
   async function acquireMedia(callType, facing = "user") {
+    // Serialise acquisition: a double tap on Start/Accept or a foreground
+    // retry must not open two microphones (which causes NotReadableError on
+    // many Android phones).
+    if (S.mediaAcquirePromise) return S.mediaAcquirePromise;
+    const request = acquireMediaInternal(callType, facing);
+    S.mediaAcquirePromise = request;
+    try {
+      return await request;
+    } finally {
+      if (S.mediaAcquirePromise === request) S.mediaAcquirePromise = null;
+    }
+  }
+
+  async function acquireMediaInternal(callType, facing = "user") {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error(t("This device does not expose camera or microphone access.", "هذا الجهاز لا يتيح الوصول إلى الكاميرا أو الميكروفون."));
+      throw mediaErrorWithName(
+        "NotSupportedError",
+        t(
+          "This device does not expose microphone or camera access.",
+          "هذا الجهاز لا يتيح الوصول إلى الميكروفون أو الكاميرا.",
+        ),
+      );
     }
-    const wantVideo = callType === "video";
-    let stream;
-    if (wantVideo) {
-      try {
-        const result = await acquireVideoTrack(facing || "user");
-        stream = result.stream;
-      } catch (error) {
-        const blocked = ["NotAllowedError", "SecurityError", "PermissionDeniedError"].includes(
-          String(error?.name || ""),
-        );
-        if (!blocked) {
-          try {
-            const audioOnly = await navigator.mediaDevices.getUserMedia({ audio: true });
-            toast(
-              t(
-                "The camera is unavailable, so the call started with audio only.",
-                "الكاميرا غير متاحة، لذلك بدأت المكالمة بالصوت فقط.",
-              ),
-            );
-            // Carry the audio-only stream forward; videoTrack remains null.
-            stream = audioOnly;
-          } catch (audioError) {
-            throw new Error(mediaErrorMessage(audioError));
-          }
-        } else {
-          throw new Error(mediaErrorMessage(error));
-        }
-      }
-    } else {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-        video: false,
-      });
+    const permission = await ensureCallMediaPermission(callType);
+    if (permission.micGranted === false) {
+      throw mediaErrorWithName("NotAllowedError", mediaErrorMessage({ name: "NotAllowedError" }, "audio"));
     }
-    const audioTrack = stream.getAudioTracks()[0] || null;
-    if (!audioTrack) {
-      stream.getTracks().forEach((track) => track.stop());
-      throw new Error(t("No microphone is available.", "لا يوجد ميكروفون متاح."));
+    // Prefer the explicitly selected device; fall back gracefully when it is gone.
+    const preferred = preferredMicDeviceId();
+    try {
+      const audioStream = await requestAudioStreamForDevice(preferred || "");
+      return collectMedia(audioStream, callType === "video", facing);
+    } catch (error) {
+      const name = mediaErrorCode(error) || "NotReadableError";
+      throw mediaErrorWithName(name, mediaErrorMessage(error, "audio"));
     }
-    const videoTrack = stream.getVideoTracks()[0] || null;
-    return { stream, audioTrack, videoTrack };
   }
 
   function withTimeout(promise, ms) {
@@ -3492,8 +4361,8 @@
   function supportMessage(reason) {
     if (reason === "insecure") {
       return t(
-        "Calls need HTTPS (or the Android app). Open Study Zone over a secure connection.",
-        "تحتاج المكالمات إلى HTTPS (أو تطبيق أندرويد). افتح Study Zone عبر اتصال آمن.",
+        "Calls need HTTPS (or the Android app). Open Second Brain over a secure connection.",
+        "تحتاج المكالمات إلى HTTPS (أو تطبيق أندرويد). افتح Second Brain عبر اتصال آمن.",
       );
     }
     if (reason === "media") {
@@ -3590,7 +4459,24 @@
     }
   }
 
-  async function startCall({ callType = "video", scope = "group", inviteeIds = [], taskId = null, conversationId = null, title = null }) {
+  // Listener mode: no microphone is available but the user can still hear the
+  // call. We return an empty MediaStream (no tracks) and mark audio as
+  // unavailable so all mic-related UI reflects "listening only".
+  function listenerMedia() {
+    return {
+      stream: new MediaStream(),
+      audioTrack: null,
+      videoTrack: null,
+      cameraWarning: t(
+        "No microphone available — you joined as a listener.",
+        "لا يوجد ميكروفون — انضممت كمستمع.",
+      ),
+      facing: "user",
+      listener: true,
+    };
+  }
+
+  async function startCall({ callType = "video", scope = "group", inviteeIds = [], taskId = null, conversationId = null, title = null, forceListener = false }) {
     const client = sb();
     const user = me();
     if (!client || !user) {
@@ -3619,10 +4505,23 @@
 
     let media;
     try {
-      media = await acquireMedia(callType);
+      media = forceListener ? listenerMedia() : await acquireMedia(callType);
     } catch (error) {
-      toast(error.message || mediaErrorMessage(error));
+      showMediaRetryDialog(
+        error?.message || mediaErrorMessage(error, "audio"),
+        () => startCall({ callType, scope, inviteeIds, taskId, conversationId, title }),
+        null,
+        () => startCall({ callType, scope, inviteeIds, taskId, conversationId, title, forceListener: true }),
+      );
       return;
+    }
+    if (media.cameraWarning) {
+      toast(
+        t(
+          `Camera unavailable — starting with audio only. ${media.cameraWarning}`,
+          `الكاميرا غير متاحة — ستبدأ المكالمة بالصوت فقط. ${media.cameraWarning}`,
+        ),
+      );
     }
 
     let callId;
@@ -3651,8 +4550,8 @@
     } catch (error) {
       media.stream.getTracks().forEach((track) => track.stop());
       if (callId) {
-        void rpc("team_live_end_call", { p_call_id: callId }).catch(() => {
-          void rpc("team_live_leave_call", { p_call_id: callId }).catch(() => {});
+        void endCallRpc(callId).catch(() => {
+          void endCallRpc(callId).catch(() => {});
         });
         markCallEnded(callId);
       }
@@ -3668,6 +4567,62 @@
       } else {
         notifyError(t("Could not start the call.", "تعذّر بدء المكالمة."), error);
       }
+    }
+  }
+
+  // Private one-to-one calls — exactly two participants (caller + the peer
+  // resolved server-side from the conversation). No team is required, no team
+  // members are enumerated or invited, and nothing is shared with anyone who
+  // is not one of the two participants.
+  async function startPrivateCall({ callType = "video", conversationId, forceListener = false } = {}) {
+    const client = sb();
+    const user = me();
+    if (!client || !user) {
+      toast(t("Sign in to start a call.", "سجّل الدخول لبدء مكالمة."));
+      return;
+    }
+    if (S.call) {
+      toast(t("You are already in a call.", "أنت بالفعل في مكالمة."));
+      return;
+    }
+    const support = callSupportStatus();
+    if (!support.supported) {
+      toast(supportMessage(support.reason));
+      return;
+    }
+
+    let media;
+    try {
+      media = forceListener ? listenerMedia() : await acquireMedia(callType);
+    } catch (error) {
+      showMediaRetryDialog(
+        error?.message || mediaErrorMessage(error, "audio"),
+        () => startPrivateCall({ callType, conversationId, forceListener: true }),
+        null,
+        () => startPrivateCall({ callType, conversationId, forceListener: true }),
+      );
+      return;
+    }
+
+    let callId;
+    try {
+      const ice = await getIceServers();
+      // private_call_start resolves the peer from the conversation itself;
+      // there is nothing client-supplied to spoof.
+      callId = await rpc("private_call_start", {
+        p_conversation_id: conversationId,
+        p_call_type: callType,
+      });
+      if (forceListener) { /* listener path stays listener-only */ }
+      const row = await loadCallRow(callId);
+      if (!row) throw new Error(t("The call could not be created.", "تعذّر إنشاء المكالمة."));
+      console.info('[team-live][private-call]', { event: 'start', callId: String(callId), status: row?.status, type: callType });
+      setupCall(row, media, ice);
+      void sendCallPush(callId, { call_type: callType, scope: "direct" });
+      toast(t("Calling…", "جارٍ الاتصال…"));
+    } catch (error) {
+      media?.stream?.getTracks().forEach((track) => { try { track.stop(); } catch { /* ignore */ } });
+      notifyError(t("Could not start the call.", "تعذّر بدء المكالمة."), error);
     }
   }
 
@@ -3693,10 +4648,33 @@
       return;
     }
     if (conversation.kind === "direct") {
+      const peer = conversation.participant_id ? String(conversation.participant_id) : "";
+      const valid =
+        peer.length === 36 && /^[0-9a-f-]{36}$/i.test(peer) && peer !== myId();
+      if (!valid) {
+        // Never send a call invite with a missing/invalid peer — fail loudly.
+        toast(
+          t(
+            "Could not resolve the other member. Re-open the conversation first.",
+            "تعذّر تحديد الطرف الآخر. افتح المحادثة مرة أخرى أولًا.",
+          ),
+        );
+        return;
+      }
+      if (conversation.team_id == null) {
+        // Private one-to-one call — no shared team required. Uses the
+        // dedicated private call stack; never enumerates or invites teams.
+        await startPrivateCall({ callType, conversationId: conversation.conversation_id });
+        return;
+      }
+      if (!teamMembersOf(S.teamId).includes(peer)) {
+        toast(t("That person is not in this team.", "هذا الشخص ليس في هذا الفريق."));
+        return;
+      }
       await startCall({
         callType,
         scope: "direct",
-        inviteeIds: [String(conversation.participant_id)],
+        inviteeIds: [peer],
         conversationId: conversation.conversation_id,
       });
       return;
@@ -3721,7 +4699,7 @@
     });
   }
 
-  async function joinExistingCall(callId) {
+  async function joinExistingCall(callId, { forceListener = false } = {}) {
     const id = String(callId || "");
     if (!id) return;
     if (isCallKnownEnded(id)) {
@@ -3748,8 +4726,16 @@
         toast(t("This call has ended.", "انتهت هذه المكالمة."));
         return;
       }
-      media = await acquireMedia(row.call_type);
-      await rpc("team_live_join_call", { p_call_id: id });
+      media = forceListener ? listenerMedia() : await acquireMedia(row.call_type);
+      if (media.cameraWarning) {
+        toast(
+          t(
+            `Camera unavailable — joining with audio only. ${media.cameraWarning}`,
+            `الكاميرا غير متاحة — سيتم الانضمام بالصوت فقط. ${media.cameraWarning}`,
+          ),
+        );
+      }
+      await joinCallRpc(id);
       const fresh = await loadCallRow(id);
       if (!fresh || String(fresh.status) === "ended") {
         if (fresh || id) markCallEnded(id);
@@ -3762,6 +4748,21 @@
       setupCall(fresh, media, ice);
     } catch (error) {
       media?.stream.getTracks().forEach((track) => track.stop());
+      if (isCallEndedError(error)) {
+        markCallEnded(id);
+        toast(t("This call has ended.", "انتهت هذه المكالمة."));
+        return;
+      }
+      const mediaFailure = !media && Boolean(error?.name) && error.name !== "Error";
+      if (mediaFailure) {
+        showMediaRetryDialog(
+          error?.message || mediaErrorMessage(error, "audio"),
+          () => joinExistingCall(id),
+          () => { try { void joinExistingCall(id, { forceListener: true }); } catch (e) { console.warn(e); } },
+          () => { try { void joinExistingCall(id, { forceListener: true }); } catch (e) { console.warn(e); } },
+        );
+        return;
+      }
       notifyError(t("Could not join the call.", "تعذّر الانضمام إلى المكالمة."), error);
     }
   }
@@ -3776,7 +4777,10 @@
     try {
       void plugin.startCall({
         callId: String(call?.id || ""),
-        callType: call?.call_type || "audio",
+        // The service type must match the devices that are actually open. A
+        // video call that fell back to audio must not declare the camera type
+        // (Android 14+ rejects that if CAMERA was denied).
+        callType: call?.videoTrack ? "video" : "audio",
         title: call?.title || "",
       }).catch(() => {});
     } catch {
@@ -3816,9 +4820,14 @@
       chatOpen: false,
       muted: false,
       cameraOn: Boolean(media.videoTrack),
+      cameraWarning: media.cameraWarning || "",
+      facing: media.facing || "user",
+      micAvailable: Boolean(media.audioTrack),
+      recoveringAudio: false,
+      audioRecoveryAttempts: 0,
       screenStream: null,
       screenSharing: false,
-      facing: "user",
+      screenCaptureCanvas: null,
       connectedIds: new Set(),
       quality: "unknown",
       stageSignature: "",
@@ -3843,6 +4852,7 @@
 
     ensureSelfParticipant();
     openCallUi();
+    watchLocalTracks(S.call);
     startCallTimers();
     subscribeCallSignals();
     subscribeCallParticipants();
@@ -3850,6 +4860,153 @@
     startLocalMeter();
     void refreshParticipants();
     void loadCallChat();
+  }
+
+  function watchLocalTracks(call) {
+    if (!call) return;
+    call.trackWatchers = call.trackWatchers || [];
+    const listen = (track, event, handler) => {
+      if (!track) return;
+      track.addEventListener(event, handler);
+      call.trackWatchers.push({ track, event, handler });
+    };
+    listen(call.audioTrack, "ended", () => handleLocalAudioEnded(call));
+    listen(call.audioTrack, "mute", () => {
+      if (S.call !== call) return;
+      call.micAvailable = false;
+      updateCallControls();
+      updateTileFlags();
+    });
+    listen(call.audioTrack, "unmute", () => {
+      if (S.call !== call) return;
+      call.micAvailable = true;
+      updateCallControls();
+      updateTileFlags();
+    });
+    listen(call.videoTrack, "ended", () => handleLocalVideoEnded(call, call.videoTrack));
+  }
+
+  function detachTrackWatchers(call) {
+    if (!call?.trackWatchers) return;
+    for (const watcher of call.trackWatchers) {
+      try {
+        watcher.track.removeEventListener(watcher.event, watcher.handler);
+      } catch {
+        /* ignore */
+      }
+    }
+    call.trackWatchers = [];
+  }
+
+  function handleLocalVideoEnded(call, track) {
+    if (!call || S.call !== call) return;
+    if (track && call.videoTrack !== track) return;
+    call.videoTrack = null;
+    call.cameraOn = false;
+    try { call.localStream?.removeTrack(track); } catch { /* ignore */ }
+    toast(t("The camera stopped. The call continues with audio.", "توقفت الكاميرا. تستمر المكالمة بالصوت."));
+    void replaceVideoForAll(null);
+    renderCallStage();
+    updateCallControls();
+    startCallForegroundService(call);
+    void updateSelfParticipant({ camera_on: false });
+  }
+
+  function handleLocalAudioEnded(call) {
+    if (!call || S.call !== call) return;
+    call.micAvailable = false;
+    updateCallControls();
+    updateTileFlags();
+    toast(
+      t(
+        "The microphone disconnected. Trying to restore it…",
+        "انقطع الميكروفون. جارٍ محاولة استعادته…",
+      ),
+    );
+    void recoverAudioTrack(call);
+  }
+
+  async function recoverAudioTrack(call) {
+    if (!call || S.call !== call || call.ending || call.recoveringAudio) return;
+    if ((call.audioRecoveryAttempts || 0) >= 2) {
+      toast(
+        t(
+          "The microphone is still unavailable. Check the permission and try a new call.",
+          "الميكروفون ما زال غير متاح. تحقق من الإذن وابدأ مكالمة جديدة.",
+        ),
+      );
+      return;
+    }
+    call.audioRecoveryAttempts = (call.audioRecoveryAttempts || 0) + 1;
+    call.recoveringAudio = true;
+    let stream = null;
+    let adopted = false;
+    try {
+      stream = await requestAudioStream();
+      const track = stream.getAudioTracks()[0];
+      if (!track || track.readyState !== "live") throw new Error("no live audio track");
+      const oldTrack = call.audioTrack;
+      track.enabled = !call.muted;
+      for (const peer of call.peers.values()) {
+        try {
+          if (peer.audioSender) await peer.audioSender.replaceTrack(track);
+          else peer.audioSender = peer.pc.addTrack(track, call.localStream);
+        } catch (error) {
+          console.warn("Could not restore audio for a peer.", error);
+        }
+      }
+      try { call.localStream?.addTrack(track); } catch { /* ignore */ }
+      if (oldTrack) {
+        try {
+          call.localStream?.removeTrack(oldTrack);
+          oldTrack.stop();
+        } catch {
+          /* ignore */
+        }
+      }
+      call.audioTrack = track;
+      call.micAvailable = true;
+      call.audioRecoveryAttempts = 0;
+      adopted = true;
+      call.trackWatchers = (call.trackWatchers || []).filter((watcher) => watcher.track !== oldTrack);
+      const listen = (event, handler) => {
+        track.addEventListener(event, handler);
+        call.trackWatchers.push({ track, event, handler });
+      };
+      listen("ended", () => handleLocalAudioEnded(call));
+      listen("mute", () => {
+        if (S.call === call) call.micAvailable = false;
+        updateCallControls();
+      });
+      listen("unmute", () => {
+        if (S.call === call) call.micAvailable = true;
+        updateCallControls();
+      });
+      updateCallControls();
+      updateTileFlags();
+      toast(t("Microphone restored.", "تمت استعادة الميكروفون."));
+    } catch (error) {
+      console.warn("Could not restore the microphone.", error);
+      if (call.audioRecoveryAttempts < 2) {
+        window.setTimeout(() => {
+          if (S.call === call && !call.ending) void recoverAudioTrack(call);
+        }, 1800);
+      } else {
+        toast(
+          t(
+            "The microphone is unavailable. Other Second Brain features still work.",
+            "الميكروفون غير متاح. بقية ميزات Second Brain تعمل.",
+          ),
+        );
+      }
+    } finally {
+      call.recoveringAudio = false;
+      if (stream && !adopted) {
+        stream.getTracks().forEach((track) => {
+          try { track.stop(); } catch { /* ignore */ }
+        });
+      }
+    }
   }
 
   function ensureSelfParticipant() {
@@ -4035,6 +5192,15 @@
     try {
       if (call.audioTrack) {
         peer.audioSender = pc.addTrack(call.audioTrack, call.localStream);
+      } else if (typeof pc.addTransceiver === "function") {
+        // Listener mode: no microphone track, but the user still needs to
+        // receive the remote audio stream. A recvonly transceiver negotiates
+        // the m-line so the other side knows to send audio to us.
+        try {
+          peer.audioSender = pc.addTransceiver("audio", { direction: "recvonly" });
+        } catch (err) {
+          console.warn("Could not add a receive-only audio transceiver.", err);
+        }
       }
       if (call.videoTrack) {
         peer.videoSender = pc.addTrack(call.videoTrack, call.localStream);
@@ -4393,6 +5559,14 @@
     const call = S.call;
     if (!call || !call.audioTrack) return;
     try {
+      if (call.audioCtx) {
+        try {
+          if (call.audioCtx.state !== "closed") void call.audioCtx.close();
+        } catch { /* ignore */ }
+        call.audioCtx = null;
+        call.analyser = null;
+        call.analyserData = null;
+      }
       const Ctx = window.AudioContext || window.webkitAudioContext;
       if (!Ctx) return;
       const context = new Ctx();
@@ -4527,6 +5701,7 @@
     renderCallStage();
     renderCallChat();
     updateCallHeader();
+    renderMicPicker();
     updateCallTimer();
   }
 
@@ -4564,6 +5739,7 @@
       </div>
       <footer class="live-call-controls">
         <button type="button" class="live-control" data-live-action="toggle-mute" data-live-mute aria-pressed="${call.muted}" title="${esc(t("Mute", "كتم"))}"><span>${call.muted ? "🔇" : "🎙"}</span><small>${esc(call.muted ? t("Unmute", "إلغاء الكتم") : t("Mute", "كتم"))}</small></button>
+        <button type="button" class="live-control" data-live-action="toggle-mic-picker" data-live-mic-picker-toggle title="${esc(t("Select microphone", "اختيار الميكروفون"))}"><span>⚙</span><small>${esc(t("Mic", "الميكروفون"))}</small></button>
         <button type="button" class="live-control" data-live-action="toggle-camera" data-live-camera aria-pressed="${call.cameraOn}" title="${esc(t("Camera", "الكاميرا"))}"><span>${call.cameraOn ? "▣" : "▢"}</span><small>${esc(call.cameraOn ? t("Camera off", "إيقاف الكاميرا") : t("Camera on", "تشغيل الكاميرا"))}</small></button>
         <button type="button" class="live-control" data-live-action="switch-camera" data-live-switch title="${esc(t("Switch camera", "تبديل الكاميرا"))}"><span>⇄</span><small>${esc(t("Flip", "تبديل"))}</small></button>
         <button type="button" class="live-control" data-live-action="toggle-speaker" data-live-speaker aria-pressed="${call.speakerOn}" title="${esc(t("Speaker", "السماعة"))}"><span>🔊</span><small>${esc(call.speakerOn ? t("Speaker on", "السماعة تعمل") : t("Speaker off", "السماعة مغلقة"))}</small></button>
@@ -4572,7 +5748,28 @@
         <button type="button" class="live-control" data-live-action="toggle-call-chat" data-live-chat-toggle aria-pressed="${call.chatOpen}" title="${esc(t("Chat", "المحادثة"))}"><span>💬</span><small>${esc(t("Chat", "المحادثة"))}</small></button>
         <button type="button" class="live-control danger" data-live-action="end-call" title="${esc(t("End call", "إنهاء المكالمة"))}"><span>☎</span><small>${esc(t("End", "إنهاء"))}</small></button>
       </footer>
+      <div class="live-mic-picker" data-live-mic-picker role="dialog" aria-label="${esc(t("Microphone options", "خيارات الميكروفون"))}"></div>
       ${call.screenSharing ? `<p class="live-screen-banner" role="status" aria-live="polite"><span>▤</span> ${esc(t("You are sharing your screen", "أنت تشارك شاشتك"))} <button type="button" class="button button-ghost button-small" data-live-action="toggle-screen-share">${esc(t("Stop", "إيقاف"))}</button></p>` : ""}
+      ${
+        call.cameraWarning
+          ? `<p class="live-turn-warning" role="status">${esc(
+              t(
+                `Camera unavailable — audio only. ${call.cameraWarning}`,
+                `الكاميرا غير متاحة — صوت فقط. ${call.cameraWarning}`,
+              ),
+            )}</p>`
+          : ""
+      }
+      ${
+        call.micAvailable === false
+          ? `<p class="live-turn-warning" role="alert">${esc(
+              t(
+                "Microphone unavailable. Check the permission or reconnect a microphone.",
+                "الميكروفون غير متاح. تحقق من الإذن أو أعد توصيل ميكروفون.",
+              ),
+            )}</p>`
+          : ""
+      }
       ${
         call.turnConfigured === false
           ? `<p class="live-turn-warning">${esc(
@@ -4731,10 +5928,21 @@
     if (!call) return;
     const mute = document.querySelector("[data-live-mute]");
     if (mute) {
-      mute.classList.toggle("active", call.muted);
-      mute.setAttribute("aria-pressed", String(call.muted));
-      mute.querySelector("span").textContent = call.muted ? "🔇" : "🎙";
-      mute.querySelector("small").textContent = call.muted ? t("Unmute", "إلغاء الكتم") : t("Mute", "كتم");
+      const listener = !call.audioTrack || call.micAvailable === false;
+      mute.classList.toggle("active", listener || call.muted);
+      mute.setAttribute("aria-pressed", String(!listener && call.muted));
+      mute.querySelector("span").textContent = listener ? "🎧" : call.muted ? "🔇" : "🎙";
+      mute.querySelector("small").textContent = listener
+        ? t("Listening", "المستمع")
+        : call.muted
+          ? t("Unmute", "إلغاء الكتم")
+          : t("Mute", "كتم");
+      mute.setAttribute(
+        "title",
+        listener
+          ? t("Microphone not available — you are joined as a listener.", "الميكروفون غير متاح — انضممت كمستمع.")
+          : t("Mute", "كتم"),
+      );
     }
     const camera = document.querySelector("[data-live-camera]");
     if (camera) {
@@ -4884,7 +6092,17 @@
 
   function toggleMute() {
     const call = S.call;
-    if (!call || !call.audioTrack) return;
+    if (!call || !call.audioTrack || call.micAvailable === false) {
+      if (call && call.micAvailable === false) {
+        const hasTrack = Boolean(call.audioTrack);
+        toast(
+          hasTrack
+            ? t("The microphone is unavailable. Reconnect it or start a new call.", "الميكروفون غير متاح. أعد توصيله أو ابدأ مكالمة جديدة.")
+            : t("You joined as a listener — enable a microphone to speak.", "انضممت كمستمع — شغّل ميكروفونًا لتتحدث."),
+        );
+      }
+      return;
+    }
     call.muted = !call.muted;
     call.audioTrack.enabled = !call.muted;
     updateCallControls();
@@ -4904,37 +6122,35 @@
       await replaceVideoForAll(null);
       renderCallStage();
       updateCallControls();
+      startCallForegroundService(call);
       void updateSelfParticipant({ camera_on: false });
       return;
     }
     try {
-      const media = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          facingMode: call.facing || "user",
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      });
-      const track = media.getVideoTracks()[0];
-      if (!track) throw new Error(t("No camera is available.", "لا توجد كاميرا متاحة."));
+      const permission = await ensureCallMediaPermission("video");
+      if (permission.cameraGranted === false) {
+        throw mediaErrorWithName("NotAllowedError", mediaErrorMessage({ name: "NotAllowedError" }, "video"));
+      }
+      const result = await acquireVideoTrack(call.facing || "user");
+      const track = result.track;
+      if (!track || track.readyState !== "live") {
+        result.stream?.getTracks().forEach((item) => {
+          try { item.stop(); } catch { /* ignore */ }
+        });
+        throw mediaErrorWithName("NotFoundError", mediaErrorMessage({ name: "NotFoundError" }, "video"));
+      }
       call.videoTrack = track;
+      call.cameraWarning = "";
       call.localStream.addTrack(track);
       call.cameraOn = true;
       await replaceVideoForAll(track);
-      track.addEventListener("ended", () => {
-        if (S.call === call && call.videoTrack === track) {
-          call.videoTrack = null;
-          call.cameraOn = false;
-          updateCallControls();
-          renderCallStage();
-        }
-      });
+      track.addEventListener("ended", () => handleLocalVideoEnded(call, track));
       renderCallStage();
       updateCallControls();
+      startCallForegroundService(call);
       void updateSelfParticipant({ camera_on: true });
     } catch (error) {
-      toast(mediaErrorMessage(error));
+      toast(mediaErrorMessage(error, "video"));
     }
   }
 
@@ -5267,7 +6483,9 @@
     }
     try {
       console.info('[team-live][call]', { event: 'end-request', callId: id, source });
-      await rpc("team_live_end_call", { p_call_id: id });
+      await endCallRpc(id);
+      // Tell every other device to remove its ringing notification.
+      void sendCallPush(id, { state: "ended", call_type: call.call_type || "audio" });
       markCallEnded(id);
       teardownCall();
       updateLiveBadge();
@@ -5291,17 +6509,18 @@
     const call = S.call;
     if (!call) return;
     const id = String(call.id);
-    // Local disconnect/cleanup for this participant only. Do NOT end the call for everyone
-    // on navigation/unmount/unload unless the user explicitly pressed "End call".
+    // Team calls: leave marks only this participant left (the rest stays alive).
+    // Private one-to-one calls have exactly two participants; leaving via
+    // private_call_end ends the call for both, which is the expected 1:1 semantic.
     if (unload) {
       // Leaving the page/app must not end the call for everyone and must not
       // free the devices we still need for the call. Only mark the participant
       // as having left on the server (best effort) and keep the call alive.
-      try { void rpc("team_live_leave_call", { p_call_id: id }).catch(() => {}); } catch {}
+      try { void endCallRpc(id).catch(() => {}); } catch {}
       return;
     }
     try {
-      await rpc("team_live_leave_call", { p_call_id: id });
+      await endCallRpc(id);
     } catch (error) {
       if (!silent) console.warn("Could not leave the call cleanly.", error);
     } finally {
@@ -5326,6 +6545,8 @@
     if (!call) return;
     S.call = null;
     S.endingCallIds.delete(String(call.id));
+    S.mic.pickerOpen = false;
+    void stopMicTest();
     stopCallForegroundService(call.id);
 
     // Stop timers and polling immediately.
@@ -5335,6 +6556,7 @@
     if (call.participantsPoll) window.clearInterval(call.participantsPoll);
     if (call.heartbeat) window.clearInterval(call.heartbeat);
     if (call.noAnswerTimer) window.clearTimeout(call.noAnswerTimer);
+    detachTrackWatchers(call);
 
     // Stop local media (mic/camera/screen) and release devices.
     try {
@@ -5502,7 +6724,8 @@
         stopRing();
         setIncomingCall(null);
         toast(t("Missed call.", "مكالمة فائتة."));
-        void rpc("team_live_respond_call", { p_call_id: id, p_accept: false }).catch(() => {});
+        void respondToInviteRpc(id, false).catch(() => {});
+        void sendCallPush(id, { state: "missed" });
       }, 55000);
     }
     renderIncoming();
@@ -5516,7 +6739,17 @@
     S.inviteCheckBusy = true;
     try {
       const rows = await rpc("team_live_pending_invites", {});
-      const list = Array.isArray(rows) ? rows : [];
+      const privateRows = await (async () => {
+        try { return await rpc("private_pending_invites", {}); } catch (error) {
+          if (isMissingRpc(error)) return [];
+          console.warn("Could not load private invites.", error);
+          return [];
+        }
+      })();
+      const list = [
+        ...(Array.isArray(rows) ? rows : []),
+        ...(Array.isArray(privateRows) ? privateRows : []).map((row) => ({ ...row, private: true })),
+      ];
       S.invites = list;
       const fresh = new Set(list.map((row) => String(row.call_id)));
 
@@ -5527,7 +6760,7 @@
           if (S.handledInvites.has(id)) continue;
           S.handledInvites.add(id);
           S.seenInvites.add(id);
-          void rpc("team_live_respond_call", { p_call_id: id, p_accept: false }).catch(() => {});
+          void respondToInviteRpc(id, false).catch(() => {});
         }
         if (S.incomingCallId) setIncomingCall(null);
         stopRing();
@@ -5612,6 +6845,17 @@
       toast(t("This call has ended.", "انتهت هذه المكالمة."));
       return;
     }
+    // Do not acquire the microphone for a call that is already over.
+    if (accept) {
+      try {
+        const row = await loadCallRow(id);
+        if (!row || String(row.status) === "ended" || String(row.status) === "missed" || String(row.status) === "cancelled") {
+          markCallEnded(id);
+          toast(t("This call has ended.", "انتهت هذه المكالمة."));
+          return;
+        }
+      } catch (_) { /* best effort — the accept/join paths re-verify */ }
+    }
     const invite =
       S.invites.find((row) => String(row.call_id) === id) || {
         call_id: id,
@@ -5626,7 +6870,8 @@
     }
     if (!accept) {
       try {
-        await rpc("team_live_respond_call", { p_call_id: id, p_accept: false });
+        await respondToInviteRpc(id, false);
+        void sendCallPush(id, { state: "declined", call_type: invite.call_type || "audio" });
         toast(t("Call declined.", "تم رفض المكالمة."));
       } catch (error) {
         console.warn("Could not decline the call.", error);
@@ -5635,7 +6880,7 @@
     }
     if (S.call) {
       try {
-        await rpc("team_live_respond_call", { p_call_id: id, p_accept: false });
+        await respondToInviteRpc(id, false);
       } catch {
         /* ignore */
       }
@@ -5650,16 +6895,35 @@
     try {
       media = await acquireMedia(invite.call_type || "video");
     } catch (error) {
-      toast(error.message || mediaErrorMessage(error));
-      try {
-        await rpc("team_live_respond_call", { p_call_id: id, p_accept: false });
-      } catch {
-        /* ignore */
-      }
+      showMediaRetryDialog(
+        error?.message || mediaErrorMessage(error, "audio"),
+        () => respondToInvite(id, true),
+        () => {
+          void respondToInviteRpc(id, false).catch(() => {});
+        },
+        () => {
+          void (async () => {
+            try {
+              await respondToInviteRpc(id, true).catch(() => {});
+              await joinExistingCall(id, { forceListener: true });
+            } catch (listenerError) {
+              console.warn("Listener accept failed.", listenerError);
+            }
+          })();
+        },
+      );
       return;
     }
+    if (media.cameraWarning) {
+      toast(
+        t(
+          `Camera unavailable — joining with audio only. ${media.cameraWarning}`,
+          `الكاميرا غير متاحة — سيتم الانضمام بالصوت فقط. ${media.cameraWarning}`,
+        ),
+      );
+    }
     try {
-      await rpc("team_live_respond_call", { p_call_id: id, p_accept: true });
+      await respondToInviteRpc(id, true);
       const row = await loadCallRow(id);
       if (!row || String(row.status) === "ended") {
         markCallEnded(id);
@@ -5671,6 +6935,11 @@
       setupCall(row, media, ice);
     } catch (error) {
       media.stream.getTracks().forEach((track) => track.stop());
+      if (isCallEndedError(error)) {
+        markCallEnded(id);
+        toast(t("This call has ended.", "انتهت هذه المكالمة."));
+        return;
+      }
       notifyError(t("Could not join the call.", "تعذّر الانضمام إلى المكالمة."), error);
     }
   }

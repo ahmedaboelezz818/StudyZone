@@ -48,7 +48,7 @@ check("Build script copies the generated locales", buildScript.includes('"locale
 check("Build script recreates www safely", buildScript.includes("rmSync"));
 
 check("Capacitor app id is stable", capacitor.appId === "com.studyzone.app");
-check("Capacitor app name is Study Zone", capacitor.appName === "Study Zone");
+check("Capacitor app name is Second Brain", capacitor.appName === "Second Brain");
 check("Capacitor serves from www", capacitor.webDir === "www");
 check("Capacitor uses the https scheme", capacitor.server?.androidScheme === "https");
 check("Splash screen is configured", Boolean(capacitor.plugins?.SplashScreen));
@@ -84,6 +84,41 @@ check("Native shell schedules focus completion", native.includes("syncFocusRemin
 check("Native shell requests notification permission", native.includes("requestPermissions"));
 check("Native shell registers push tokens", native.includes("PushNotifications.register"));
 check("Native shell keeps push tokens owner-scoped", native.includes("device_push_tokens"));
+check(
+  "Push token upsert targets the owner/token unique key",
+  native.includes("on_conflict=user_id,token") && native.includes("flushToken"),
+);
+check(
+  "Push registration is retried after login and resume",
+  app.includes("syncNativePushRegistration") && native.includes("void push.register()"),
+);
+const callService = read(
+  "android/app/src/main/java/com/studyzone/app/StudyZoneCallService.java",
+);
+const callPlugin = read(
+  "android/app/src/main/java/com/studyzone/app/StudyZoneCallServicePlugin.java",
+);
+const permissionsPlugin = read(
+  "android/app/src/main/java/com/studyzone/app/StudyZonePermissionsPlugin.java",
+);
+const manifest = read("android/app/src/main/AndroidManifest.xml");
+check(
+  "Call foreground service falls back to microphone-only",
+  callService.includes("FOREGROUND_SERVICE_TYPE_MICROPHONE") &&
+    callService.includes("catch (Throwable first)"),
+);
+check("Stop call uses stopService", callPlugin.includes("context.stopService(intent)"));
+check(
+  "Android requests microphone and camera before getUserMedia",
+  permissionsPlugin.includes("requestCallPermissions") &&
+    permissionsPlugin.includes("Manifest.permission.CAMERA"),
+);
+check(
+  "Manifest declares call push and full-screen permissions",
+  manifest.includes("USE_FULL_SCREEN_INTENT") &&
+    manifest.includes("StudyZoneFirebaseMessagingService") &&
+    manifest.includes("foregroundServiceType=\"microphone|camera\""),
+);
 
 check("Sync UI adds a status chip", syncUi.includes("data-sync-chip"));
 check("Sync UI resolves conflicts", syncUi.includes("resolveConflict"));

@@ -1,4 +1,4 @@
-/* Study Zone mobile experience.
+/* Second Brain mobile experience.
  * Loaded after styles.css. This file never changes the desktop identity:
  * it only adapts spacing, touch targets, safe areas, overflow, and keyboard
  * behaviour for phones and installed Android builds.
@@ -68,10 +68,6 @@ canvas {
 }
 .native-app .modal {
   max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 24px);
-}
-.native-app .quick-capture-fab {
-  bottom: calc(22px + var(--safe-bottom));
-  inset-inline-end: calc(18px + var(--safe-right));
 }
 .native-app .install-button,
 .native-app #pwa-install {
@@ -324,9 +320,6 @@ canvas {
   }
   .footer {
     padding-bottom: calc(13px + var(--safe-bottom));
-  }
-  .quick-capture-fab {
-    bottom: calc(18px + var(--safe-bottom));
   }
   .page-heading {
     gap: 10px;

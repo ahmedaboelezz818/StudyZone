@@ -58,7 +58,7 @@
         android:textSize="16sp"
         android:maxLines="2"
         android:ellipsize="end"
-        android:text="Study Zone team" />
+        android:text="Second Brain team" />
 
     <TextView
         android:id="@+id/incoming_call_hint"

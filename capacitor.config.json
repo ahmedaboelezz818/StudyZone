@@ -1,6 +1,6 @@
 {
   "appId": "com.studyzone.app",
-  "appName": "Study Zone",
+  "appName": "Second Brain",
   "webDir": "www",
   "bundledWebRuntime": false,
   "android": {

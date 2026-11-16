@@ -10,9 +10,20 @@
     <meta name="color-scheme" content="dark light" />
     <meta
       name="description"
-      content="Study Zone — Your Study Life, Organized."
+      content="Second Brain — Your Mind. Organized. Your personal space to organize study, tasks, flashcards, deadlines and focus."
     />
-    <link rel="manifest" href="./manifest.json" />
+        <link rel="manifest" href="./manifest.json" id="sz-manifest" />
+    <script>
+      // Avoid manifest fetch/CORS errors when opened via file:// (origin "null").
+      (function () {
+        try {
+          if (location.protocol === "file:") {
+            var m = document.getElementById("sz-manifest");
+            if (m && m.parentNode) m.parentNode.removeChild(m);
+          }
+        } catch (e) {}
+      })();
+    </script>
     <link rel="icon" href="./favicon.ico" sizes="any" />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" sizes="180x180" />
@@ -22,26 +33,35 @@
       name="apple-mobile-web-app-status-bar-style"
       content="black-translucent"
     />
-    <meta name="apple-mobile-web-app-title" content="Study Zone" />
-    <title>Study Zone — Your Study Life, Organized</title>
+    <meta name="apple-mobile-web-app-title" content="Second Brain" />
+    <title>Second Brain — Your Mind. Organized.</title>
     <link rel="preconnect" href="https://lcysfoymnobmbxwwapll.supabase.co" crossorigin />
-    <link rel="preload" as="font" href="./fonts/font-01.woff2" type="font/woff2" crossorigin />
-    <link rel="preload" as="font" href="./fonts/font-03.woff2" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="./fonts/fonts.css" />
-    <link rel="preload" as="style" href="./design-tokens.css?v=2" />
+    <script>
+      // Load local fonts/preloads only over HTTP(S) to avoid file:// CORS/font errors in local file-open mode.
+      (function () {
+        try {
+          if (location.protocol === "http:" || location.protocol === "https:") {
+            var pre1 = document.createElement("link");
+            pre1.rel = "preload"; pre1.as = "font"; pre1.href = "./fonts/font-01.woff2"; pre1.type = "font/woff2"; pre1.crossOrigin = "anonymous";
+            var pre2 = document.createElement("link");
+            pre2.rel = "preload"; pre2.as = "font"; pre2.href = "./fonts/font-03.woff2"; pre2.type = "font/woff2"; pre2.crossOrigin = "anonymous";
+            var css = document.createElement("link");
+            css.rel = "stylesheet"; css.href = "./fonts/fonts.css";
+            document.head.appendChild(pre1);
+            document.head.appendChild(pre2);
+            document.head.appendChild(css);
+          }
+        } catch (e) {}
+      })();
+    </script>
     <link rel="stylesheet" href="./design-tokens.css?v=2" />
-    <link rel="preload" as="style" href="./themes-presets.css?v=1" />
     <link rel="stylesheet" href="./themes-presets.css?v=1" />
-    <link rel="preload" as="style" href="./styles.css?v=team-system-1" />
     <link rel="stylesheet" href="./styles.css?v=team-system-1" />
-    <link rel="preload" as="style" href="./team-live.css?v=2" />
     <link rel="stylesheet" href="./team-live.css?v=2" />
-    <link rel="preload" as="style" href="./themes.css?v=2" />
+    <link rel="stylesheet" href="./flashcards.css?v=2" />
     <link rel="stylesheet" href="./themes.css?v=2" />
     <link rel="stylesheet" href="./mobile.css?v=1" />
-    <link rel="preload" as="style" href="./ui-controls.css?v=1" />
     <link rel="stylesheet" href="./ui-controls.css?v=1" />
-    <link rel="preload" as="style" href="./premium.css?v=1" />
     <link rel="stylesheet" href="./premium.css?v=1" />
     <link rel="stylesheet" href="./premium-dashboard.css?v=1" />
     <link rel="stylesheet" href="./premium-pages.css?v=1" />
@@ -79,6 +99,10 @@
     <script src="./offline-sync.js"></script>
     <script src="./team-live-core.js?v=1" defer></script>
     <script src="./team-live.js?v=2" defer></script>
+    <script src="./flashcards-core.js?v=2" defer></script>
+    <script src="./flashcards-db.js?v=2" defer></script>
+    <script src="./flashcards-sync.js?v=2" defer></script>
+    <script src="./flashcards.js?v=2" defer></script>
     <script src="./app.js?v=1" defer></script>
     <script src="./sync-ui.js?v=1" defer></script>
     <script src="./native-shell.js?v=1" defer></script>
@@ -89,10 +113,46 @@
     <script>
       (function () {
         var shown = false;
-        function showStartupError(err, source) {
+        function formatStartupError(err, source, event) {
+          var msg = "";
+          var file = "";
+          var line = "";
+          var col = "";
+          var stack = "";
           try {
-            var msg = (err && (err.message || (err.reason && err.reason.message) || String(err.reason || err))) || String(err || "Startup error");
-            console.error("[StudyZone startup]", source || "error", err || msg);
+            if (event && typeof event === "object") {
+              if (event.filename) file = String(event.filename);
+              if (event.lineno != null) line = String(event.lineno);
+              if (event.colno != null) col = String(event.colno);
+              if (event.message && (!err || err === event.message)) msg = String(event.message);
+              if (event.error && event.error.stack) stack = String(event.error.stack);
+            }
+            if (!msg) {
+              if (err && err.message) msg = String(err.message);
+              else if (err && err.reason && err.reason.message) msg = String(err.reason.message);
+              else if (err && err.reason) msg = String(err.reason);
+              else if (err) msg = String(err);
+              else msg = "Startup error";
+            }
+            if (!stack && err && err.stack) stack = String(err.stack);
+            if (!stack && err && err.reason && err.reason.stack) stack = String(err.reason.stack);
+          } catch (e) {}
+          return { msg: msg, file: file, line: line, col: col, stack: stack, source: source || "error" };
+        }
+        function showStartupError(err, source, event) {
+          try {
+            var info = formatStartupError(err, source, event);
+            // Always log detailed diagnostics (including generic cross-origin "Script error.").
+            try {
+              console.error("[Second Brain startup]", info.source, {
+                message: info.msg,
+                file: info.file || null,
+                line: info.line || null,
+                column: info.col || null,
+                stack: info.stack || null,
+                raw: err || null
+              });
+            } catch (e) { console.error("[Second Brain startup]", info.source, info.msg); }
             if (shown) return;
             shown = true;
             var host = document.getElementById("startup-error-banner");
@@ -103,26 +163,26 @@
               host.style.cssText = "position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:2147483647;background:#2b1010;color:#fff;border:1px solid #ff6b6b;border-radius:12px;padding:12px 14px;font:14px/1.4 system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.35);max-height:40vh;overflow:auto;";
               (document.body || document.documentElement).appendChild(host);
             }
-            host.textContent = "Study Zone startup issue: " + msg;
+            var details = info.msg;
+            if (info.file) details += " (" + info.file + (info.line ? ":" + info.line : "") + (info.col ? ":" + info.col : "") + ")";
+            host.textContent = "Second Brain startup issue: " + details;
           } catch (e) {}
         }
         window.addEventListener("error", function (e) {
-          showStartupError(e.error || e.message, e.filename ? (e.filename + ":" + e.lineno) : "error");
+          showStartupError(e.error || e.message || e, e.filename ? (e.filename + ":" + e.lineno + (e.colno ? ":" + e.colno : "")) : "error", e);
         }, true);
         window.addEventListener("unhandledrejection", function (e) {
-          showStartupError(e.reason || e, "unhandledrejection");
+          showStartupError(e.reason || e, "unhandledrejection", e);
         });
       })();
     </script>
     <div class="app-shell">
       <aside class="sidebar" id="sidebar">
-        <a class="brand" href="#dashboard" aria-label="Study Zone dashboard">
-          <span class="brand-mark"
-            ><span></span><span></span><span></span
-          ></span>
+        <a class="brand" href="#dashboard" aria-label="Second Brain dashboard">
+          <img class="brand-mark" src="./assets/images/second-brain-emblem.png" alt="Second Brain logo" width="40" height="40" />
           <span
-            ><strong dir="ltr">Study Zone</strong
-            ><small>YOUR STUDY LIFE, ORGANIZED</small></span
+            ><strong dir="ltr">Second Brain</strong
+            ><small>YOUR MIND. ORGANIZED.</small></span
           >
         </a>
         <div class="nav-caption">WORKSPACE</div>
@@ -171,6 +231,9 @@
           >
           <a class="nav-link" href="#focus" data-page="focus"
             ><span class="nav-icon">◷</span>Focus timer</a
+          >
+          <a class="nav-link" href="#flashcards" data-page="flashcards"
+            ><span class="nav-icon">❖</span>Flashcards</a
           >
         </nav>
         <div class="nav-caption nav-caption-spaced">YOUR PROGRESS</div>
@@ -247,7 +310,7 @@
               class="button button-secondary install-button"
               id="pwa-install"
               type="button"
-              aria-label="Install Study Zone"
+              aria-label="Install Second Brain"
             >
               Install app
             </button>
@@ -275,7 +338,7 @@
         </div>
         <div class="content" id="page-content"></div>
         <footer class="footer">
-          <span>Study Zone <span id="footer-year"></span></span
+          <span>Second Brain <span id="footer-year"></span></span
           ><span>Small steps. Meaningful progress.</span
           ><span class="connection-state" id="connection-state"
             ><i></i>Demo workspace</span
@@ -283,15 +346,6 @@
         </footer>
       </main>
     </div>
-
-    <button
-      class="quick-capture-fab"
-      data-action="quick-capture-open"
-      aria-label="Quick capture"
-      title="Quick capture (N)"
-    >
-      ＋
-    </button>
 
     <div class="modal-backdrop" id="task-modal" hidden>
       <section
@@ -710,7 +764,7 @@
               dir="auto"
               required
               maxlength="180"
-              placeholder="e.g. Prepare the Study Zone presentation"
+              placeholder="e.g. Prepare the Second Brain presentation"
           /></label>
           <label
             >Description <span class="optional-label">Optional</span
@@ -938,7 +992,7 @@
         <p class="eyebrow">TEAM MEMBERS</p>
         <h2 id="team-add-member-title">Add an existing account</h2>
         <p class="modal-subtitle">
-          The person keeps the same Study Zone account, profile and profile
+          The person keeps the same Second Brain account, profile and profile
           photo.
         </p>
         <form id="team-add-member-form" class="form-stack">
@@ -959,6 +1013,45 @@
             </button>
             <button class="button button-primary" type="submit">
               Add member <span>→</span>
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="private-dm-modal" hidden>
+      <section
+        class="modal team-add-member-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="private-dm-title"
+      >
+        <button class="modal-close" data-close-modal aria-label="Close">
+          ×
+        </button>
+        <p class="eyebrow">PRIVATE MESSAGES</p>
+        <h2 id="private-dm-title">Start a private chat</h2>
+        <p class="modal-subtitle">
+          A direct one-to-one conversation with another account. No team
+          required.
+        </p>
+        <form id="private-dm-form" class="form-stack" data-live-form="private-dm">
+          <label
+            >Account email<input id="private-dm-email"
+              name="email"
+              type="email"
+              dir="ltr"
+              required
+              maxlength="254"
+              placeholder="friend@example.com"
+          /></label>
+          <div class="form-error" id="private-dm-error" role="alert"></div>
+          <div class="modal-actions">
+            <button class="button button-secondary" type="button" data-close-modal>
+              Cancel
+            </button>
+            <button class="button button-primary" type="submit">
+              Open chat <span>→</span>
             </button>
           </div>
         </form>
@@ -1245,12 +1338,10 @@
           ×
         </button>
         <div class="auth-mark">
-          <span class="brand-mark"
-            ><span></span><span></span><span></span
-          ></span>
+          <img class="brand-mark brand-mark-lg" src="./assets/images/second-brain-emblem.png" alt="Second Brain logo" width="96" height="96" />
         </div>
-        <p class="eyebrow">YOUR STUDY LIFE, ORGANIZED</p>
-        <h2 id="auth-title">Welcome to Study Zone</h2>
+        <p class="eyebrow">YOUR MIND. ORGANIZED.</p>
+        <h2 id="auth-title">Welcome to Second Brain</h2>
         <p class="modal-subtitle" id="auth-help">
           Connect Supabase to create an account or sign in.
         </p>
@@ -1319,13 +1410,13 @@
         <div class="pwa-install-icon" aria-hidden="true">
           <img src="./icons/icon-192.png" alt="" width="54" height="54" />
         </div>
-        <p class="eyebrow">STUDY ZONE</p>
-        <h2 id="pwa-install-title">Install Study Zone</h2>
+        <p class="eyebrow">SECOND BRAIN</p>
+        <h2 id="pwa-install-title">Install Second Brain</h2>
         <p class="modal-subtitle" id="pwa-install-description"></p>
         <p class="modal-subtitle" id="pwa-install-instructions"></p>
         <div class="modal-actions">
           <button class="button button-primary" type="button" id="pwa-install-confirm">
-            Install Study Zone
+            Install Second Brain
           </button>
           <button class="button button-secondary" type="button" data-close-modal>
             Cancel
@@ -1350,7 +1441,7 @@
           ×
         </button>
         <div class="celebration-emblem" aria-hidden="true">✦</div>
-        <p class="eyebrow" id="celebration-kicker">STUDY ZONE</p>
+        <p class="eyebrow" id="celebration-kicker">SECOND BRAIN</p>
         <h2 id="celebration-title"></h2>
         <p class="modal-subtitle" id="celebration-description"></p>
         <div class="celebration-xp" id="celebration-xp" hidden></div>
@@ -1435,7 +1526,7 @@
           ×
         </button>
         <p class="eyebrow">FIND ANYTHING</p>
-        <h2 id="global-search-title">Search Study Zone</h2>
+        <h2 id="global-search-title">Search Second Brain</h2>
         <label class="search-box search-box-large"
           ><span>⌕</span><input
             id="global-search-input"

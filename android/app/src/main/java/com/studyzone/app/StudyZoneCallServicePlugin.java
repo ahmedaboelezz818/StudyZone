@@ -62,11 +62,10 @@ public class StudyZoneCallServicePlugin extends Plugin {
         Intent intent = new Intent(context, StudyZoneCallService.class);
         intent.setAction(StudyZoneCallService.ACTION_STOP);
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent);
-            } else {
-                context.startService(intent);
-            }
+            // stopService is the correct call for teardown. Starting a
+            // foreground service merely to tell it to stop can itself throw on
+            // Android 12+ when the app is in the background.
+            context.stopService(intent);
             JSObject result = new JSObject();
             result.put("running", false);
             call.resolve(result);

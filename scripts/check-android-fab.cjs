@@ -1,0 +1,12 @@
+const fs = require("fs");
+const read = (f) => fs.readFileSync(f, "utf8");
+console.log("android styles.css has fab:", read("android/app/src/main/assets/public/styles.css").includes("quick-capture-fab"));
+console.log("android mobile.css has fab:", read("android/app/src/main/assets/public/mobile.css").includes("quick-capture-fab"));
+const html = read("android/app/src/main/assets/public/index.html");
+console.log("android index.html has fab:", html.includes("quick-capture-fab"));
+console.log("android index.html has quick-capture-modal:", html.includes('id="quick-capture-modal"'));
+console.log("android index.html has data-action=quick-capture-open:", html.includes('data-action="quick-capture-open"'));
+const ww = read("www/index.html");
+console.log("www fab present:", ww.includes("quick-capture-fab"));
+console.log("root fab present:", read("index.html").includes("quick-capture-fab"));
+console.log("android styles.css trailing fab block:", read("android/app/src/main/assets/public/styles.css").includes(".quick-capture-fab"));

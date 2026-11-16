@@ -1,0 +1,11 @@
+[functions.deadline-reminders]
+verify_jwt = false
+
+[functions.turn-credentials]
+verify_jwt = false
+
+[functions.team-live-call-push]
+verify_jwt = false
+
+[functions.team-live-message-push]
+verify_jwt = false

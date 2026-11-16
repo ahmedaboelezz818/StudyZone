@@ -33,19 +33,90 @@ import com.getcapacitor.annotation.PermissionCallback;
 @CapacitorPlugin(
     name = "StudyZonePermissions",
     permissions = {
-        @Permission(strings = { Manifest.permission.RECORD_AUDIO }, alias = "microphone")
+        @Permission(strings = { Manifest.permission.RECORD_AUDIO }, alias = "microphone"),
+        @Permission(strings = { Manifest.permission.CAMERA }, alias = "camera")
     }
 )
 public class StudyZonePermissionsPlugin extends Plugin {
 
-    @PluginMethod
-    public void checkMicrophone(PluginCall call) {
+    private static JSObject permissionResult(String alias, PermissionState state) {
         JSObject result = new JSObject();
-        PermissionState state = getPermissionState("microphone");
         result.put("state", state == null ? "prompt" : state.toString());
         result.put("granted", state == PermissionState.GRANTED);
         result.put("blocked", state == PermissionState.DENIED);
+        return result;
+    }
+
+    @PluginMethod
+    public void checkMicrophone(PluginCall call) {
+        call.resolve(permissionResult("microphone", getPermissionState("microphone")));
+    }
+
+    @PluginMethod
+    public void checkCamera(PluginCall call) {
+        call.resolve(permissionResult("camera", getPermissionState("camera")));
+    }
+
+    /**
+     * Requests both permissions needed by a call in a single Android dialog.
+     * The WebView permission callback for getUserMedia is then already
+     * satisfied, so video calls no longer race the native dialog.
+     */
+    @PluginMethod
+    public void requestCallPermissions(PluginCall call) {
+        boolean wantsVideo = Boolean.TRUE.equals(call.getBoolean("video", false));
+        PermissionState mic = getPermissionState("microphone");
+        PermissionState camera = getPermissionState("camera");
+        boolean cameraReady = !wantsVideo || camera == PermissionState.GRANTED;
+        if (mic == PermissionState.GRANTED && cameraReady) {
+            JSObject result = callResult(mic, camera, wantsVideo);
+            result.put("resolved", true);
+            call.resolve(result);
+            return;
+        }
+        if (wantsVideo) {
+            requestPermissionForAliases(new String[] { "microphone", "camera" }, call, "callPermissionsCallback");
+        } else {
+            requestPermissionForAlias("microphone", call, "callPermissionsCallback");
+        }
+    }
+
+    @PermissionCallback
+    private void callPermissionsCallback(PluginCall call) {
+        boolean wantsVideo = Boolean.TRUE.equals(call.getBoolean("video", false));
+        JSObject result = callResult(
+            getPermissionState("microphone"),
+            getPermissionState("camera"),
+            wantsVideo
+        );
         call.resolve(result);
+    }
+
+    private JSObject callResult(PermissionState mic, PermissionState camera, boolean wantsVideo) {
+        JSObject result = new JSObject();
+        result.put("microphoneGranted", mic == PermissionState.GRANTED);
+        result.put("microphoneBlocked", mic == PermissionState.DENIED);
+        result.put("cameraGranted", !wantsVideo || camera == PermissionState.GRANTED);
+        result.put("cameraBlocked", wantsVideo && camera == PermissionState.DENIED);
+        return result;
+    }
+
+    @PluginMethod
+    public void requestCamera(PluginCall call) {
+        if (getPermissionState("camera") == PermissionState.GRANTED) {
+            JSObject result = new JSObject();
+            result.put("granted", true);
+            result.put("blocked", false);
+            result.put("state", "granted");
+            call.resolve(result);
+            return;
+        }
+        requestPermissionForAlias("camera", call, "cameraCallback");
+    }
+
+    @PermissionCallback
+    private void cameraCallback(PluginCall call) {
+        call.resolve(permissionResult("camera", getPermissionState("camera")));
     }
 
     @PluginMethod
@@ -85,6 +156,21 @@ public class StudyZonePermissionsPlugin extends Plugin {
         } catch (Exception error) {
             call.reject("Could not open app settings", error);
         }
+    }
+
+    /** Last uncaught Java exception, stored by StudyZoneCrashLogger. */
+    @PluginMethod
+    public void readLastCrash(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("trace", StudyZoneCrashLogger.lastCrash(getContext()));
+        result.put("at", StudyZoneCrashLogger.lastCrashAt(getContext()));
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void clearLastCrash(PluginCall call) {
+        StudyZoneCrashLogger.clear(getContext());
+        call.resolve();
     }
 
     /** True when the OS has granted RECORD_AUDIO; used by diagnostics. */

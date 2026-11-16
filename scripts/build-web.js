@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Copies the static Study Zone web app into `www/` for Capacitor.
+ * Copies the static Second Brain web app into `www/` for Capacitor.
  * The repository root remains the canonical web project; nothing is moved.
  */
 const fs = require("node:fs");
@@ -15,6 +15,11 @@ const files = [
   "team-live.css",
   "team-live-core.js",
   "team-live.js",
+  "flashcards.css",
+  "flashcards-core.js",
+  "flashcards-db.js",
+  "flashcards-sync.js",
+  "flashcards.js",
   "styles.css",
   "mobile.css",
   "themes.css",
@@ -59,4 +64,4 @@ for (const directory of directories) {
   fs.cpSync(source, path.join(out, directory), { recursive: true });
 }
 
-console.log(`[build-web] Study Zone web assets copied to ${out}`);
+console.log(`[build-web] Second Brain web assets copied to ${out}`);

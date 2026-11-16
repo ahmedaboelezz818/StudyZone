@@ -1,5 +1,6 @@
 package com.studyzone.app;
 
+import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -7,6 +8,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
@@ -101,16 +103,51 @@ public class StudyZoneCallService extends Service {
         Notification notification = builder.build();
 
         // Android 14+ requires the foreground-service type to match the
-        // experiences the call can actually use (mic + camera).
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                    NOTIFICATION_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE | ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
-        } else {
-            startForeground(NOTIFICATION_ID, notification);
+        // experiences actually in use. Declaring CAMERA without the runtime
+        // permission throws SecurityException, so only add it for a video call
+        // where the camera has really been granted.
+        boolean cameraGranted = checkSelfPermission(Manifest.permission.CAMERA)
+                == PackageManager.PERMISSION_GRANTED;
+        int types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+        if (video && cameraGranted) {
+            types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
         }
-        running = true;
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification, types);
+            } else {
+                startForeground(NOTIFICATION_ID, notification);
+            }
+            running = true;
+        } catch (Throwable first) {
+            // Some OEM builds reject the camera type even when permission is
+            // granted. Fall back to microphone-only rather than losing the
+            // foreground service (and therefore the call) entirely.
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(
+                            NOTIFICATION_ID,
+                            notification,
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+                } else {
+                    startForeground(NOTIFICATION_ID, notification);
+                }
+                running = true;
+            } catch (Throwable second) {
+                // Last resort: let the platform use the manifest types.
+                try {
+                    startForeground(NOTIFICATION_ID, notification);
+                    running = true;
+                } catch (Throwable fatal) {
+                    running = false;
+                    NotificationManager manager =
+                            (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (manager != null) manager.cancel(NOTIFICATION_ID);
+                    stopSelf();
+                }
+            }
+        }
     }
 
     private void stopCall() {
@@ -123,6 +160,14 @@ public class StudyZoneCallService extends Service {
             stopForeground(true);
         }
         stopSelf();
+    }
+
+    @Override
+    public void onDestroy() {
+        running = false;
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager != null) manager.cancel(NOTIFICATION_ID);
+        super.onDestroy();
     }
 
     private void ensureChannel() {

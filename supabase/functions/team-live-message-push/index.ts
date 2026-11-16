@@ -1,4 +1,4 @@
-// Study Zone — optional push notifications for new team chat messages.
+// Second Brain — optional push notifications for new team chat messages.
 //
 // This is a thin sender: the app calls it after a message is delivered to the
 // server. It resolves the authorised recipients for the conversation and sends
@@ -15,16 +15,37 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+function resolveCorsHeaders(req: Request) {
+  const origin = req.headers.get("Origin") || "";
+  const allowList = [
+    /^https?:\/\/localhost(?::\d+)?$/i,
+    /^https?:\/\/127\.0\.0\.1(?::\d+)?$/i,
+    /^https?:\/\/[a-z0-9-]+\.github\.io$/i,
+    /^capacitor:\/\/localhost$/i,
+    /^https:\/\/localhost$/i,
+    /^http:\/\/localhost$/i,
+  ];
+  const allowedOrigin = origin && allowList.some((re) => re.test(origin)) ? origin : (origin ? "" : "*");
+  // Echo a known origin when possible; fall back to * for non-browser/server contexts without Origin.
+  const allowOrigin = allowedOrigin || (origin ? origin : "*");
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-version",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Max-Age": "86400",
+    "Vary": "Origin",
+  } as Record<string, string>;
+}
 
-function json(body: unknown, status = 200) {
+function json(body: unknown, status = 200, req?: Request) {
+  const headers = req ? resolveCorsHeaders(req) : {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
+    headers: { ...headers, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
   });
 }
 
@@ -79,11 +100,12 @@ async function getAccessToken(serviceAccount: any): Promise<string> {
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method !== "POST") return json({ error: "Use POST." }, 405);
+  const corsHeaders = resolveCorsHeaders(req);
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
+  if (req.method !== "POST") return json({ error: "Use POST." }, 405, req);
 
   const auth = req.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ")) return json({ error: "Sign in required." }, 401);
+  if (!auth.toLowerCase().startsWith("bearer ")) return json({ error: "Sign in required." }, 401, req);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
@@ -91,13 +113,13 @@ Deno.serve(async (req: Request) => {
   const projectId = Deno.env.get("FCM_PROJECT_ID") || "";
   const saRaw = Deno.env.get("FCM_SERVICE_ACCOUNT_JSON") || "";
   if (!supabaseUrl || !anonKey || !serviceRoleKey) {
-    return json({ configured: false, error: "Supabase function environment is incomplete." }, 500);
+    return json({ configured: false, error: "Supabase function environment is incomplete." }, 500, req);
   }
 
   let body: any = {};
   try { body = await req.json(); } catch { body = {}; }
   const conversationId = String(body?.conversation_id || "").trim();
-  if (!conversationId) return json({ error: "conversation_id is required." }, 400);
+  if (!conversationId) return json({ error: "conversation_id is required." }, 400, req);
 
   const userClient = createClient(supabaseUrl, anonKey, {
     global: { headers: { Authorization: auth } },
@@ -115,7 +137,7 @@ Deno.serve(async (req: Request) => {
     .select("id, team_id, kind, title, task_id")
     .eq("id", conversationId)
     .maybeSingle();
-  if (convError || !conversation) return json({ error: "Conversation not found." }, 404);
+  if (convError || !conversation) return json({ error: "Conversation not found." }, 404, req);
 
   // Authorisation: sender must be a real member of the team.
   const { data: membership } = await admin
@@ -133,7 +155,7 @@ Deno.serve(async (req: Request) => {
       .eq("id", conversation.team_id)
       .eq("owner_id", user.id)
       .limit(1);
-    if (!owned?.length) return json({ error: "Not authorized for this conversation." }, 403);
+    if (!owned?.length) return json({ error: "Not authorized for this conversation." }, 403, req);
   }
 
   // Authorised recipients only: members of the same team, excluding sender.
@@ -141,26 +163,26 @@ Deno.serve(async (req: Request) => {
     .from("team_members")
     .select("user_id")
     .eq("team_id", conversation.team_id);
-  if (memberError) return json({ error: "Could not resolve team members." }, 500);
+  if (memberError) return json({ error: "Could not resolve team members." }, 500, req);
 
   const recipientIds = [...new Set((teamMembers || [])
     .map((row: any) => String(row.user_id))
     .filter((id: string) => id && id !== String(user.id)))];
 
   if (!recipientIds.length) {
-    return json({ configured: Boolean(projectId && saRaw), sent: 0, reason: "no_recipients" });
+    return json({ configured: Boolean(projectId && saRaw), sent: 0, reason: "no_recipients" }, 200, req);
   }
 
   if (!projectId || !saRaw) {
-    return json({ configured: false, sent: 0, recipients: recipientIds.length, error: "FCM not configured." });
+    return json({ configured: false, sent: 0, recipients: recipientIds.length, error: "FCM not configured." }, 200, req);
   }
 
   let serviceAccount: any;
-  try { serviceAccount = JSON.parse(saRaw); } catch { return json({ configured: false, sent: 0, error: "FCM_SERVICE_ACCOUNT_JSON is not valid JSON." }, 500); }
+  try { serviceAccount = JSON.parse(saRaw); } catch { return json({ configured: false, sent: 0, error: "FCM_SERVICE_ACCOUNT_JSON is not valid JSON." }, 500, req); }
 
   let accessToken = "";
   try { accessToken = await getAccessToken(serviceAccount); }
-  catch (e) { return json({ configured: false, sent: 0, error: String((e as Error)?.message || e) }, 500); }
+  catch (e) { return json({ configured: false, sent: 0, error: String((e as Error)?.message || e) }, 500, req); }
 
   const { data: tokens } = await admin
     .from("device_push_tokens")
@@ -211,5 +233,5 @@ Deno.serve(async (req: Request) => {
     sent += 1;
   }
 
-  return json({ configured: true, conversationId: conversation.id, recipients: recipientIds.length, tokens: uniqueTokens.length, sent, failures: failures.slice(0, 20) });
+  return json({ configured: true, conversationId: conversation.id, recipients: recipientIds.length, tokens: uniqueTokens.length, sent, failures: failures.slice(0, 20) }, 200, req);
 });

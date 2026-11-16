@@ -199,7 +199,7 @@ function tokens(entry, mode) {
   ].join("\n");
 }
 
-const header = `/* Study Zone — generated theme presets.
+const header = `/* Second Brain — generated theme presets.
  * DO NOT EDIT BY HAND. Regenerate with:
  *   node scripts/generate-theme-presets.js
  *

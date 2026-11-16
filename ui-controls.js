@@ -1,5 +1,5 @@
 /*
- * Study Zone — Unified UI controls
+ * Second Brain — Unified UI controls
  * ---------------------------------------------------------------------------
  * Progressive enhancement for every <select>, <input type="date">,
  * <input type="time"> and <input type="datetime-local"> in the app.

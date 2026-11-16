@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Study Zone</string>
-    <string name="title_activity_main">Study Zone</string>
+    <string name="app_name">Second Brain</string>
+    <string name="title_activity_main">Second Brain</string>
     <string name="package_name">com.studyzone.app</string>
     <string name="custom_url_scheme">studyzone</string>
     <string name="shortcut_my_tasks">My Tasks</string>
@@ -32,9 +32,9 @@
     <string name="widget_description_contributions_large">Activity Heatmap - View your full-year study activity map</string>
     <string name="widget_clock">Flip Clock</string>
     <string name="widget_description_clock">Flip Clock - Live clock on your home screen, updated by Android</string>
-    <string name="clock_channel_name">Study Zone clock</string>
+    <string name="clock_channel_name">Second Brain clock</string>
     <string name="clock_channel_description">Optional persistent clock shown in the notification shade</string>
-    <string name="clock_notification_title">Study Zone clock · %1$s</string>
+    <string name="clock_notification_title">Second Brain clock · %1$s</string>
     <string name="clock_notification_text">Live 24-hour clock. Tap to open Focus, or turn it off with the button below.</string>
     <string name="clock_notification_open">Open clock</string>
     <string name="clock_notification_stop">Turn off</string>

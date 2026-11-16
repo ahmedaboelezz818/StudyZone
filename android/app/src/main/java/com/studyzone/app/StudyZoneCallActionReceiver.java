@@ -25,11 +25,7 @@ public class StudyZoneCallActionReceiver extends BroadcastReceiver {
         Intent stop = new Intent(context, StudyZoneCallService.class);
         stop.setAction(StudyZoneCallService.ACTION_STOP);
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(stop);
-            } else {
-                context.startService(stop);
-            }
+            context.stopService(stop);
         } catch (Throwable ignored) {
             /* best effort */
         }

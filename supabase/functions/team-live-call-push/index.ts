@@ -1,4 +1,4 @@
-// Study Zone — send FCM push notifications for incoming Team Live calls.
+// Second Brain — send FCM push notifications for incoming Team Live calls.
 //
 // This function is called by the app after a call/invite is created so invited
 // users receive a high-priority push even when the app is backgrounded or not
@@ -98,8 +98,10 @@ async function getAccessToken(serviceAccount: any): Promise<string> {
 async function sendFcmMessage(projectId: string, accessToken: string, token: string, payload: any) {
   const url = `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`;
   const callId = String(payload.call_id || "");
-  const callerName = String(payload.caller_name || "Study Zone");
+  const callerName = String(payload.caller_name || "Second Brain");
   const callType = String(payload.call_type || "audio");
+  const state = String(payload.state || "ringing").toLowerCase();
+  const terminal = ["ended", "canceled", "cancelled", "declined", "missed", "accepted"].includes(state);
   const title = callType === "video" ? "Incoming video call" : "Incoming audio call";
   const body = callerName;
 
@@ -108,7 +110,8 @@ async function sendFcmMessage(projectId: string, accessToken: string, token: str
       token,
       android: {
         priority: "HIGH",
-        ttl: "55s",
+        // A terminal state is only useful long enough to cancel a ringing UI.
+        ttl: terminal ? "120s" : "55s",
       },
       data: {
         type: "incoming_call",
@@ -120,7 +123,7 @@ async function sendFcmMessage(projectId: string, accessToken: string, token: str
         conversation_id: String(payload.conversation_id || ""),
         scope: String(payload.scope || ""),
         avatar: String(payload.avatar || ""),
-        state: "ringing",
+        state,
         page: "team-live",
         title,
         body,
@@ -165,6 +168,10 @@ Deno.serve(async (req: Request) => {
   try { body = await req.json(); } catch { body = {}; }
   const callId = String(body?.call_id || body?.callId || "").trim();
   if (!callId) return json({ error: "call_id is required." }, 400);
+  const requestedState = String(body?.state || body?.action || "ringing").toLowerCase();
+  const state = ["ended", "canceled", "cancelled", "declined", "missed"].includes(requestedState)
+    ? requestedState
+    : "ringing";
 
   const userClient = createClient(supabaseUrl, anonKey, {
     global: { headers: { Authorization: auth } },
@@ -184,7 +191,10 @@ Deno.serve(async (req: Request) => {
     .eq("id", callId)
     .maybeSingle();
   if (callError || !call) return json({ error: "Call not found." }, 404);
-  if (String(call.status) === "ended") return json({ configured: Boolean(projectId && saRaw), sent: 0, skipped: "ended" });
+  // An ending call must still be allowed to push its cancellation state.
+  if (String(call.status) === "ended" && state === "ringing") {
+    return json({ configured: Boolean(projectId && saRaw), state, sent: 0, skipped: "ended" });
+  }
 
   const { data: participants, error: partError } = await admin
     .from("team_call_participants")
@@ -193,18 +203,46 @@ Deno.serve(async (req: Request) => {
   if (partError) return json({ error: "Could not verify call participants." }, 500);
 
   const participantRows = participants || [];
-  const isParticipant = participantRows.some((p: any) => String(p.user_id) === String(user.id));
-  const isCreator = String(call.created_by) === String(user.id);
-  if (!isParticipant && !isCreator) return json({ error: "Not authorized for this call." }, 403);
+  const actorId = String(user.id);
+  const myRow = participantRows.find((p: any) => String(p.user_id) === actorId);
+  const isCreator = String(call.created_by) === actorId;
+  const isAcceptedParticipant = Boolean(
+    myRow &&
+    !myRow.left_at &&
+    ["accepted", "joined", "connected"].includes(String(myRow.invite_status || "").toLowerCase()),
+  );
 
-  const targetUserIds = [...new Set(participantRows
-    .filter((p: any) => String(p.user_id) !== String(user.id))
-    .filter((p: any) => p.invite_status === "invited" || p.invite_status === "ringing" || p.invite_status === "pending" || !p.invite_status)
-    .filter((p: any) => !p.left_at)
-    .map((p: any) => String(p.user_id)))];
+  if (state === "ringing") {
+    if (!myRow && !isCreator) return json({ error: "Not authorized for this call." }, 403);
+  } else if (state === "ended" || state === "canceled" || state === "cancelled") {
+    // Only the host or somebody who actually joined may end the ringing UI on
+    // every other device.
+    if (!isCreator && !isAcceptedParticipant) {
+      return json({ error: "Not authorized to end this call." }, 403);
+    }
+  } else if (!myRow && !isCreator) {
+    return json({ error: "Not authorized for this call." }, 403);
+  }
+
+  let targetUserIds: string[] = [];
+  if (state === "ended" || state === "canceled" || state === "cancelled") {
+    targetUserIds = [...new Set(participantRows
+      .filter((p: any) => String(p.user_id) !== actorId)
+      .map((p: any) => String(p.user_id)))];
+  } else if (state === "declined" || state === "missed") {
+    const creatorId = String(call.created_by || "");
+    targetUserIds = creatorId && creatorId !== actorId ? [creatorId] : [];
+  } else {
+    // Ring only users who have not joined, declined or left yet.
+    targetUserIds = [...new Set(participantRows
+      .filter((p: any) => String(p.user_id) !== actorId)
+      .filter((p: any) => p.invite_status === "invited" || p.invite_status === "ringing" || p.invite_status === "pending" || !p.invite_status)
+      .filter((p: any) => !p.left_at)
+      .map((p: any) => String(p.user_id)))];
+  }
 
   if (!targetUserIds.length) {
-    return json({ configured: Boolean(projectId && saRaw), sent: 0, reason: "no_targets" });
+    return json({ configured: Boolean(projectId && saRaw), state, sent: 0, reason: "no_targets" });
   }
 
   if (!projectId || !saRaw) {
@@ -234,7 +272,7 @@ Deno.serve(async (req: Request) => {
   }
 
   // Resolve caller/team info for display.
-  let callerName = String(body?.caller_name || body?.callerName || "Study Zone");
+  let callerName = String(body?.caller_name || body?.callerName || "Second Brain");
   let teamName = String(body?.team_name || body?.teamName || "");
   try {
     const [{ data: profile }, { data: team }] = await Promise.all([
@@ -261,6 +299,7 @@ Deno.serve(async (req: Request) => {
   for (const row of tokens || []) {
     const t = String(row.token || "");
     if (!t || seen.has(t)) continue;
+    if (row.platform && String(row.platform).toLowerCase() !== "android") continue;
     seen.add(t);
     uniqueTokens.push(row);
   }
@@ -273,6 +312,7 @@ Deno.serve(async (req: Request) => {
     team_name: teamName,
     conversation_id: String(call.conversation_id || ""),
     scope: String(call.scope || ""),
+    state,
   };
 
   let sent = 0;
@@ -286,6 +326,7 @@ Deno.serve(async (req: Request) => {
   return json({
     configured: true,
     callId: String(call.id),
+    state,
     targets: targetUserIds.length,
     tokens: uniqueTokens.length,
     sent,

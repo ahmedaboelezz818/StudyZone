@@ -1,4 +1,4 @@
-const CACHE_NAME = "studyzone-shell-v28";
+const CACHE_NAME = "studyzone-shell-v35";
 
 const APP_SHELL = [
   "./",
@@ -27,8 +27,13 @@ const APP_SHELL = [
   "./assets/images/achievements-graduation.webp",
   "./app.js",
   "./team-live.css",
+  "./flashcards.css",
   "./team-live-core.js",
   "./team-live.js",
+  "./flashcards-core.js",
+  "./flashcards-db.js",
+  "./flashcards-sync.js",
+  "./flashcards.js",
   "./offline-sync.js",
   "./sync-ui.js",
   "./native-shell.js",
@@ -57,14 +62,18 @@ const APP_SHELL = [
   "./fonts/font-18.woff2",
   "./supabase-config.js",
   "./manifest.json",
+  "./assets/images/second-brain-emblem.png",
+  "./icons/icon-32.png",
+  "./icons/icon-48.png",
+  "./icons/icon-96.png",
   "./icon.svg",
   "./favicon.svg",
   "./favicon.ico",
   "./apple-touch-icon.png",
   "./icons/icon-192.png",
-  "./icons/icon-192-maskable.png",
+  "./icons/maskable-192.png",
   "./icons/icon-512.png",
-  "./icons/icon-512-maskable.png",
+  "./icons/maskable-512.png",
 ];
 
 const APP_SHELL_URLS = APP_SHELL.map(
@@ -93,10 +102,10 @@ self.addEventListener("install", (event) => {
             if (response.ok && response.type === "basic") {
               await cache.put(url, response);
             } else {
-              console.warn("Study Zone: Could not cache:", url);
+              console.warn("Second Brain: Could not cache:", url);
             }
           } catch (error) {
-            console.warn("Study Zone: Asset unavailable:", url, error);
+            console.warn("Second Brain: Asset unavailable:", url, error);
           }
         }),
       );
@@ -148,7 +157,7 @@ self.addEventListener("push", (event) => {
   const title =
     typeof payload.title === "string" && payload.title.trim()
       ? payload.title.slice(0, 140)
-      : "Study Zone";
+      : "Second Brain";
 
   const data = {
     url: typeof payload.url === "string" ? payload.url : (typeof payload.conversation_id === "string" ? `./#team-live?conversation=${payload.conversation_id}` : "./#tasks"),
@@ -276,7 +285,9 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     (async () => {
       const cache = await caches.open(CACHE_NAME);
-      const cached = await cache.match(request);
+      // Cache keys are stored without query strings; browsers request versioned
+      // assets (?v=...). Match ignoring the query so those hits still resolve.
+      const cached = await cache.match(request, { ignoreSearch: true });
 
       try {
         const response = await fetch(request);

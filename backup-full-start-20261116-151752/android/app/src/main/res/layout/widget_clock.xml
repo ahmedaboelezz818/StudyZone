@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_clock_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="14dp"
+    android:background="@color/widget_background">
+
+    <TextView
+        android:id="@+id/widget_clock_date"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:letterSpacing="0.04"
+        android:textColor="@color/widget_muted"
+        android:text="Friday, 13 November" />
+
+    <FrameLayout
+        android:id="@+id/widget_clock_top_rule"
+        android:layout_width="34dp"
+        android:layout_height="2dp"
+        android:layout_marginTop="5dp"
+        android:layout_marginBottom="7dp"
+        android:background="@color/widget_primary" />
+
+    <LinearLayout
+        android:id="@+id/widget_clock_card"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:background="@android:color/transparent">
+
+        <TextClock
+            android:id="@+id/widget_clock_hour"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingLeft="9dp"
+            android:paddingRight="9dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp"
+            android:gravity="center"
+            android:textStyle="bold"
+            android:includeFontPadding="false"
+            android:textSize="42sp"
+            android:textColor="@color/widget_text"
+            android:format12Hour="hh"
+            android:format24Hour="HH" />
+
+        <TextView
+            android:id="@+id/widget_clock_colon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=":"
+            android:textStyle="bold"
+            android:textSize="38sp"
+            android:includeFontPadding="false"
+            android:textColor="@color/widget_primary" />
+
+        <TextClock
+            android:id="@+id/widget_clock_minute"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingLeft="9dp"
+            android:paddingRight="9dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp"
+            android:gravity="center"
+            android:textStyle="bold"
+            android:includeFontPadding="false"
+            android:textSize="42sp"
+            android:textColor="@color/widget_text"
+            android:format12Hour="mm"
+            android:format24Hour="mm" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:orientation="vertical">
+
+            <TextClock
+                android:id="@+id/widget_clock_ampm"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textColor="@color/widget_muted"
+                android:format12Hour="a"
+                android:format24Hour="" />
+
+            <TextClock
+                android:id="@+id/widget_clock_seconds"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="14sp"
+                android:textColor="@color/widget_muted"
+                android:format12Hour="ss"
+                android:format24Hour="ss" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/widget_clock_divider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="9dp"
+        android:layout_marginBottom="6dp"
+        android:background="@color/widget_border" />
+
+    <TextView
+        android:id="@+id/widget_clock_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="11sp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:textColor="@color/widget_muted"
+        android:text="Study Zone" />
+</LinearLayout>

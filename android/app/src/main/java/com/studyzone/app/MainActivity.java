@@ -31,8 +31,16 @@ import org.json.JSONObject;
  */
 public class MainActivity extends BridgeActivity {
 
+    private static volatile boolean inForeground = false;
+
+    /** Used by the FCM service to avoid showing a duplicate native call UI. */
+    public static boolean isInForeground() {
+        return inForeground;
+    }
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        StudyZoneCrashLogger.install(this);
         registerPlugin(StudyZoneIconPlugin.class);
         registerPlugin(StudyZoneWidgetPlugin.class);
         registerPlugin(StudyZonePermissionsPlugin.class);
@@ -78,12 +86,25 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
+        inForeground = true;
         // Re-sync the native clock surfaces with the real system time and the
         // currently selected theme. TextClock updates itself, but a reboot,
         // resize or theme change still needs one refresh.
         StudyZoneClockWidget.updateAll(this);
         StudyZoneClockNotification.sync(this);
         dispatchPendingCallAction();
+    }
+
+    @Override
+    public void onPause() {
+        inForeground = false;
+        super.onPause();
+    }
+
+    @Override
+    public void onDestroy() {
+        inForeground = false;
+        super.onDestroy();
     }
 
     private void handleOpenPage(Intent intent) {

@@ -1,5 +1,5 @@
 /* ============================================================================
-   STUDY ZONE — PREMIUM RESPONSIVE, RTL, THEMES & MOTION
+   SECOND BRAIN — PREMIUM RESPONSIVE, RTL, THEMES & MOTION
    Ensures the new visual layer works on desktop, tablet, phone, Arabic,
    every colour preset, the Pixel visual style and reduced-motion settings.
    ========================================================================== */
@@ -276,15 +276,6 @@
   .modal-actions { flex-direction: column-reverse; }
   .modal-actions .button { width: 100%; }
 
-  .quick-capture-fab {
-    width: 54px;
-    height: 54px;
-    border-radius: 17px;
-    inset-inline-end: calc(15px + var(--safe-right, 0px));
-    inset-block-end: calc(18px + var(--safe-bottom, 0px));
-    font-size: 24px;
-  }
-
   .footer { padding: 14px 14px calc(18px + var(--safe-bottom, 0px)); font-size: 9px; }
   .footer span:nth-child(2) { display: none; }
 }
@@ -441,8 +432,7 @@
 :root[data-visual-style="pixel"] .sz-task,
 :root[data-visual-style="pixel"] .sz-habit-day,
 :root[data-visual-style="pixel"] .sz-ring,
-:root[data-visual-style="pixel"] .sz-donut,
-:root[data-visual-style="pixel"] .quick-capture-fab {
+:root[data-visual-style="pixel"] .sz-donut {
   border-radius: 0 !important;
 }
 
@@ -555,7 +545,6 @@
 @media print {
   .sidebar,
   .topbar,
-  .quick-capture-fab,
   .footer,
   .sz-hero-side { display: none !important; }
   .sz-hero { min-height: 200px; }

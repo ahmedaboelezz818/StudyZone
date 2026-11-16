@@ -2,6 +2,7 @@
 .env*
 node_modules/
 www/
+screenshots/
 android/keystore.properties
 # Firebase configuration for the Android app. It contains no private keys and
 # is intentionally commit-safe; the APK cannot call Firebase without it.

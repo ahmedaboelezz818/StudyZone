@@ -48,5 +48,5 @@ createServer(async (request, response) => {
     response.writeHead(500).end("Unable to read requested file");
   }
 }).listen(port, "127.0.0.1", () => {
-  console.log(`Study Zone is available at http://127.0.0.1:${port}`);
+  console.log(`Second Brain is available at http://127.0.0.1:${port}`);
 });

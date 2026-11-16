@@ -1,5 +1,5 @@
 /* ============================================================================
-   STUDY ZONE — PREMIUM PRODUCTIVITY DASHBOARD
+   SECOND BRAIN — PREMIUM PRODUCTIVITY DASHBOARD
    Visual layer loaded after the original styles. It never replaces data or
    behaviour: every selector styles existing markup through design tokens so
    all theme presets, light mode, RTL and the Pixel style keep working.
@@ -311,11 +311,11 @@ body {
 .brand-mark {
   width: 44px;
   height: 44px;
-  padding: 11px;
+  padding: 3px;
   border-radius: 14px;
-  background: linear-gradient(145deg, var(--sz-blue), var(--sz-purple) 52%, var(--sz-teal));
-  box-shadow: 0 14px 30px -10px rgba(var(--sz-blue-rgb), 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  background: transparent;
+  border: 1px solid rgba(var(--color-primary-rgb, 6, 214, 160), 0.28);
+  box-shadow: 0 14px 30px -12px rgba(var(--accent-rgb, 6, 214, 160), 0.4);
 }
 
 .brand strong { font-size: 19px; letter-spacing: -0.6px; }
