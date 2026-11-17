@@ -198,7 +198,29 @@
     return String(error.message || error.details || error.hint || error).slice(0, 300);
   }
 
+  // Developer-facing diagnostics. Never logs audio/video content, tokens or
+  // credentials — only shapes, states and counts.
+  function logCall(tag, details) {
+    try {
+      console.info(`[team-live-call] ${tag}`, details || {});
+    } catch {
+      /* logging must never break the call */
+    }
+  }
+
+  function describeTrack(track) {
+    if (!track) return null;
+    return {
+      id: String(track.id || "").slice(0, 8),
+      kind: track.kind,
+      enabled: track.enabled,
+      readyState: track.readyState,
+      muted: Boolean(track.muted),
+    };
+  }
+
   let typingTimer = 0;
+  let controlsHideTimer = 0;
   function scheduleTypingSignal() {
     if (typingTimer) window.clearTimeout(typingTimer);
     typingTimer = window.setTimeout(() => {
@@ -1674,7 +1696,7 @@
         <button type="button" class="live-icon-button" data-live-action="pick-attachment" title="${esc(t("Attach a photo or file", "إرفاق صورة أو ملف"))}" aria-label="${esc(t("Attach a photo or file", "إرفاق صورة أو ملف"))}">📎</button>
         <button type="button" class="live-icon-button" data-live-action="voice-start" title="${esc(t("Record voice message", "تسجيل رسالة صوتية"))}" aria-label="${esc(t("Record voice message", "تسجيل رسالة صوتية"))}">🎙</button>
         <textarea name="body" rows="1" maxlength="${core ? core.MAX_MESSAGE_LENGTH : 4000}" data-live-input="draft" placeholder="${esc(t("Write a message…", "اكتب رسالة…"))}" autocomplete="off">${esc(S.draft)}</textarea>
-        <button type="submit" class="button button-primary button-small live-send" ${S.uploading ? "disabled" : ""}>${S.uploading ? esc(t("Sending…", "جارٍ الإرسال…")) : esc(t("Send", "إرسال"))}</button>
+        <button type="button" class="button button-primary button-small live-send" data-live-action="send" ${S.uploading ? "disabled" : ""} aria-label="${esc(t("Send message", "إرسال الرسالة"))}" title="${esc(t("Send message", "إرسال الرسالة"))}">${S.uploading ? esc(t("Sending…", "جارٍ الإرسال…")) : esc(t("Send", "إرسال"))}</button>
       </div>
       <input type="file" data-live-input="attachment" accept="${esc(core ? core.ALLOWED_ATTACHMENT_TYPES.join(",") : "image/*")}" hidden />
       <p class="live-composer-hint">${esc(t("Enter sends • Shift+Enter adds a line • up to 20 MB", "Enter للإرسال • Shift+Enter لسطر جديد • حتى 20 MB"))}</p>
@@ -2413,14 +2435,41 @@
     const user = me();
     const conversationId = S.activeId;
     const client = sb();
-    if (!user || !client || !conversationId || S.uploading) return;
-    const text = String(S.draft || "").trim();
+    // Blocking without feedback made the Send button look broken on mobile.
+    // Always tell the user *why* nothing was sent.
+    if (!user) {
+      console.warn("[team-live] sendMessage blocked: no authenticated session.");
+      toast(t("Sign in to send messages.", "سجّل الدخول لإرسال الرسائل."));
+      return;
+    }
+    if (!client) {
+      console.warn("[team-live] sendMessage blocked: Supabase client is not ready.");
+      toast(t("The chat service is not ready yet. Try again in a moment.", "خدمة المحادثة غير جاهزة بعد. حاول مرة أخرى بعد لحظات."));
+      return;
+    }
+    if (!conversationId) {
+      console.warn("[team-live] sendMessage blocked: no active conversation.");
+      toast(t("No conversation is open.", "لا توجد محادثة مفتوحة."));
+      return;
+    }
+    if (S.uploading) return;
+    // Read the live input value first; a mobile soft keyboard or an unmounted
+    // composer can leave S.draft out of sync with what the user can see.
+    const liveInput = document.querySelector('[data-live-input="draft"]');
+    const rawText = liveInput && typeof liveInput.value === "string" ? liveInput.value : S.draft;
+    const text = String(rawText || "").trim();
     const file = S.pendingFile;
-    if (!text && !file) return;
+    if (!text && !file) {
+      toast(t("Write a message first.", "اكتب رسالة أولًا."));
+      return;
+    }
     if (text.length > (core ? core.MAX_MESSAGE_LENGTH : 4000)) {
       toast(t("That message is too long.", "هذه الرسالة طويلة جدًا."));
       return;
     }
+    // Keep the state in sync with what will be re-rendered on failure, so the
+    // user never loses the draft when a send does not go through.
+    S.draft = text;
 
     const optimisticId = uid();
     const createdAt = new Date().toISOString();
@@ -2525,7 +2574,15 @@
       const info = S.pendingMessages.get(optimisticId);
       S.pendingMessages.delete(optimisticId);
       S.failedMessages.set(optimisticId, info || { row: optimisticRow, text, file, replyTo: S.replyTo });
-      console.error(t("Could not send the message.", "تعذّر إرسال الرسالة."), error);
+      const errorCode = error && error.code ? String(error.code) : "";
+      console.error("[team-live] Could not send the message.", {
+        code: errorCode || undefined,
+        conversationId,
+        authenticated: Boolean(user),
+        messageLength: text.length,
+        hasAttachment: Boolean(file),
+        detail: error && error.message ? error.message : String(error || ""),
+      });
       toast(`${t("Could not send the message.", "تعذّر إرسال الرسالة.")} ${errorMessageText(error)}`);
       renderMessages();
     } finally {
@@ -3035,6 +3092,9 @@
       case "reload-messages":
         if (S.activeId) void loadMessages(S.activeId);
         return;
+      case "send":
+        void sendMessage();
+        return;
       case "clear-message-search":
         S.search = "";
         {
@@ -3202,6 +3262,20 @@
       case "toggle-speaker":
         void toggleSpeaker();
         return;
+      case "toggle-call-more": {
+        const overlay = document.querySelector(".live-call-overlay");
+        if (overlay) {
+          overlay.classList.toggle("more-open");
+          const moreButton = overlay.querySelector('[data-live-action="toggle-call-more"]');
+          if (moreButton) {
+            moreButton.setAttribute(
+              "aria-expanded",
+              overlay.classList.contains("more-open") ? "true" : "false",
+            );
+          }
+        }
+        return;
+      }
       case "toggle-call-chat":
         toggleCallChat();
         return;
@@ -3341,11 +3415,17 @@
         handleAction(action, target, event);
       } catch (error) {
         notifyError(t("Team Live action failed.", "فشل إجراء الفريق مباشر."), error);
+      } finally {
+        // Picking an option from the "⋯" menu closes it (share/chat/mic/add).
+        if (target.closest && target.closest(".live-more-item")) {
+          document.querySelector(".live-call-overlay")?.classList.remove("more-open");
+        }
       }
     });
 
-    // Single tap on the call surface (video area) toggles the control bar.
-    // Buttons, inputs, chat panel and video tiles keep their own behaviour.
+    // Single tap on the call surface toggles the control bar (and retries the
+    // video binding, which helps the Android WebView recover a stalled remote
+    // stream). Buttons, inputs, chat panel and video tiles keep their own behaviour.
     document.addEventListener("click", (event) => {
       const overlay = event.target && event.target.closest
         ? event.target.closest(".live-call-overlay")
@@ -3358,10 +3438,24 @@
         : null;
       if (interactive) return;
       if (event.target.closest("[data-live-action]")) return;
-      // Tapping the call surface toggles between full screen and minimized.
-      // The minimized state is flipped by toggleCallMinimize itself.
-      toggleCallMinimize();
+      toggleCallControls();
+      if (S.call) {
+        try {
+          attachTileStreams();
+        } catch (error) {
+          console.warn("Could not re-attach call media after tap.", error);
+        }
+      }
     });
+    // Any movement/touch inside the call resets the auto-hide timer.
+    document.addEventListener("pointermove", (event) => {
+      if (!event.target || !event.target.closest || !event.target.closest(".live-call-overlay")) return;
+      toggleCallControls(true);
+    }, { passive: true });
+    document.addEventListener("pointerdown", (event) => {
+      if (!event.target || !event.target.closest || !event.target.closest(".live-call-overlay")) return;
+      toggleCallControls(true);
+    }, { passive: true });
 
     document.addEventListener("input", (event) => {
       const input = event.target.closest("[data-live-input]");
@@ -3425,6 +3519,18 @@
       if (S.activeId && S.messages.some((message) => message.attachment_path)) {
         void signAttachments().then(() => renderMessages());
       }
+      // The Android WebView can drop the MediaStream binding when the app is
+      // backgrounded. Re-attaching on return fixes a black remote tile without
+      // touching signaling or Supabase.
+      if (S.call) {
+        logCall("visibility:foreground", { peers: S.call.peers.size, connected: S.call.connectedIds.size });
+        try {
+          renderCallStage();
+          attachTileStreams();
+        } catch (error) {
+          console.warn("Could not re-attach call media after returning to the app.", error);
+        }
+      }
       void checkInvites();
     });
 
@@ -3484,6 +3590,8 @@
   function shutdown() {
     S.destroyed = true;
     try { resetVoiceRecording(); } catch {}
+    window.clearTimeout(controlsHideTimer);
+    controlsHideTimer = 0;
     teardownTeamChannel();
     teardownConversationChannel();
     teardownReadChannel();
@@ -4340,11 +4448,15 @@
       height: { ideal: 540 },
       frameRate: { ideal: 24, max: 30 },
     };
+    logCall("getUserMedia:request", { facing, wantVideo: true });
     try {
       const media = await navigator.mediaDevices.getUserMedia({ audio: false, video: videoSettings });
-      return { stream: media, track: media.getVideoTracks()[0] || null, deviceId: null };
+      const track = media.getVideoTracks()[0] || null;
+      logCall("getUserMedia:camera-ok", { facing, track: describeTrack(track) });
+      return { stream: media, track, deviceId: null };
     } catch (error) {
       const name = mediaErrorCode(error);
+      logCall("getUserMedia:camera-error", { facing, name });
       if (name === "OverconstrainedError" || name === "NotFoundError" || name === "NotReadableError") {
         // Exact facingMode is not available everywhere (some WebViews expose an
         // unnamed camera set). Try the deviceId that matches the facing mode.
@@ -4367,7 +4479,9 @@
               frameRate: { ideal: 24, max: 30 },
             },
           });
-          return { stream: media, track: media.getVideoTracks()[0] || null, deviceId: chosen.deviceId };
+          const track = media.getVideoTracks()[0] || null;
+          logCall("getUserMedia:camera-fallback-ok", { facing, track: describeTrack(track) });
+          return { stream: media, track, deviceId: chosen.deviceId };
         }
         // Final fallback: ideal facingMode, the browser picks the closest camera.
         const media = await navigator.mediaDevices.getUserMedia({
@@ -4379,7 +4493,9 @@
             frameRate: { ideal: 24, max: 30 },
           },
         });
-        return { stream: media, track: media.getVideoTracks()[0] || null, deviceId: null };
+        const track = media.getVideoTracks()[0] || null;
+        logCall("getUserMedia:camera-ideal-ok", { facing, track: describeTrack(track) });
+        return { stream: media, track, deviceId: null };
       }
       throw error;
     }
@@ -5292,6 +5408,12 @@
       console.error("Could not create a peer connection.", error);
       return null;
     }
+    logCall("peer:create", {
+      remote: String(id).slice(0, 8),
+      iceServers: (call.iceServers || []).length,
+      turnConfigured: Boolean(S.turnConfigured),
+      localTracks: call.localStream ? call.localStream.getTracks().map(describeTrack) : [],
+    });
     const peer = {
       uid: id,
       pc,
@@ -5311,12 +5433,33 @@
     };
 
     pc.onicecandidate = (event) => {
+      const candidate = event.candidate ? {
+        type: String(event.candidate.type || ""),
+        protocol: String(event.candidate.protocol || ""),
+      } : null;
+      logCall("ice:candidate", { remote: String(id).slice(0, 8), candidate });
       if (event.candidate) {
         void sendSignal("ice", candidateJson(event.candidate), id);
       }
     };
+    pc.oniceconnectionstatechange = () => {
+      logCall("ice:state", {
+        remote: String(id).slice(0, 8),
+        ice: pc.iceConnectionState,
+        connection: pc.connectionState,
+        signaling: pc.signalingState,
+      });
+    };
+    pc.onsignalingstatechange = () => {
+      logCall("signalling:state", { remote: String(id).slice(0, 8), signaling: pc.signalingState });
+    };
     pc.ontrack = (event) => {
       const stream = event.streams && event.streams[0];
+      logCall("ontrack", {
+        remote: String(id).slice(0, 8),
+        track: describeTrack(event.track),
+        streamTracks: stream ? stream.getTracks().map(describeTrack) : [],
+      });
       if (stream) {
         for (const track of stream.getTracks()) {
           if (!peer.remoteStream.getTracks().some((item) => item.id === track.id)) {
@@ -5422,6 +5565,12 @@
     } catch (error) {
       console.warn("Could not attach local media to the peer.", error);
     }
+    logCall("peer:media-attached", {
+      remote: String(id).slice(0, 8),
+      audioSender: Boolean(peer.audioSender),
+      videoSender: Boolean(peer.videoSender),
+      screenTrack: Boolean(call.screenStream),
+    });
 
     call.peers.set(id, peer);
     return peer;
@@ -5481,6 +5630,7 @@
     const client = sb();
     if (!call || !client) return;
     try {
+      logCall("signal:send", { type, to: String(toUserId || "").slice(0, 8) || "broadcast" });
       const { error } = await client.from("team_call_signals").insert({
         call_id: call.id,
         from_user_id: myId(),
@@ -5488,7 +5638,7 @@
         signal_type: type,
         payload: payload || {},
       });
-      if (error) console.warn("Could not send a call signal.", error);
+      if (error) console.warn("Could not send a call signal.", { code: error.code, message: error.message });
     } catch (error) {
       console.warn("Could not send a call signal.", error);
     }
@@ -5515,6 +5665,11 @@
     const from = String(row.from_user_id || "");
     if (!from || from === myId()) return;
     if (row.to_user_id && String(row.to_user_id) !== myId()) return;
+    logCall("signal:recv", {
+      type: row.signal_type,
+      from: String(from).slice(0, 8),
+      to: row.to_user_id ? String(row.to_user_id).slice(0, 8) : "broadcast",
+    });
     if (row.signal_type === "bye") {
       closePeer(from);
       return;
@@ -5912,50 +6067,62 @@
     updateCallHeader();
     renderMicPicker();
     updateCallTimer();
+    // Controls start visible, then fade away after a few idle seconds.
+    document.querySelector(".live-call-overlay")?.classList.remove("controls-hidden");
+    scheduleControlsAutoHide();
   }
 
   function callOverlayMarkup() {
     const call = S.call;
     if (!call) return "";
     const group = call.scope !== "direct";
-    return `<div class="live-call-overlay ${call.minimized ? "minimized" : ""}" role="dialog" aria-label="${esc(callTitle())}">
+    const isAudio = call.call_type === "audio";
+    // Header shows the other participant's avatar for 1:1 calls, or a group glyph.
+    const peerRow = (call.participants || []).find(
+      (row) => String(row.user_id) !== myId() && !row.left_at,
+    );
+    const peerId = privateCallPeerId(call) || (peerRow ? String(peerRow.user_id) : "");
+    const avatarMarkup = peerId
+      ? memberAvatar(peerId, "team-avatar")
+      : `<span class="live-call-avatar-group" aria-hidden="true">👥</span>`;
+    return `<div class="live-call-overlay ${call.minimized ? "minimized" : ""} ${isAudio ? "audio-call" : ""}" role="dialog" aria-label="${esc(callTitle())}">
       <header class="live-call-head">
+        <button type="button" class="live-call-head-btn" data-live-action="toggle-call-minimize" aria-label="${esc(t("Minimize call", "تصغير المكالمة"))}" title="${esc(t("Minimize", "تصغير"))}"><span aria-hidden="true">▁</span></button>
         <div class="live-call-meta">
-          <span class="live-call-pulse" aria-hidden="true"></span>
-          <div>
+          <span class="live-call-avatar">${avatarMarkup}</span>
+          <div class="live-call-meta-copy">
             <strong data-live-call-title dir="auto">${esc(callTitle())}</strong>
-            <small><span data-live-call-status>${esc(callStatusLabel())}</span> · <span data-live-timer>00:00</span><span class="live-quality" data-live-quality></span></small>
+            <small><span data-live-pulse class="live-call-pulse" aria-hidden="true"></span><span data-live-call-status>${esc(callStatusLabel())}</span><span class="live-call-dot" aria-hidden="true">·</span><span data-live-timer>00:00</span><span class="live-quality" data-live-quality></span></small>
           </div>
         </div>
-        <div class="live-call-head-actions">
-          <button type="button" class="live-icon-button" data-live-action="toggle-call-minimize" aria-label="${esc(t("Minimize call", "تصغير المكالمة"))}" title="${esc(t("Minimize", "تصغير"))}">▁</button>
-          <button type="button" class="live-icon-button danger" data-live-action="end-call" aria-label="${esc(t("End call", "إنهاء المكالمة"))}" title="${esc(t("End call", "إنهاء المكالمة"))}">×</button>
-        </div>
+        <button type="button" class="live-call-head-btn" data-live-action="toggle-call-more" aria-expanded="false" aria-label="${esc(t("More options", "خيارات إضافية"))}" title="${esc(t("More", "المزيد"))}"><span aria-hidden="true">⋯</span></button>
       </header>
+      <div class="live-call-more" role="menu" aria-label="${esc(t("Call options", "خيارات المكالمة"))}">
+        <button type="button" class="live-more-item" role="menuitem" data-live-action="toggle-mic-picker"><span aria-hidden="true">⚙</span><small>${esc(t("Mic", "الميكروفون"))}</small></button>
+        <button type="button" class="live-more-item" role="menuitem" data-live-action="toggle-screen-share" data-live-screen aria-pressed="${call.screenSharing}"><span aria-hidden="true">▤</span><small>${esc(call.screenSharing ? t("Stop share", "إيقاف المشاركة") : t("Share", "مشاركة"))}</small></button>
+        <button type="button" class="live-more-item" role="menuitem" data-live-action="toggle-call-chat" data-live-chat-toggle aria-pressed="${call.chatOpen}"><span aria-hidden="true">💬</span><small>${esc(t("Chat", "المحادثة"))}</small></button>
+        ${group ? `<button type="button" class="live-more-item" role="menuitem" data-live-action="open-add-member"><span aria-hidden="true">＋</span><small>${esc(t("Add member", "إضافة عضو"))}</small></button>` : ""}
+      </div>
       <div class="live-call-body">
         <div class="live-video-grid" data-live-grid></div>
-        <aside class="live-call-chat ${call.chatOpen ? "open" : ""}" data-live-call-chat>
-          <header>
-            <strong>${esc(t("In-call chat", "محادثة أثناء المكالمة"))}</strong>
-            <button type="button" class="live-icon-button live-icon-button-small" data-live-action="toggle-call-chat" aria-label="${esc(t("Close chat", "إغلاق المحادثة"))}">×</button>
-          </header>
-          <div class="live-call-messages" data-live-call-messages></div>
-          <form class="live-call-chat-form" data-live-form="call-chat">
-            <input type="text" name="body" maxlength="1000" data-live-input="call-chat" value="${esc(S.callChatDraft || "")}" placeholder="${esc(t("Message the call…", "راسل المكالمة…"))}" autocomplete="off" />
-            <button type="submit" class="button button-primary button-small">${esc(t("Send", "إرسال"))}</button>
-          </form>
-        </aside>
       </div>
+      <aside class="live-call-chat ${call.chatOpen ? "open" : ""}" data-live-call-chat>
+        <header>
+          <strong>${esc(t("In-call chat", "محادثة أثناء المكالمة"))}</strong>
+          <button type="button" class="live-icon-button live-icon-button-small" data-live-action="toggle-call-chat" aria-label="${esc(t("Close chat", "إغلاق المحادثة"))}">×</button>
+        </header>
+        <div class="live-call-messages" data-live-call-messages></div>
+        <form class="live-call-chat-form" data-live-form="call-chat">
+          <input type="text" name="body" maxlength="1000" data-live-input="call-chat" value="${esc(S.callChatDraft || "")}" placeholder="${esc(t("Message the call…", "راسل المكالمة…"))}" autocomplete="off" />
+          <button type="submit" class="button button-primary button-small">${esc(t("Send", "إرسال"))}</button>
+        </form>
+      </aside>
       <footer class="live-call-controls">
-        <button type="button" class="live-control" data-live-action="toggle-mute" data-live-mute aria-pressed="${call.muted}" title="${esc(t("Mute", "كتم"))}"><span>${call.muted ? "🔇" : "🎙"}</span><small>${esc(call.muted ? t("Unmute", "إلغاء الكتم") : t("Mute", "كتم"))}</small></button>
-        <button type="button" class="live-control" data-live-action="toggle-mic-picker" data-live-mic-picker-toggle title="${esc(t("Select microphone", "اختيار الميكروفون"))}"><span>⚙</span><small>${esc(t("Mic", "الميكروفون"))}</small></button>
-        <button type="button" class="live-control" data-live-action="toggle-camera" data-live-camera aria-pressed="${call.cameraOn}" title="${esc(t("Camera", "الكاميرا"))}"><span>${call.cameraOn ? "▣" : "▢"}</span><small>${esc(call.cameraOn ? t("Camera off", "إيقاف الكاميرا") : t("Camera on", "تشغيل الكاميرا"))}</small></button>
-        <button type="button" class="live-control" data-live-action="switch-camera" data-live-switch title="${esc(t("Switch camera", "تبديل الكاميرا"))}"><span>⇄</span><small>${esc(t("Flip", "تبديل"))}</small></button>
-        <button type="button" class="live-control" data-live-action="toggle-speaker" data-live-speaker aria-pressed="${call.speakerOn}" title="${esc(t("Speaker", "السماعة"))}"><span>🔊</span><small>${esc(call.speakerOn ? t("Speaker on", "السماعة تعمل") : t("Speaker off", "السماعة مغلقة"))}</small></button>
-        <button type="button" class="live-control" data-live-action="toggle-screen-share" data-live-screen aria-pressed="${call.screenSharing}" title="${esc(t("Share screen", "مشاركة الشاشة"))}"><span>▤</span><small>${esc(call.screenSharing ? t("Stop share", "إيقاف المشاركة") : t("Share", "مشاركة"))}</small></button>
-        ${group ? `<button type="button" class="live-control" data-live-action="open-add-member" title="${esc(t("Add member", "إضافة عضو"))}"><span>＋</span><small>${esc(t("Add", "إضافة"))}</small></button>` : ""}
-        <button type="button" class="live-control" data-live-action="toggle-call-chat" data-live-chat-toggle aria-pressed="${call.chatOpen}" title="${esc(t("Chat", "المحادثة"))}"><span>💬</span><small>${esc(t("Chat", "المحادثة"))}</small></button>
-        <button type="button" class="live-control danger" data-live-action="end-call" title="${esc(t("End call", "إنهاء المكالمة"))}"><span>☎</span><small>${esc(t("End", "إنهاء"))}</small></button>
+        <button type="button" class="live-control" data-live-action="toggle-mute" data-live-mute aria-pressed="${call.muted}" title="${esc(t("Mute", "كتم"))}" aria-label="${esc(t("Mute", "كتم"))}"><span aria-hidden="true">${call.muted ? "🔇" : "🎙"}</span><small>${esc(call.muted ? t("Unmute", "إلغاء الكتم") : t("Mute", "كتم"))}</small></button>
+        <button type="button" class="live-control" data-live-action="toggle-camera" data-live-camera aria-pressed="${call.cameraOn}" title="${esc(t("Camera", "الكاميرا"))}" aria-label="${esc(t("Camera", "الكاميرا"))}" ${isAudio ? "hidden" : ""}><span aria-hidden="true">${call.cameraOn ? "▣" : "▢"}</span><small>${esc(call.cameraOn ? t("Stop", "إيقاف") : t("Camera", "الكاميرا"))}</small></button>
+        <button type="button" class="live-control" data-live-action="switch-camera" data-live-switch title="${esc(t("Switch camera", "تبديل الكاميرا"))}" aria-label="${esc(t("Switch camera", "تبديل الكاميرا"))}" ${isAudio ? "hidden" : ""}><span aria-hidden="true">⇄</span><small>${esc(t("Flip", "تبديل"))}</small></button>
+        <button type="button" class="live-control" data-live-action="toggle-speaker" data-live-speaker aria-pressed="${call.speakerOn}" title="${esc(t("Speaker", "السماعة"))}" aria-label="${esc(t("Speaker", "السماعة"))}"><span aria-hidden="true">🔊</span><small>${esc(call.speakerOn ? t("Speaker on", "السماعة تعمل") : t("Speaker", "السماعة"))}</small></button>
+        <button type="button" class="live-control end-call" data-live-action="end-call" title="${esc(t("End call", "إنهاء المكالمة"))}" aria-label="${esc(t("End call", "إنهاء المكالمة"))}"><span class="end-call-glyph" aria-hidden="true"></span><small>${esc(t("End", "إنهاء"))}</small></button>
       </footer>
       <div class="live-mic-picker" data-live-mic-picker role="dialog" aria-label="${esc(t("Microphone options", "خيارات الميكروفون"))}"></div>
       ${call.screenSharing ? `<p class="live-screen-banner" role="status" aria-live="polite"><span>▤</span> ${esc(t("You are sharing your screen", "أنت تشارك شاشتك"))} <button type="button" class="button button-ghost button-small" data-live-action="toggle-screen-share">${esc(t("Stop", "إيقاف"))}</button></p>` : ""}
@@ -6030,6 +6197,7 @@
       mirrorSelf ? "mirror-self" : "",
       opts.main ? "main-tile" : "",
       opts.pip ? "pip-tile" : "",
+      opts.mini ? "mini-tile" : "",
       speaking ? "speaking" : "",
     ].filter(Boolean).join(" ");
     return `<div class="${classes}" data-live-tile="${esc(id)}" data-self="${self ? "1" : "0"}">
@@ -6051,11 +6219,39 @@
       .sort((a, b) => (String(a.user_id) === myId() ? 1 : 0) - (String(b.user_id) === myId() ? 1 : 0));
     const isAudio = call.call_type === "audio";
     const focusLayout = !isAudio && rows.length === 2;
-    host.className = `live-video-grid count-${Math.min(rows.length, 6)} ${isAudio ? "audio-only" : ""} ${focusLayout ? "focus-layout" : ""}`;
+    const multiLayout = !isAudio && rows.length > 2;
+    host.className = `live-video-grid count-${Math.min(rows.length, 6)} ${isAudio ? "audio-only" : ""} ${focusLayout ? "focus-layout" : ""} ${multiLayout ? "multi" : ""}`;
+    logCall("stage:render", {
+      rows: rows.length,
+      audio: isAudio,
+      focusLayout,
+      multiLayout,
+      remoteActiveVideoTracks: rows
+        .filter((row) => String(row.user_id) !== myId())
+        .map((row) => ({
+          id: String(row.user_id).slice(0, 8),
+          liveVideo: Boolean(call.peers?.get(String(row.user_id))?.remoteStream?.getVideoTracks().some((track) => track.readyState === "live")),
+        })),
+    });
     if (focusLayout) {
       const remote = rows.find((r) => String(r.user_id) !== myId()) || rows[0];
       const self = rows.find((r) => String(r.user_id) === myId()) || rows[1];
       host.innerHTML = [tileMarkup(remote, { main: true }), tileMarkup(self, { pip: true })].join("");
+    } else if (multiLayout) {
+      // Main spotlight: the speaking participant if any, else the first remote
+      // participant, else the self tile. Remaining participants scroll in a strip.
+      const remoteRows = rows.filter((row) => String(row.user_id) !== myId());
+      const speakingRemote =
+        remoteRows.find((row) => call.speakingIds?.has(String(row.user_id)) && tileHasLiveVideo(String(row.user_id))) ||
+        remoteRows.find((row) => call.speakingIds?.has(String(row.user_id)));
+      const main = speakingRemote || remoteRows[0] || rows[0];
+      const strip = rows.filter((row) => String(row.user_id) !== String(main.user_id));
+      host.innerHTML = `<div class="live-call-multi">
+        <div class="live-call-main">${tileMarkup(main, { main: true })}</div>
+        <div class="live-call-strip" aria-label="${esc(t("Participants", "المشاركون"))}">${strip
+          .map((row) => tileMarkup(row, { mini: true }))
+          .join("")}</div>
+      </div>`;
     } else {
       host.innerHTML = rows.map((row) => tileMarkup(row)).join("");
     }
@@ -6071,7 +6267,13 @@
     if (localVideo) {
       localVideo.srcObject = call.localStream;
       localVideo.muted = true;
+      logCall("attach:local", {
+        tracks: call.localStream ? call.localStream.getTracks().map(describeTrack) : [],
+        videoElement: true,
+      });
       playVideoSafely(localVideo, "local");
+    } else {
+      logCall("attach:local", { videoElement: false, tracks: call.localStream ? call.localStream.getTracks().length : 0 });
     }
     syncTileVideoVisibility(myId());
     for (const [id, peer] of call.peers) {
@@ -6081,21 +6283,30 @@
 
   function playVideoSafely(video, label) {
     if (!video) return;
+    const call = S.call;
     try {
       const result = video.play();
       if (result && typeof result.catch === "function") {
         result.catch((error) => {
           // Autoplay can be rejected in a WebView until a user gesture. Retry
           // once on the next tick so a late gesture unblocks playback.
-          console.warn(`Could not start ${label} video playback.`, error);
+          console.error(`[team-live-call] ${label} video play() was rejected.`, error);
+          logCall("video:play-rejected", { label, error: error && error.name ? error.name : "unknown" });
+          if (call && (!call.videoPlayWarnAt || Date.now() - call.videoPlayWarnAt > 15000)) {
+            call.videoPlayWarnAt = Date.now();
+            toast(t("The video could not start. Tap the screen to retry.", "تعذر تشغيل الفيديو. اضغط على الشاشة لإعادة المحاولة."));
+          }
           window.setTimeout(() => {
             const retry = video.play();
-            if (retry && typeof retry.catch === "function") retry.catch(() => {});
+            if (retry && typeof retry.catch === "function") {
+              retry.catch((retryError) => logCall("video:play-retry-rejected", { label, error: retryError && retryError.name ? retryError.name : "unknown" }));
+            }
           }, 400);
         });
       }
     } catch (error) {
-      console.warn(`Could not start ${label} video playback.`, error);
+      console.error(`[team-live-call] ${label} video play() threw.`, error);
+      logCall("video:play-threw", { label, error: error && error.name ? error.name : "unknown" });
     }
   }
 
@@ -6164,15 +6375,30 @@
 
   function attachRemoteStream(userId, stream) {
     if (!stream) return;
-    let video = document.querySelector(`[data-live-tile="${String(userId)}"] video`);
+    const remoteId = String(userId);
+    const videoTracks = stream.getVideoTracks().map(describeTrack);
+    logCall("attach:remote", {
+      remote: remoteId.slice(0, 8),
+      tracks: stream.getTracks().map(describeTrack),
+      videoTracks,
+    });
+    let video = document.querySelector(`[data-live-tile="${remoteId}"] video`);
     if (!video && S.call) {
       renderCallStage();
-      video = document.querySelector(`[data-live-tile="${String(userId)}"] video`);
+      video = document.querySelector(`[data-live-tile="${remoteId}"] video`);
+      logCall("attach:remote:after-render", { remote: remoteId.slice(0, 8), videoElement: Boolean(video) });
     }
     if (video) {
       if (video.srcObject !== stream) video.srcObject = stream;
       video.muted = false;
       playVideoSafely(video, "remote");
+      logCall("attach:remote:ok", {
+        remote: remoteId.slice(0, 8),
+        hasSrcObject: Boolean(video.srcObject),
+        videoTrackLive: videoTracks.some((track) => track.readyState === "live"),
+      });
+    } else {
+      logCall("attach:remote:missing-video-element", { remote: remoteId.slice(0, 8) });
     }
     syncTileVideoVisibility(userId);
   }
@@ -6386,6 +6612,7 @@
   async function toggleCamera() {
     const call = S.call;
     if (!call) return;
+    logCall("camera:toggle", { cameraOn: Boolean(call.cameraOn), hasTrack: Boolean(call.videoTrack) });
     if (call.videoTrack) {
       call.videoTrack.stop();
       call.localStream.removeTrack(call.videoTrack);
@@ -6674,7 +6901,38 @@
     const call = S.call;
     if (!call) return;
     call.minimized = !call.minimized;
+    if (call.minimized) {
+      document.querySelector(".live-call-overlay")?.classList.add("controls-hidden");
+      window.clearTimeout(controlsHideTimer);
+      controlsHideTimer = 0;
+    } else {
+      document.querySelector(".live-call-overlay")?.classList.remove("controls-hidden");
+      scheduleControlsAutoHide();
+    }
     updateCallControls();
+  }
+
+  function scheduleControlsAutoHide() {
+    window.clearTimeout(controlsHideTimer);
+    controlsHideTimer = window.setTimeout(() => {
+      const overlay = document.querySelector(".live-call-overlay");
+      const call = S.call;
+      // Never hide the controls while the call is minimized or the
+      // participants/team list is being read.
+      if (overlay && call && !call.minimized) overlay.classList.add("controls-hidden");
+    }, 4200);
+  }
+
+  function toggleCallControls(force) {
+    const overlay = document.querySelector(".live-call-overlay");
+    if (!overlay) return;
+    const show = typeof force === "boolean" ? force : overlay.classList.contains("controls-hidden");
+    overlay.classList.toggle("controls-hidden", !show);
+    if (show) scheduleControlsAutoHide();
+    else {
+      window.clearTimeout(controlsHideTimer);
+      controlsHideTimer = 0;
+    }
   }
 
   function openAddMemberSheet() {
@@ -6816,6 +7074,8 @@
     const call = S.call;
     if (!call) return;
     S.call = null;
+    window.clearTimeout(controlsHideTimer);
+    controlsHideTimer = 0;
     S.endingCallIds.delete(String(call.id));
     S.mic.pickerOpen = false;
     void stopMicTest();
