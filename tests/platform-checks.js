@@ -82,7 +82,26 @@ check("Native shell creates reminder channels", native.includes("createChannel")
 check("Native shell schedules tasks", native.includes("syncTaskReminders"));
 check("Native shell schedules focus completion", native.includes("syncFocusReminder"));
 check("Native shell requests notification permission", native.includes("requestPermissions"));
-check("Native shell registers push tokens", native.includes("PushNotifications.register"));
+check(
+  "Native shell registers push tokens through the Firebase guard",
+  native.includes("pushGuard.register()") &&
+    !/await\s+PushNotifications\.register\(\)/.test(native),
+);
+const pushPlugin = read(
+  "android/app/src/main/java/com/studyzone/app/StudyZonePushPlugin.java",
+);
+check(
+  "Push plugin refuses to call FirebaseMessaging before Firebase is ready",
+  pushPlugin.includes("FirebaseApp.getApps") &&
+    pushPlugin.includes("missing-google-services") &&
+    pushPlugin.includes("FirebaseMessaging.getInstance()"),
+);
+check(
+  "Push plugin is registered in MainActivity",
+  read("android/app/src/main/java/com/studyzone/app/MainActivity.java").includes(
+    "registerPlugin(StudyZonePushPlugin.class)",
+  ),
+);
 check("Native shell keeps push tokens owner-scoped", native.includes("device_push_tokens"));
 check(
   "Push token upsert targets the owner/token unique key",

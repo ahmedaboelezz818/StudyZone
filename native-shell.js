@@ -13,11 +13,54 @@
 (() => {
   "use strict";
 
+  // Never leave the app in a "frozen splash" state if the WebView, plugins or
+  // Supabase misbehave at startup. The SplashScreen plugin hides itself.
+  const hideSplashSafe = () => {
+    try {
+      const sp = window.Capacitor?.Plugins?.SplashScreen;
+      if (sp && typeof sp.hide === "function") {
+        sp.hide({ fadeOutDuration: 220 }).catch(() => {});
+      }
+    } catch (_) {
+      /* nothing else we can do */ }
+  };
+  // Survive a JS/Plugin failure at app start: always try to hide the splash so
+  // the user is never stuck.
+  window.addEventListener("error", () => hideSplashSafe(), { once: true, capture: true });
+  window.addEventListener("unhandledrejection", () => hideSplashSafe(), { once: true, capture: true });
+
+  // One-time crash diagnostic: if the native layer recorded an uncaught
+  // exception from a previous launch, surface it to the console (visible in
+  // logcat) and at the top of the DOM so the user can describe it.
+  try {
+    const permissions = window.Capacitor?.Plugins?.StudyZonePermissions;
+    if (permissions && typeof permissions.readLastCrash === "function") {
+      permissions.readLastCrash().then((result) => {
+        const trace = String(result?.trace || "").trim();
+        if (!trace) return;
+        console.error("[Second Brain] previous native crash:\n" + trace);
+        const banner = document.createElement("pre");
+        banner.className = "startup-crash-banner";
+        banner.textContent =
+          "Second Brain crashed last launch. Trace (first 2000 chars):\n" + trace.slice(0, 2000);
+        banner.style.cssText =
+          "position:fixed;left:12px;right:12px;bottom:12px;z-index:2147483647;" +
+          "max-height:45vh;overflow:auto;white-space:pre-wrap;background:#2b1010;" +
+          "color:#fca5a5;border:1px solid #ff6b6b;border-radius:12px;padding:12px;" +
+          "font:11px/1.5 ui-monospace,monospace;user-select:text;";
+        const host = document.body || document.documentElement;
+        host.appendChild(banner);
+        try { permissions.clearLastCrash?.(); } catch (_) {}
+      }).catch(() => { /* permissions plugin not ready — fine */ });
+    }
+  } catch (_) { /* ignore */ }
+
   const cap = window.Capacitor;
   const plugins = cap?.Plugins || {};
   const isNative = Boolean(cap?.isNativePlatform?.());
   const platform = cap?.getPlatform?.() || "web";
   if (!isNative) {
+    try { hideSplashSafe(); } catch (_) { /* ignore */ }
     window.StudyZoneNotifications = window.StudyZoneNotifications || {
       isNative: false,
       requestPermission: async () =>
@@ -589,29 +632,93 @@
     try { localStorage.removeItem(PUSH_TOKEN_KEY); } catch {}
   }
 
+  // Firebase can only be used when android/app/google-services.json was
+  // processed by the Google Services Gradle plugin. @capacitor/push-notifications
+  // calls FirebaseMessaging.getInstance() unconditionally, which throws
+  // IllegalStateException natively (and kills the app) when Firebase has no
+  // default app. StudyZonePush answers "is Firebase ready?" first and performs
+  // the token request itself, so the unguarded path is never reached.
+  const pushGuard = window.Capacitor?.Plugins?.StudyZonePush || null;
+  let pushUnavailableLogged = false;
+
+  function reportPushUnavailable(reason) {
+    if (pushUnavailableLogged) return;
+    pushUnavailableLogged = true;
+    console.info(
+      `[StudyZonePush] push notifications are inactive (${reason || "firebase-unavailable"}). ` +
+        "Add android/app/google-services.json for com.studyzone.app and rebuild to enable FCM. " +
+        "In-app notifications and Team Live keep working.",
+    );
+  }
+
   const push = {
     registering: false,
+    configured: null,
+    async status() {
+      if (!pushGuard) {
+        this.configured = false;
+        return { configured: false, reason: "guard-plugin-missing" };
+      }
+      try {
+        const result = await pushGuard.status();
+        this.configured = Boolean(result?.configured);
+        return {
+          configured: this.configured,
+          reason: result?.reason || (this.configured ? "ok" : "firebase-unavailable"),
+        };
+      } catch (error) {
+        this.configured = false;
+        console.warn("[StudyZonePush] could not read Firebase status", error);
+        return { configured: false, reason: "status-failed" };
+      }
+    },
     async register() {
-      if (!PushNotifications || this.registering) return null;
+      if (this.registering) return null;
       this.registering = true;
       try {
-        let permission = await PushNotifications.checkPermissions();
-        if (permission?.receive !== "granted")
-          permission = await PushNotifications.requestPermissions();
-        if (permission?.receive !== "granted") {
-          console.info("[StudyZonePush] notification permission was not granted");
+        // Never call the unguarded native register(): it would throw
+        // "Default FirebaseApp is not initialized" and close the app.
+        const status = await this.status();
+        if (!status.configured) {
+          reportPushUnavailable(status.reason);
           return null;
         }
-        await PushNotifications.register();
-        // The registration listener saves the token. If the user was not signed
-        // in yet, or the network was down, retry the stored token here.
+        if (PushNotifications) {
+          let permission = await PushNotifications.checkPermissions();
+          if (permission?.receive !== "granted")
+            permission = await PushNotifications.requestPermissions();
+          if (permission?.receive !== "granted") {
+            console.info("[StudyZonePush] notification permission was not granted");
+            return null;
+          }
+        }
+        // Guarded native token request: resolves even when Firebase is not
+        // configured, and stores the token through the existing owner-scoped
+        // device_push_tokens upsert. A timeout keeps this.registering from
+        // staying stuck if the token task never completes (no network).
+        const result = await Promise.race([
+          pushGuard.register(),
+          new Promise((resolve) =>
+            window.setTimeout(
+              () => resolve({ configured: this.configured, reason: "token-timeout", token: "" }),
+              15000,
+            ),
+          ),
+        ]);
+        if (result?.configured === false) {
+          reportPushUnavailable(result.reason);
+          return null;
+        }
+        if (result?.token) await this.saveToken(result.token);
+        if (result?.error)
+          console.warn("[StudyZonePush] FCM token unavailable", result.error);
+        // The registration listener also saves refreshed tokens. If the user
+        // was not signed in yet, or the network was down, retry the stored
+        // token here.
         await this.flushToken();
-        return permission;
+        return result || null;
       } catch (error) {
-        console.warn(
-          "[StudyZonePush] push registration needs Firebase configuration",
-          error,
-        );
+        console.warn("[StudyZonePush] push registration was skipped", error);
         return null;
       } finally {
         this.registering = false;
@@ -739,6 +846,7 @@
   // ---- Lifecycle ----------------------------------------------------------
   window.StudyZonePush = {
     register: () => push.register(),
+    status: () => push.status(),
     flush: () => push.flushToken(),
     saveToken: (token) => push.saveToken(token),
     unregister: () => removeDevicePushToken(localStorage.getItem(PUSH_TOKEN_KEY)),
@@ -919,4 +1027,6 @@
   } else {
     notifications.scheduleFromApp();
   }
+  // Last resort: always try to hide the splash at the end of startup.
+  try { hideSplashSafe(); } catch (_) { /* ignore */ }
 })();

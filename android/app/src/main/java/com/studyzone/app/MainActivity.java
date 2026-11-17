@@ -47,6 +47,9 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(StudyZoneClockPlugin.class);
         registerPlugin(StudyZoneCallServicePlugin.class);
         registerPlugin(StudyZoneScreenCapturePlugin.class);
+        // Must be registered before the web layer asks for a push token: it is
+        // the only place allowed to call FirebaseMessaging.getInstance().
+        registerPlugin(StudyZonePushPlugin.class);
         super.onCreate(savedInstanceState);
 
         handleOpenPage(getIntent());
