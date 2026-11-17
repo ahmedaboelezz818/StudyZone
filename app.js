@@ -5823,28 +5823,34 @@
         if (!element.getAttribute("alt")) element.setAttribute("alt", "");
       }
     };
+    // Iterative walk. The previous version called walk(node) again after each
+    // unwrap, restarting the whole parent scan and nesting one frame per
+    // disallowed element — this is the stack overflow behind "Maximum call
+    // stack size exceeded" when a note carries deeply nested HTML.
     const walk = (node) => {
-      [...node.childNodes].forEach((child) => {
-        if (child.nodeType === Node.TEXT_NODE) return;
-        if (child.nodeType !== Node.ELEMENT_NODE) {
-          child.remove();
-          return;
-        }
+      const children = [...node.childNodes];
+      for (let i = 0; i < children.length; i += 1) {
+        const child = children[i];
+        // A node may already have been removed/replaced by an earlier pass.
+        if (!child.isConnected) continue;
+        if (child.nodeType === Node.TEXT_NODE) continue;
+        if (child.nodeType !== Node.ELEMENT_NODE) { child.remove(); continue; }
         const tag = child.tagName.toLowerCase();
         if (RICH_DROP_TAGS.has(tag)) {
           child.remove();
-          return;
+          continue;
         }
         if (!RICH_ALLOWED_TAGS.has(tag)) {
           const fragment = doc.createDocumentFragment();
           while (child.firstChild) fragment.appendChild(child.firstChild);
           child.replaceWith(fragment);
-          walk(node);
-          return;
+          // Process the promoted children inline (no re-walk, no stack growth).
+          children.splice(i + 1, 0, ...fragment.childNodes);
+          continue;
         }
         cleanAttributes(child);
         walk(child);
-      });
+      }
     };
     walk(root);
     return root.innerHTML;
@@ -14735,7 +14741,19 @@
     dashboardHeroDimTimer = window.setInterval(updateDashboardHeroDimming, 30000);
   }
 
+  let renderReentryDepth = 0;
+  const RENDER_MAX_DEPTH = 8;
+
   function render() {
+    // Guard against recursive render cycles (render -> renderer -> render ...).
+    // Without it a cycle ends in "Maximum call stack size exceeded".
+    if (renderReentryDepth > RENDER_MAX_DEPTH) {
+      throw new RangeError(
+        "render() re-entered too deeply (recursive render loop detected)",
+      );
+    }
+    renderReentryDepth += 1;
+    try {
     if (scheduledRenderHandle) {
       window.cancelAnimationFrame(scheduledRenderHandle);
       scheduledRenderHandle = 0;
@@ -14932,6 +14950,9 @@
     updateScrollProgress();
     syncFocusTicker();
     enhanceVoiceAudioPlayers();
+    } finally {
+      renderReentryDepth -= 1;
+    }
   }
 
   function parseRoute(hashValue) {

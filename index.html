@@ -139,6 +139,31 @@
           } catch (e) {}
           return { msg: msg, file: file, line: line, col: col, stack: stack, source: source || "error" };
         }
+        // Detect a repeating frame sequence at the top of the stack and report
+        // it, so "Maximum call stack size exceeded" names the exact loop.
+        function repeatingCycle(stack) {
+          var lines = String(stack || "").split("\n");
+          var frames = [];
+          for (var i = 0; i < lines.length; i += 1) {
+            var m = lines[i].match(/at\s+(?:async\s+)?([A-Za-z0-9_$.]+)/);
+            if (m) frames.push(m[1]);
+          }
+          if (frames.length < 6) return null;
+          for (var len = 1; len <= Math.floor(frames.length / 3); len += 1) {
+            var cycle = frames.slice(0, len);
+            var repeats = 1;
+            for (var k = len; k + len <= frames.length; k += len) {
+              var seg = frames.slice(k, k + len);
+              var same = true;
+              for (var j = 0; j < len; j += 1) {
+                if (seg[j] !== cycle[j]) { same = false; break; }
+              }
+              if (same) repeats += 1; else break;
+            }
+            if (repeats >= 3) return cycle;
+          }
+          return null;
+        }
         function showStartupError(err, source, event) {
           try {
             var info = formatStartupError(err, source, event);
@@ -165,6 +190,8 @@
             }
             var details = info.msg;
             if (info.file) details += " (" + info.file + (info.line ? ":" + info.line : "") + (info.col ? ":" + info.col : "") + ")";
+            var cycle = repeatingCycle(info.stack);
+            if (cycle && cycle.length) details += " — cycle: " + cycle.join(" → ");
             host.textContent = "Second Brain startup issue: " + details;
           } catch (e) {}
         }

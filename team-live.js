@@ -221,6 +221,11 @@
 
   let typingTimer = 0;
   let controlsHideTimer = 0;
+  // Re-entrancy guard: attachRemoteStream() may ask renderCallStage() to
+  // rebuild the tile grid; the rebuild calls attachTileStreams(), which calls
+  // attachRemoteStream() again. Without this guard a missing peer tile
+  // recurses forever (Maximum call stack size exceeded on call setup).
+  let mediaRenderLock = false;
   function scheduleTypingSignal() {
     if (typingTimer) window.clearTimeout(typingTimer);
     typingTimer = window.setTimeout(() => {
@@ -5103,6 +5108,8 @@
       heartbeat: 0,
       statsBusy: false,
       ending: false,
+      signalFailures: 0,
+      signalFailureWarned: 0,
       channels: [],
       speakerOn: true,
       audioCtx: null,
@@ -5638,9 +5645,32 @@
         signal_type: type,
         payload: payload || {},
       });
-      if (error) console.warn("Could not send a call signal.", { code: error.code, message: error.message });
+      if (error) {
+        call.signalFailures = (call.signalFailures || 0) + 1;
+        // RLS rejection (e.g. missing INSERT policy on team_call_signals) is the
+        // exact reason remote media never arrives. Surface it — silently
+        // logging it made calls look "connected" with no video forever.
+        console.error("[team-live-call] signal insert rejected", {
+          type,
+          code: error.code,
+          message: error.message,
+          details: error.details || null,
+          hint: error.hint || null,
+          signalFailures: call.signalFailures,
+        });
+        if (!call.signalFailureWarned || call.signalFailures - call.signalFailureWarned >= 3) {
+          call.signalFailureWarned = call.signalFailures;
+          toast(t(
+            "Call signaling is blocked by the database (signals cannot be saved). Check that migration 013 (team_call_signals INSERT policy) is applied.",
+            "إشارات المكالمة محظورة من قاعدة البيانات (لا يمكن حفظ الإشارات). تأكد من تطبيق migration 013 (سياسة INSERT على team_call_signals).",
+          ));
+        }
+      } else if (call.signalFailures) {
+        call.signalFailures = 0;
+      }
     } catch (error) {
-      console.warn("Could not send a call signal.", error);
+      console.error("[team-live-call] Could not send a call signal.", error);
+      call.signalFailures = (call.signalFailures || 0) + 1;
     }
   }
 
@@ -5650,8 +5680,9 @@
       const candidate = peer.pendingCandidates.shift();
       try {
         await peer.pc.addIceCandidate(candidate);
+        logCall("ice:applied-queued", { remote: String(peer.uid || "").slice(0, 8) });
       } catch (error) {
-        if (!peer.ignoreOffer) console.warn("Could not apply an ICE candidate.", error);
+        if (!peer.ignoreOffer) console.error("[team-live-call] Could not apply a queued ICE candidate.", error);
       }
     }
   }
@@ -5685,8 +5716,15 @@
       if (peer.pc.remoteDescription && peer.pc.remoteDescription.type) {
         try {
           await peer.pc.addIceCandidate(candidate);
+          logCall("ice:applied", { remote: String(from).slice(0, 8) });
         } catch (error) {
-          if (!peer.ignoreOffer) console.warn("Could not add an ICE candidate.", error);
+          if (!peer.ignoreOffer) {
+            console.error("[team-live-call] Could not add an ICE candidate.", {
+              remote: String(from).slice(0, 8),
+              name: error && error.name ? error.name : "",
+              message: error && error.message ? error.message : String(error || ""),
+            });
+          }
         }
       } else {
         peer.pendingCandidates.push(candidate);
@@ -5708,9 +5746,11 @@
         return;
       }
       peer.isSettingRemoteAnswerPending = description.type === "answer";
+      logCall("desc:apply-start", { type: description.type, remote: String(from).slice(0, 8), signalingState: pc.signalingState });
       try {
         await pc.setRemoteDescription(description);
         peer.isSettingRemoteAnswerPending = false;
+        logCall("desc:apply-ok", { type: description.type, remote: String(from).slice(0, 8), signalingState: pc.signalingState });
         if (description.type === "offer") {
           await pc.setLocalDescription();
           await sendSignal("answer", descriptionJson(pc.localDescription), from);
@@ -5719,7 +5759,13 @@
         await flushCandidates(peer);
       } catch (error) {
         peer.suppressNegotiation = false;
-        console.warn("Could not apply a call description.", error);
+        console.error("[team-live-call] Could not apply a call description.", {
+          type: description.type,
+          remote: String(from).slice(0, 8),
+          signalingState: pc.signalingState,
+          name: error && error.name ? error.name : "",
+          message: error && error.message ? error.message : String(error || ""),
+        });
       }
       return;
     }
@@ -5966,6 +6012,7 @@
         let rtt = 0;
         try {
           const stats = await peer.pc.getStats();
+          let succeededPair = null;
           stats.forEach((report) => {
             if (report.type === "inbound-rtp" && !report.isRemote) {
               const kind = report.kind || report.mediaType;
@@ -5976,8 +6023,18 @@
             }
             if (report.type === "candidate-pair" && (report.state === "succeeded" || report.nominated)) {
               rtt = Math.max(rtt, Number(report.currentRoundTripTime || 0));
+              if (report.state === "succeeded" && !succeededPair) {
+                succeededPair = {
+                  protocol: String(report.protocol || "unknown"),
+                  rttMs: Math.round((Number(report.currentRoundTripTime) || 0) * 1000),
+                };
+              }
             }
           });
+          if (succeededPair && !peer.pairLogged) {
+            peer.pairLogged = true;
+            logCall("ice:pair-succeeded", { remote: String(id).slice(0, 8), protocol: succeededPair.protocol, rttMs: succeededPair.rttMs });
+          }
           if (!sample) {
             stats.forEach((report) => {
               if (!sample && report.type === "inbound-rtp" && !report.isRemote) sample = report;
@@ -6384,7 +6441,16 @@
     });
     let video = document.querySelector(`[data-live-tile="${remoteId}"] video`);
     if (!video && S.call) {
-      renderCallStage();
+      if (!mediaRenderLock) {
+        mediaRenderLock = true;
+        try {
+          renderCallStage();
+        } catch (error) {
+          console.warn("Could not re-render the call stage while attaching remote video.", error);
+        } finally {
+          mediaRenderLock = false;
+        }
+      }
       video = document.querySelector(`[data-live-tile="${remoteId}"] video`);
       logCall("attach:remote:after-render", { remote: remoteId.slice(0, 8), videoElement: Boolean(video) });
     }

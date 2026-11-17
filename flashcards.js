@@ -1478,7 +1478,11 @@
         event.stopPropagation();
       }
     });
-    window.addEventListener("keydown", attachHotkeyHandler);
+    // Register the hotkey handler exactly once; it handles the CURRENT keydown.
+    // (The old code registered attachHotkeyHandler itself as a listener, which
+    // only created a NEW handler for the NEXT event and never handled the
+    // current one — keyboard shortcuts/Escape were broken until a later press.)
+    attachHotkeyHandler();
     // Online/offline awareness for sync status.
     if (!window.__fcSyncListenersInstalled) {
       window.__fcSyncListenersInstalled = true;

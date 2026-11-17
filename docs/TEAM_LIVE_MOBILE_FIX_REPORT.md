@@ -165,13 +165,24 @@ TURN server.** STUN alone does not guarantee connectivity on strict NAT. See
 - `team-live.css` — full call-stage redesign (full-screen video, floating
   bars, PiP, strip, audio circle layout, `.controls-hidden`, `.live-call-more`,
   safe areas, RTL, small-screen + reduced-motion).
+- `app.js` — `sanitizeRichText` iterative walk (stack-overflow fix),
+  `render()` re-entrancy depth guard.
+- `index.html` — startup-error banner prints the detected stack cycle.
+- `flashcards.js` — `mount()` registers the hotkey handler once (was: it
+  registered itself as a keydown listener, so Escape/keyboard did nothing on
+  the delete modal).
 - `scripts/check-team-live-page.cjs` — mobile-viewport boot smoke (no console
   errors, page renders).
-- `scripts/debug-tc-send.cjs` — repro/verification harness for the mobile send
-  path (temporary, kept for reference).
+- `scripts/repro-startup.cjs`, `scripts/repro-escape.cjs`,
+  `scripts/repro-deep-note.cjs`, `scripts/debug-tc-send.cjs` — temporary
+  diagnostic harnesses used to trace the crashes.
 - `scripts/e2e-flashcards.cjs`, `docs/COMMUNICATION_REPAIR_FINAL_REPORT.md`
   (from previous phase).
-- Backups: `backup-mobile-fix-20261117-172338/`
+- `supabase/migrations/013_fix_team_call_signals_insert.sql` — the missing
+  INSERT policy for `team_call_signals` (root cause of remote video never
+  arriving). **Must be applied to the live project once.**
+- Backups: `backup-mobile-fix-20261117-172338/`,
+  `backup-webrtc-fix-20261117-181506/`, `backup-startup-fix-20261117-183616/`
 
 ## 4. Tests executed
 
@@ -180,6 +191,7 @@ TURN server.** STUN alone does not guarantee connectivity on strict NAT. See
 | `node --check team-live.js` | OK |
 | `npm run check` (team-live unit 73, flashcards-core, static 156/156, platform 81/81, comms repair 26, i18n audit 96 literals / 684 keys) | **ALL GREEN** |
 | `node scripts/check-team-live-page.cjs` (Android mobile emulation, `#team-live`) | **SMOKE OK** — page loads, no console/page errors |
+| `node scripts/e2e-flashcards.cjs` (after the stack/hotkey fixes) | **E2E PASSED** — including previously failing "Escape closes the delete confirm modal", 0 console errors/warnings |
 | Composer/send flow on device/account | **NOT RUN** — no signed-in account and no Android device in this environment |
 | Video call tests (Android↔Android, Android↔Web) | **NOT RUN** |
 | TURN / cross-network ICE test | **NOT RUN** |
@@ -188,12 +200,17 @@ APK build: `BUILD SUCCESSFUL` (330 tasks, 25 executed) after `npm run cap:sync`.
 `google-services.json` still missing → FCM push disabled (app runs; push is
 skipped instead of crashing) — unchanged from before.
 
+Post-fix build (v2.0.8 with stack-overflow fix, hotkey fix, signal diagnostics,
+migration 013 packaged): **`BUILD SUCCESSFUL` in 2m 55s**. The sync script
+re-copied all web assets and Capacitor synced; the APK above is the current
+deliverable.
+
 ## 5. Android APK
 
 - Path: `android/app/build/outputs/apk/debug/app-debug.apk`
 - Version: `2.0.8` (versionCode 10)
-- Size: 10,445,119 bytes (~9.95 MiB)
-- SHA-256: `260843013E14C297F90F944F2AC09CBB8EEEF3A163788785197DE88CB751E1E2`
+- Size: 10,413,885 bytes (~9.93 MiB)
+- SHA-256: `FD0B3A8630AE24CFFF4C139A616BCBE3BF524CB4D816067BA088868412B11984`
 
 ## 6. What still needs a real device / external setup
 
@@ -215,3 +232,95 @@ skipped instead of crashing) — unchanged from before.
 during this session (without any commit or user action). They were restored
 with `git restore` each time and are present in the final commit. No migration
 file was edited or deleted as part of this fix.
+
+## 8. Startup crash — "Maximum call stack size exceeded (app.js?v=1:3585:12)"
+
+The Android WebView log points at `initials()` — the frame where V8 reports the
+stack limit is usually the top of a recursive chain, not its cause. Two real
+recursive cycles were found and fixed:
+
+1. **`sanitizeRichText` (app.js)** — its DOM walker re-scanned the whole parent
+   after every disallowed-tag unwrap (`walk(node)` recursively), nesting one
+   frame per nested tag. A note with deeply nested HTML overflowed the stack
+   during startup rendering. Replaced with an iterative walk that promotes the
+   unwrapped children inline and never grows the stack.
+2. **`renderCallStage` ↔ `attachRemoteStream` (team-live.js)** — when a remote
+   peer is in `call.peers` but not yet in the rendered rows, `attachRemoteStream`
+   called `renderCallStage()`, which calls `attachTileStreams()`, which calls
+   `attachRemoteStream()` again — an unbounded synchronous cycle (fires exactly
+   on call setup / ontrack). Fixed with a re-entrancy guard (`mediaRenderLock`).
+
+Hardening added:
+
+- `render()` (app.js) now carries a re-entrancy depth guard (`RENDER_MAX_DEPTH`)
+  — a runaway render loop fails with a labeled `RangeError` instead of an
+  opaque V8 stack overflow.
+- The inline startup-error banner in `index.html` detects the repeating frame
+  pair at the top of the stack and prints e.g. `cycle: render → renderPage → …`
+  so the next device run names the exact loop.
+- `window.StudyZoneDiagnostics.errors()` already stored the full stack in
+  `localStorage.studyzone.runtime.errors` — the device holds a complete
+  record of the original crash for confirmation on-device.
+
+## 9. Flashcards keyboard — "Escape closes the delete confirm modal" (E2E step)
+
+The E2E started failing at step 6.2 consistently. Root cause was traced to a
+**double registration** in `flashcards.js`:
+
+`mount()` added `window.addEventListener("keydown", attachHotkeyHandler)` —
+i.e. it registered the function `attachHotkeyHandler` itself as a keydown
+listener; that function then creates and registers a NEW `handler` on every
+keydown. The current event was never handled by the freshly created handler,
+and handlers accumulated once per keydown (O(n²)).
+
+Effect chain for the exact failing E2E path:
+
+- Edit-modal Escape: target = the deck `<select>` (inside `#page-content`) →
+  the content-scoped keydown handler ran (Escape → `closeModal()` +
+  `render()`) → modal closed. ✓
+- Delete-modal Escape: target = `BODY` (the X was dispatched via synthetic
+  click, so Playwright left focus on `BODY`) → the content handler never
+  fired → the event reached `window` → `attachHotkeyHandler` fired but it
+  only registers a NEW handler for the NEXT keydown and never handles the
+  current one → no window hotkey handler existed for the present press → the
+  delete modal stayed open. Pressing Escape a second (or third) time finally
+  worked, which matched the observed "two presses to close" behaviour.
+
+Fix: `mount()` now calls `attachHotkeyHandler()` **once**, which registers the
+real hotkey `handler` exactly once. Keyboard shortcuts, Escape-to-close, the
+Enter/Space flip and the arrow navigation are all handled for the current
+event. `detachHotkeys()` (shutdown) still removes them.
+
+Result: `scripts/e2e-flashcards.cjs` — **E2E PASSED** including the previously
+failing "Escape closes the delete confirm modal" step, with 0 console
+errors/warnings.
+
+## 10. TURN — actual state
+
+- STUN (Google/Cloudflare) is bundled as a fallback; **STUN alone does not
+  guarantee connectivity** on strict NAT / mobile data.
+- The `turn-credentials` Edge Function is fully implemented (coturn
+  REST-style short-lived credentials: `username = "<expiry>:<uid>"`,
+  `credential = base64(HMAC-SHA1(TURN_SHARED_SECRET, username))`), but it has
+  **no secrets configured** — it returns `{ configured: false }` and the UI
+  shows the warning. Until a TURN server exists, cross-network calls are not
+  guaranteed.
+- To enable it: deploy coturn, then `supabase secrets set TURN_URLS=... TURN_SHARED_SECRET=...`
+  (and optionally `TURN_TTL_SECONDS`, `STUN_URLS`). Until then, do NOT set
+  `iceTransportPolicy: "relay"` — the app correctly stays on `all`.
+- The missing INSERT policy on `team_call_signals` (migration 013) blocked ALL
+  WebRTC signaling — this alone fully explains "Waiting for video…" on every
+  network, including same-Wi-Fi. Applying 013 is the prerequisite for any
+  call to connect at all.
+
+## 11. Still not performed (device / account / TURN)
+
+1. Android↔Android, Android↔Web, two networks, Wi-Fi↔mobile data video calls.
+2. Video bytes/frames verification via getStats on a real call.
+3. Camera permission denied path on-device.
+4. Arabic/English on-device call UI and message send on-device.
+
+**Delivering this to the user requires**: migration 013 applied to the live
+Supabase project, a TURN server with the two secrets set, and one physical
+Android device + a second account to verify end-to-end.
+
