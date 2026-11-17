@@ -131,10 +131,14 @@ Manual / live verification status (NOT performed here — see section 10):
 | --- | --- |
 | Path | `C:\Programming.vsCode\WebPages\StudyZone\android\app\build\outputs\apk\debug\app-debug.apk` |
 | Size | 10,445,119 bytes (~9.95 MiB / ~10.45 MB) |
-| SHA-256 | `D3821AF8024F5BCA35C54FEB357EA34D6CD71F2CD76AA30F78DDE5DE21C149CA` |
+| SHA-256 | `9D99CB86457392E8B63C5D56CC9640AA724EC2C5FD07DAF0792F1E433E0F4478` |
 | Version | `2.0.8` (versionCode 10) |
 | Package | `com.studyzone.app` |
 | Build | debug (signed with debug keystore) |
+
+> Note: SHA-256 changed on the final rebuild of the phase-2 session because the web
+> assets were re-copied into the APK after the final source edits; size stayed
+> identical (10,445,119 bytes). This is the SHA-256 of the delivered build.
 
 ## 10. Remaining external setup (required, not invented here)
 
@@ -157,7 +161,59 @@ Manual / live verification status (NOT performed here — see section 10):
 - Path: `android/app/build/outputs/apk/debug/app-debug.apk`
 - Version: `2.0.8` (versionCode 10)
 - Size: 10,445,119 bytes (~9.95 MiB)
-- SHA-256: `D3821AF8024F5BCA35C54FEB357EA34D6CD71F2CD76AA30F78DDE5DE21C149CA`
+- SHA-256: `9D99CB86457392E8B63C5D56CC9640AA724EC2C5FD07DAF0792F1E433E0F4478`
+
+## 13. Flashcards redesign & final validation (v2.0.8 phase-2)
+
+The second phase of the v2.0.8 repair program was a full professional redesign of the
+Flashcards (Second Brain) study experience, delivered on top of the phase-1 fixes.
+
+### 13.1 Redesigned study card (review mode)
+
+- New markup: `.fc-card-stage` (flank arrows) > `.fc-card-3d` > `.fc-card`
+  (`data-fc-card`, `is-revealed`) > faces front/back + `.fc-card-actions`.
+- 3D flip: `.fc-card` uses `transform-style: preserve-3d` and
+  `transform: rotateY(180deg)` when revealed; back face pre-rotated 180deg; faces use
+  `backface-visibility: hidden` with `-webkit-` prefix (Android WebView safe).
+- Tap / click / Enter / Space toggles reveal; the window-level hotkey handler and the
+  content-scoped keydown handler are coordinated via `stopPropagation` so a single key
+  press never double-toggles. Flip state is mirrored into session state
+  (`sessionState.revealed`).
+- Card action icons live inside the card (top-start pencil `fc-edit-card`,
+  top-end ✕ `fc-delete-card`), small circular glass buttons — they do not cover content
+  (`fc-card-content` clamps font-size via `clamp(18px, 2.6vw, 24px)`, `overflow-wrap: anywhere`).
+
+### 13.2 Card navigation arrows (keyboard + swipe + buttons)
+
+- Flanking circular `.fc-card-arrow` buttons (`fc-peek-prev` / `fc-peek-next`) sit OUTSIDE
+  the card stage (left/right), disabled at deck/session bounds, with hover + press
+  animations and `:focus-visible` outlines. Legacy `.fc-review-nav` bottom bar was removed.
+- Keyboard: ArrowLeft/ArrowRight → `peekMove(∓1)` while in REVIEW view and no modal open
+  (documented guard: `if (modal) return;` before arrow handling).
+- Swipe: pointerdown/pointerup on `#fc-card-stage` threshold 48px →
+  swipe right/left → peek next/prev; click-guard via `swipeGuardUntil` timestamp so the
+  trailing click never fires.
+
+### 13.3 Animations, motion & responsiveness
+
+- Fade-in on view open (`@keyframes fc-fade-in`), card slide-in
+  (`@keyframes fc-card-slide-in`, eased cubic-bezier, gated by motion level),
+  gentle float for full motion, `prefers-reduced-motion` overrides, `is-motion-off/subtle/
+  full` toggles.
+- Mobile media query: smaller card, arrows and faces; arrows remain touchable (≥44px).
+
+### 13.4 Final validation results (phase-2)
+
+- `node --check flashcards.js` → OK. `npm run check` → ALL GREEN (Team Live 73, FC core
+  pass, Static 156/156, Platform 81/81, Comms repair 26, i18n audit 96/684 OK).
+- `node tests/flashcards-sync-checks.js` → ALL FLASHCARDS SYNC CHECKS PASSED.
+- `node scripts/check-flashcards-page.cjs` → flashcards page renders, `errors: none`.
+- `node scripts/e2e-flashcards.cjs` → **E2E PASSED** (full flow: load, nav, deck+3-card
+  creation in Arabic, browse tile flip/edit, study-card 3D flip on/off, pencil edit modal,
+  X delete modal + Escape close, ArrowRight → peek, peek back, session summary, reload
+  persistence, offline usage, online sync, en→ar→en language switch, Arabic rendering,
+  0 console errors / 0 warnings).
+- Final APK rebuilt after final source edits: `BUILD SUCCESSFUL` (330 tasks, 25 executed).
 
 ## Backup
 

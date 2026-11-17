@@ -85,6 +85,7 @@ async function clickWithRetry(page, sel, attempts = 10) {
   page.on("console", (msg) => {
     if (msg.type() === "error") consoleErrors.push(msg.text());
     else if (msg.type() === "warning") consoleWarnings.push(msg.text());
+    else if (msg.type() === "log") console.log(`[page] ${msg.text()}`);
   });
   page.on("pageerror", (err) => consoleErrors.push(`pageerror: ${err.message}`));
 
@@ -202,6 +203,53 @@ async function clickWithRetry(page, sel, attempts = 10) {
   await page.waitForSelector(".fc-deck-card", { timeout: 8000 });
   await safeClick(page, '.fc-deck-card button[data-action="fc-start-deck"]');
   await page.waitForSelector(".fc-card-stage .fc-card", { timeout: 10000 });
+
+  console.log("\n== 6.1. Study card 3D flip ==");
+  const studyCard = page.locator(".fc-card-stage .fc-card");
+  const studyCardRevealed = () => page.$eval(".fc-card-stage .fc-card", (el) => el.classList.contains("is-revealed"));
+  assert((await studyCardRevealed()) === false, "study card starts unrevealed");
+  await studyCard.dispatchEvent("click");
+  await page.waitForFunction(() => Boolean(document.querySelector(".fc-card-stage .fc-card")?.classList.contains("is-revealed")));
+  assert(true, "study card tap flips to the answer (3D flip)");
+  await studyCard.dispatchEvent("click");
+  await page.waitForFunction(() => !document.querySelector(".fc-card-stage .fc-card")?.classList.contains("is-revealed"));
+  assert(true, "study card tap flips back to the front");
+
+  console.log("\n== 6.2. Card action icons (edit / delete) ==");
+  await page.locator('.fc-card-stage .fc-card button.fc-card-action-edit').dispatchEvent("click");
+  await page.waitForSelector(".fc-modal", { timeout: 8000 });
+  assert(true, "pencil icon opens the edit card modal");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  await page.locator('.fc-card-stage .fc-card button.fc-card-action-delete').dispatchEvent("click");
+  await page.waitForSelector(".fc-modal", { timeout: 8000 });
+  assert(true, "X icon opens the delete confirm modal");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".fc-modal", { state: "detached", timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(400);
+  const modalAfterEscape = await page.evaluate(() => Boolean(document.querySelector(".fc-modal")));
+  assert(modalAfterEscape === false, "Escape closes the delete confirm modal");
+  await page.waitForTimeout(300);
+
+  console.log("\n== 6.3. Keyboard arrow navigation ==");
+  const preState = await page.evaluate(() => ({
+    view: window.StudyZoneFlashcards?.Api?.getView?.() || null,
+    modal: Boolean(document.querySelector(".fc-modal")),
+    visibility: document.visibilityState,
+    active: document.activeElement ? document.activeElement.tagName + "." + String(document.activeElement.className || "") : "none",
+  }));
+  console.log("  pre-arrow state:", JSON.stringify(preState));
+  await page.evaluate(() => { window.__fcKeys = []; window.addEventListener("keydown", (e) => { window.__fcKeys.push(e.key); }, true); });
+  await page.keyboard.press("ArrowRight");
+  await page.waitForTimeout(1500);
+  const keysSeen = await page.evaluate(() => window.__fcKeys);
+  console.log("  keys seen:", JSON.stringify(keysSeen));
+  const peekVisibleNow = await page.$(".fc-peek-card");
+  console.log("  peek visible after ArrowRight:", Boolean(peekVisibleNow));
+  await page.waitForSelector(".fc-peek-card", { timeout: 8000 });
+  assert(true, "ArrowRight moves to the next card (peek)");
+  await safeClick(page, 'button[data-action="fc-peek-back"]');
+  await page.waitForSelector(".fc-card-stage .fc-card", { timeout: 8000 });
 
   console.log("\n== 6.5. Peek (preview) navigation ==");
   await safeClick(page, 'button[data-action="fc-peek-next"]');

@@ -64,6 +64,8 @@
   let hotkeyDisposers = [];
   let mounted = false;
   let lastRenderedView = VIEW.DASHBOARD;
+  let swipeStart = null; // { x, y, pointerId } while a touch/pointer swipe is in progress
+  let swipeGuardUntil = 0; // ignore the click that follows a swipe gesture
   let deckQuery = "";
   let deckSort = "name";
   let deckFilter = "all";
@@ -859,6 +861,15 @@
     const estimates = current ? ["again", "hard", "good", "easy"].map((rating) => core.estimateButtonIntervals(current, rating, Date.now(), settings)) : [];
     const total = state ? state.total : 0;
     const index = state ? state.index : 0;
+    const queueTotal = Array.isArray(state && state.queue) ? state.queue.length : Math.max(0, Number(state && state.total) || 0);
+    const navBase = state && state.peekIndex != null ? Number(state.peekIndex) : (state ? state.index : 0);
+    const atFirst = navBase <= 0;
+    const atLast = navBase >= Math.max(0, queueTotal - 1);
+    const cardIdValue = current && current.id ? String(current.id) : "";
+    const cardActions = cardIdValue ? `<div class="fc-card-actions">
+        <button type="button" class="fc-card-action fc-card-action-edit" data-action="fc-edit-card" data-card-id="${esc(cardIdValue)}" aria-label="${esc(t("Edit card", "تعديل البطاقة"))}" title="${esc(t("Edit card", "تعديل البطاقة"))}">✏️</button>
+        <button type="button" class="fc-card-action fc-card-action-delete" data-action="fc-delete-card" data-card-id="${esc(cardIdValue)}" aria-label="${esc(t("Delete card", "حذف البطاقة"))}" title="${esc(t("Delete card", "حذف البطاقة"))}">✕</button>
+      </div>` : "";
     const progress = total ? Math.min(100, Math.round(((revealed ? index + 1 : index) / total) * 100)) : 0;
     const remaining = Math.max(0, total - index - (revealed ? 1 : 0));
     const frontHtml = reviewCardContent(current, "front");
@@ -883,10 +894,15 @@
         <button type="button" class="icon-button" data-action="fc-review-end" title="${esc(t("End session", "إنهاء الجلسة"))}" aria-label="${esc(t("End session", "إنهاء الجلسة"))}">✕</button>
       </div>
       <div class="fc-card-stage" id="fc-card-stage">
-        <div class="fc-card ${revealed ? "is-revealed" : ""}" data-fc-card role="button" tabindex="0" aria-label="${esc(t("Toggle answer", "إظهار/إخفاء الإجابة"))}">
-          <div class="fc-card-face fc-card-face-front">${frontHtml}<span class="fc-tap-hint">${esc(t("Tap to reveal", "انقر للإجابة"))}</span></div>
-          <div class="fc-card-face fc-card-face-back">${backHtml}</div>
+        <button type="button" class="fc-card-arrow fc-card-arrow-prev" data-action="fc-peek-prev" ${atFirst ? "disabled" : ""} aria-label="${esc(t("Previous card", "البطاقة السابقة"))}" title="${esc(t("Previous card", "البطاقة السابقة"))}">‹</button>
+        <div class="fc-card-3d${revealed ? "" : " fc-card-3d-anim"}">
+          <div class="fc-card ${revealed ? "is-revealed" : ""}" data-fc-card role="button" tabindex="0" aria-label="${esc(t("Toggle answer", "إظهار/إخفاء الإجابة"))}">
+            <div class="fc-card-face fc-card-face-front">${frontHtml}<span class="fc-tap-hint">${esc(t("Tap to reveal", "انقر للإجابة"))}</span></div>
+            <div class="fc-card-face fc-card-face-back">${backHtml}</div>
+            ${cardActions}
+          </div>
         </div>
+        <button type="button" class="fc-card-arrow fc-card-arrow-next" data-action="fc-peek-next" ${atLast ? "disabled" : ""} aria-label="${esc(t("Next card", "البطاقة التالية"))}" title="${esc(t("Next card", "البطاقة التالية"))}">›</button>
       </div>
       <div class="fc-review-actions">
         ${revealed
@@ -894,10 +910,6 @@
           : `<button type="button" class="button button-primary button-large fc-reveal-cta" data-action="fc-reveal">${esc(t("Show answer", "إظهار الإجابة"))}</button>`}
         <div class="fc-review-meta">
           <span>${esc(t("Remaining", "المتبقي"))}: ${esc(fmtInt(remaining))}</span>
-          <div class="fc-review-nav">
-            <button type="button" class="button button-quiet button-small" data-action="fc-peek-prev" ${index <= 0 ? "disabled" : ""} aria-label="${esc(t("Previous card", "البطاقة السابقة"))}">${esc(t("Previous", "السابق"))}</button>
-            <button type="button" class="button button-quiet button-small" data-action="fc-peek-next" ${index >= total - 1 ? "disabled" : ""} aria-label="${esc(t("Next card", "البطاقة التالية"))}">${esc(t("Next", "التالي"))}</button>
-          </div>
           <button type="button" class="button button-secondary button-small" data-action="fc-review-suspend">${esc(t("Suspend card", "تعليق البطاقة"))}</button>
           <button type="button" class="button button-quiet button-small" data-action="fc-review-end">${esc(t("Finish session", "إنهاء الجلسة"))}</button>
         </div>
@@ -1360,17 +1372,28 @@
     mounted = true;
     if (decks === null) { try { await loadAll(); } catch (_) { /* keep shell */ } render(); }
     content.addEventListener("click", (event) => {
+      if (Date.now() < swipeGuardUntil) { event.preventDefault(); return; }
       const target = event.target instanceof Element ? event.target : null;
       const backdrop = target ? target.closest("[data-fc-backdrop]") : null;
       if (backdrop && target === backdrop) { closeModal(); return render(); }
       // Square flip tiles: a tap on the card face flips it independently; the
       // action buttons (edit/delete/…) are deliberately outside the flip area.
-      const tile = target ? target.closest(".fc-tile") : null;
+      const tile = target ? (target.closest(".fc-tile") || target.closest("[data-fc-card]")) : null;
       if (tile && !target.closest(".fc-tile-actions") && !target.closest("a") && !target.closest("button")) {
-        const flipped = tile.classList.toggle("is-flipped");
-        const tileId = tile.getAttribute("data-card-id") || tile.querySelector("[data-card-id]")?.getAttribute("data-card-id");
-        if (tileId) { if (flipped) flippedTiles.add(tileId); else flippedTiles.delete(tileId); }
-        tile.setAttribute("aria-pressed", flipped ? "true" : "false");
+        const onStudyCard = Boolean(tile.closest("[data-fc-card]"));
+        const flipped = onStudyCard
+          ? !tile.classList.contains("is-revealed")
+          : tile.classList.toggle("is-flipped");
+        if (onStudyCard) {
+          tile.classList.toggle("is-revealed", flipped);
+          tile.setAttribute("aria-pressed", flipped ? "true" : "false");
+          const studyState = sessionState;
+          if (studyState) studyState.revealed = flipped;
+        } else {
+          const tileId = tile.getAttribute("data-card-id") || tile.querySelector("[data-card-id]")?.getAttribute("data-card-id");
+          if (tileId) { if (flipped) flippedTiles.add(tileId); else flippedTiles.delete(tileId); }
+          tile.setAttribute("aria-pressed", flipped ? "true" : "false");
+        }
         event.preventDefault();
         return;
       }
@@ -1378,6 +1401,28 @@
       if (!button) return;
       event.preventDefault();
       void handleAction(String(button.getAttribute("data-action") || ""), button);
+    });
+    // Touch / pointer swipe left → next card, right → previous card (review stage).
+    content.addEventListener("pointerdown", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const stage = target ? target.closest("#fc-card-stage") : null;
+      if (!stage) return;
+      const tag = (event.target && event.target.tagName) ? String(event.target.tagName).toLowerCase() : "";
+      if (tag === "input" || tag === "textarea" || (event.target && event.target.isContentEditable)) return;
+      swipeStart = { x: Number(event.clientX) || 0, y: Number(event.clientY) || 0, pointerId: event.pointerId };
+    });
+    content.addEventListener("pointerup", (event) => {
+      const start = swipeStart;
+      if (!start || start.pointerId !== event.pointerId) return;
+      swipeStart = null;
+      const dx = (Number(event.clientX) || 0) - (Number(start.x) || 0);
+      const dy = (Number(event.clientY) || 0) - (Number(start.y) || 0);
+      if (Math.abs(dx) < 48 || Math.abs(dx) <= Math.abs(dy)) return;
+      swipeGuardUntil = Date.now() + 450;
+      void handleAction(dx > 0 ? "fc-peek-next" : "fc-peek-prev", null);
+    });
+    content.addEventListener("pointercancel", (event) => {
+      if (swipeStart && swipeStart.pointerId === event.pointerId) swipeStart = null;
     });
     content.addEventListener("input", (event) => {
       const target = event.target;
@@ -1410,13 +1455,27 @@
     });
     content.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && modal) { event.preventDefault(); event.stopPropagation(); closeModal(); return render(); }
-      const tile = event.target && event.target.closest ? event.target.closest(".fc-tile") : null;
+      const tile = event.target && event.target.closest ? (event.target.closest(".fc-tile") || event.target.closest("[data-fc-card]")) : null;
+      const onStudyCard = tile ? Boolean(tile.closest("[data-fc-card]")) : false;
+      // Flip keys (Enter / Space) are handled here so the window-level hotkey
+      // handler never double-toggles. stopPropagation keeps the two handlers
+      // from fighting over the same key press.
       if (tile && (event.key === "Enter" || event.key === " ")) {
         event.preventDefault();
-        const flipped = tile.classList.toggle("is-flipped");
-        const tileId = tile.getAttribute("data-card-id");
-        if (tileId) { if (flipped) flippedTiles.add(tileId); else flippedTiles.delete(tileId); }
-        tile.setAttribute("aria-pressed", flipped ? "true" : "false");
+        const flipped = onStudyCard
+          ? !tile.classList.contains("is-revealed")
+          : tile.classList.toggle("is-flipped");
+        if (onStudyCard) {
+          tile.classList.toggle("is-revealed", flipped);
+          tile.setAttribute("aria-pressed", flipped ? "true" : "false");
+          const studyState = sessionState;
+          if (studyState) studyState.revealed = flipped;
+        } else {
+          const tileId = tile.getAttribute("data-card-id");
+          if (tileId) { if (flipped) flippedTiles.add(tileId); else flippedTiles.delete(tileId); }
+          tile.setAttribute("aria-pressed", flipped ? "true" : "false");
+        }
+        event.stopPropagation();
       }
     });
     window.addEventListener("keydown", attachHotkeyHandler);
@@ -1438,8 +1497,27 @@
       if (view !== VIEW.REVIEW || document.visibilityState !== "visible") return;
       const tag = (event.target && event.target.tagName) ? String(event.target.tagName).toLowerCase() : "";
       if (tag === "input" || tag === "textarea" || (event.target && event.target.isContentEditable)) return;
-      if (event.key === " " || event.key === "Enter") { event.preventDefault(); void reveal(); }
-      else if (event.key === "1") void rate("again");
+      const tile = event.target && event.target.closest ? (event.target.closest(".fc-tile") || event.target.closest("[data-fc-card]")) : null;
+      const onStudyCard = tile ? Boolean(tile.closest("[data-fc-card]")) : false;
+      if (event.key === "ArrowLeft") { event.preventDefault(); void peekMove(-1); return; }
+      if (event.key === "ArrowRight") { event.preventDefault(); void peekMove(1); return; }
+      if (tile && (event.key === "Enter" || event.key === " ")) {
+        event.preventDefault();
+        const flipped = onStudyCard
+          ? !tile.classList.contains("is-revealed")
+          : tile.classList.toggle("is-flipped");
+        if (onStudyCard) {
+          tile.classList.toggle("is-revealed", flipped);
+          const studyState = sessionState;
+          if (studyState) studyState.revealed = flipped;
+        } else {
+          const tileId = tile.getAttribute("data-card-id");
+          if (tileId) { if (flipped) flippedTiles.add(tileId); else flippedTiles.delete(tileId); }
+          tile.setAttribute("aria-pressed", flipped ? "true" : "false");
+        }
+        return;
+      }
+      if (event.key === "1") void rate("again");
       else if (event.key === "2") void rate("hard");
       else if (event.key === "3") void rate("good");
       else if (event.key === "4") void rate("easy");
