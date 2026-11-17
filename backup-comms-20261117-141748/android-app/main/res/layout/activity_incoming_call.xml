@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/incoming_call_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center_horizontal"
+    android:padding="24dp"
+    android:background="#071C18">
+
+    <View
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <TextView
+        android:id="@+id/incoming_call_type"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/incoming_video_call"
+        android:textColor="#8FA39D"
+        android:textSize="14sp"
+        android:letterSpacing="0.08"
+        android:textAllCaps="true" />
+
+    <TextView
+        android:id="@+id/incoming_call_avatar"
+        android:layout_width="96dp"
+        android:layout_height="96dp"
+        android:layout_marginTop="18dp"
+        android:gravity="center"
+        android:textColor="#FFFFFF"
+        android:textSize="34sp"
+        android:textStyle="bold"
+        android:background="#15312A"
+        android:text="SZ" />
+
+    <TextView
+        android:id="@+id/incoming_call_caller"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="18dp"
+        android:gravity="center"
+        android:textColor="#FFFFFF"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:text="Caller" />
+
+    <TextView
+        android:id="@+id/incoming_call_subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:textColor="#B7C7C2"
+        android:textSize="16sp"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:text="Second Brain team" />
+
+    <TextView
+        android:id="@+id/incoming_call_hint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:gravity="center"
+        android:textColor="#8FA39D"
+        android:textSize="13sp"
+        android:text="@string/incoming_call_hint" />
+
+    <View
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginBottom="28dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <ImageButton
+                android:id="@+id/incoming_call_decline"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:backgroundTint="#D64545"
+                android:background="@android:drawable/btn_default"
+                android:src="@drawable/ic_call_decline"
+                android:contentDescription="@string/decline_call"
+                android:scaleType="center"
+                android:padding="18dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/decline_call"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <ImageButton
+                android:id="@+id/incoming_call_accept"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:backgroundTint="#1FA971"
+                android:background="@android:drawable/btn_default"
+                android:src="@drawable/ic_call_accept"
+                android:contentDescription="@string/accept_call"
+                android:scaleType="center"
+                android:padding="18dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/accept_call"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>
