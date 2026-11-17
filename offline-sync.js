@@ -375,6 +375,11 @@
     if (userId && !next.user_id && !TEAM_TABLES.has(table)) {
       next.user_id = userId;
     }
+    // Chat rows carry sender_id, not user_id. Fill it for optimistic/offline
+    // rows so the sender's own name/avatar renders before the server confirm.
+    if (userId && table === "team_messages" && !next.sender_id) {
+      next.sender_id = userId;
+    }
     return next;
   }
 

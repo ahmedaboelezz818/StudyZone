@@ -14934,6 +14934,26 @@
     enhanceVoiceAudioPlayers();
   }
 
+  function parseRoute(hashValue) {
+    const raw = String(hashValue || "").replace(/^#/, "");
+    const [pagePart, queryPart = ""] = raw.split("?");
+    const page = pageRenderers[pagePart] ? pagePart : "dashboard";
+    const params = new URLSearchParams(queryPart);
+    return { page, params };
+  }
+
+  function openLiveTarget(params) {
+    if (!params || !window.StudyZoneTeamLive) return;
+    const conversationId = params.get("conversation");
+    const callId = params.get("call");
+    window.setTimeout(() => {
+      if (conversationId) window.StudyZoneTeamLive?.openConversationById?.(conversationId);
+      // A call id opens the live page; the invite watcher renders the incoming
+      // card for a still-ringing call, and the button asks for mic permission.
+      if (callId) window.StudyZoneTeamLive?.refreshInvites?.();
+    }, 250);
+  }
+
   function navigate(page) {
     if (!pageRenderers[page]) return;
     if (page === currentPage) {
@@ -20203,18 +20223,20 @@
     .getElementById("auth-form")
     .addEventListener("submit", handleAuthSubmit);
   window.addEventListener("hashchange", () => {
-    const page = window.location.hash.slice(1) || "dashboard";
-    const nextPage = pageRenderers[page] ? page : "dashboard";
-    if (nextPage === currentPage) return;
-    currentPage = nextPage;
-    if (currentPage === "admin")
-      adminAuthorization = {
-        status: "checking",
-        userId: session?.user?.id || null,
-      };
-    render();
-    if (currentPage === "admin") void verifyAdminAccess();
-    if (currentPage === "focus") void loadFocusData();
+    const { page, params } = parseRoute(window.location.hash);
+    const nextPage = page;
+    if (nextPage !== currentPage) {
+      currentPage = nextPage;
+      if (currentPage === "admin")
+        adminAuthorization = {
+          status: "checking",
+          userId: session?.user?.id || null,
+        };
+      render();
+      if (currentPage === "admin") void verifyAdminAccess();
+      if (currentPage === "focus") void loadFocusData();
+    }
+    openLiveTarget(params);
   });
   window.addEventListener("studyzone:shortcut-open", (event) => {
     const detail = event.detail || {};
@@ -20303,7 +20325,16 @@
     }
   });
 
-  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.protocol === "http:" || location.hostname === "localhost")) {
+  const isCapacitorNative = Boolean(
+    window.Capacitor &&
+      typeof window.Capacitor.isNativePlatform === "function" &&
+      window.Capacitor.isNativePlatform(),
+  );
+  const canUseServiceWorker =
+    "serviceWorker" in navigator &&
+    !isCapacitorNative &&
+    (location.protocol === "https:" || location.protocol === "http:");
+  if (canUseServiceWorker) {
     window.addEventListener("load", async () => {
       try {
         const registration = await navigator.serviceWorker.register(
@@ -20594,10 +20625,10 @@
     recordRuntimeError("promise", event),
   );
 
-  currentPage = pageRenderers[window.location.hash.slice(1)]
-    ? window.location.hash.slice(1)
-    : "dashboard";
+  const initialRoute = parseRoute(window.location.hash);
+  currentPage = initialRoute.page;
   render();
+  openLiveTarget(initialRoute.params);
   updateUserUi();
   void loadFocusData();
   restoreSession();

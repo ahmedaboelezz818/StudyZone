@@ -539,17 +539,33 @@
         ? await rpc("team_chat_conversations", { p_team_id: teamId })
         : [];
       const privateRows = await rpc("private_conversations", {}).catch(() => []);
+      const uid = myId();
       const merged = [
         ...(Array.isArray(rows) ? rows : []),
-        ...(Array.isArray(privateRows) ? privateRows : []).map((row) => ({
-          ...row,
-          kind: "direct",
-          team_id: null,
-          participant_id: row.peer_id || row.title,
-          peer_name: row.peer_name || null,
-          peer_avatar_url: row.peer_avatar_url || null,
-          private: true,
-        })),
+        ...(Array.isArray(privateRows) ? privateRows : []).map((row) => {
+          // The private RPC may expose the peer as peer_id, participant_id,
+          // other_user_id, participant_a/b or only a title. Resolve all of them
+          // so calls/messages always target a real uuid rather than a name.
+          const a = String(row.participant_a || "");
+          const b = String(row.participant_b || "");
+          const derived = String(
+            row.peer_id ||
+              row.participant_id ||
+              row.other_user_id ||
+              row.user_id ||
+              (a && a !== uid ? a : b && b !== uid ? b : a || b) ||
+              "",
+          );
+          return {
+            ...row,
+            kind: "direct",
+            team_id: null,
+            participant_id: /^[0-9a-f-]{36}$/i.test(derived) ? derived : null,
+            peer_name: row.peer_name || row.title || null,
+            peer_avatar_url: row.peer_avatar_url || null,
+            private: true,
+          };
+        }),
       ];
       if (seq !== S.conversationsSeq || String(S.teamId || "") !== String(teamId || "")) return;
       S.conversations = merged.map(normalizeConversationRow);
@@ -603,6 +619,7 @@
     if (String(S.activeId || "") !== String(id)) { try { resetVoiceRecording(); } catch {} }
     S.activeId = String(id);
     if (focus) S.chatFocus = true;
+    ensureConversationChannel(S.activeId);
     if (!conversationById(S.activeId)) {
       S.conversations.unshift(
         normalizeConversationRow({
@@ -1043,20 +1060,67 @@
 
   function ensureTeamChannel() {
     const client = sb();
-    if (!client || !S.teamId) return;
-    if (S.teamChannel && String(S.teamChannelId) === String(S.teamId)) return;
-    teardownTeamChannel();
-    S.teamChannelId = S.teamId;
+    if (!client) return;
+    if (S.teamId && (!S.teamChannel || String(S.teamChannelId) !== String(S.teamId))) {
+      teardownTeamChannel();
+      S.teamChannelId = S.teamId;
+      try {
+        const channel = client
+          .channel(`team-live-team-${S.teamId}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "team_messages",
+              filter: `team_id=eq.${S.teamId}`,
+            },
+            (payload) => handleMessageRealtime(payload),
+          )
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "team_conversations",
+              filter: `team_id=eq.${S.teamId}`,
+            },
+            () => scheduleConversationReload(),
+          )
+          .subscribe((status) => {
+            if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+              console.warn("Team live realtime channel unavailable; polling instead.");
+            }
+          });
+        S.teamChannel = channel;
+      } catch (error) {
+        console.warn("Could not subscribe to team live changes.", error);
+      }
+    }
+    // Private conversations have team_id = NULL, so a team_id filter never
+    // matches them. Subscribe to the open conversation directly — this is the
+    // only Realtime path that works for private chats without a shared team.
+    if (S.activeId) ensureConversationChannel(S.activeId);
+    startConversationPolling();
+  }
+
+  function ensureConversationChannel(conversationId) {
+    const client = sb();
+    const id = conversationId ? String(conversationId) : "";
+    if (!client || !id) return;
+    if (S.convChannel && String(S.convChannelId) === id) return;
+    teardownConversationChannel();
+    S.convChannelId = id;
     try {
-      const channel = client
-        .channel(`team-live-team-${S.teamId}`)
+      S.convChannel = client
+        .channel(`team-live-conv-${id}`)
         .on(
           "postgres_changes",
           {
             event: "*",
             schema: "public",
             table: "team_messages",
-            filter: `team_id=eq.${S.teamId}`,
+            filter: `conversation_id=eq.${id}`,
           },
           (payload) => handleMessageRealtime(payload),
         )
@@ -1066,20 +1130,31 @@
             event: "*",
             schema: "public",
             table: "team_conversations",
-            filter: `team_id=eq.${S.teamId}`,
+            filter: `id=eq.${id}`,
           },
           () => scheduleConversationReload(),
         )
         .subscribe((status) => {
           if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-            console.warn("Team live realtime channel unavailable; polling instead.");
+            console.warn("Conversation realtime unavailable; polling instead.");
           }
         });
-      S.teamChannel = channel;
     } catch (error) {
-      console.warn("Could not subscribe to team live changes.", error);
+      console.warn("Could not subscribe to this conversation.", error);
     }
-    startConversationPolling();
+  }
+
+  function teardownConversationChannel() {
+    const client = sb();
+    if (S.convChannel && client) {
+      try {
+        client.removeChannel(S.convChannel);
+      } catch {
+        /* ignore */
+      }
+    }
+    S.convChannel = null;
+    S.convChannelId = null;
   }
 
   function teardownTeamChannel() {
@@ -1093,19 +1168,26 @@
     }
     S.teamChannel = null;
     S.teamChannelId = null;
-    if (S.pollTimer) {
-      window.clearInterval(S.pollTimer);
-      S.pollTimer = 0;
-    }
   }
 
   function startConversationPolling() {
     if (S.pollTimer) return;
     S.pollTimer = window.setInterval(() => {
-      if (document.hidden || !me() || !S.teamId) return;
+      if (!me()) return;
+      // Incoming calls need polling even without a team (private calls) and
+      // even when the tab is hidden, because Realtime can be suspended there.
+      void checkInvites();
+      if (document.hidden) return;
       void loadConversations({ silent: true });
       if (S.activeId) void loadMessages(S.activeId, { silent: true });
     }, 12000);
+  }
+
+  function stopConversationPolling() {
+    if (S.pollTimer) {
+      window.clearInterval(S.pollTimer);
+      S.pollTimer = 0;
+    }
   }
 
   function scheduleConversationReload() {
@@ -1299,6 +1381,7 @@
     teardownReadChannel();
     teardownReactionChannel();
     teardownTypingChannel();
+    teardownConversationChannel();
     renderSidebar();
     syncChatSurface();
     applyChatFocusState();
@@ -1334,11 +1417,9 @@
     }
 
     if (!deps.getTeams().length) {
-      return `<section class="panel live-page">${heading}
-        <div class="empty-state"><strong>${esc(t("Create or join a team first", "أنشئ فريقًا أو انضم إليه أولًا"))}</strong>
-        <p>${esc(t("Team chat and calls live inside a team. Open Teams to create one.", "محادثة الفريق والمكالمات تعمل داخل الفريق. افتح صفحة الفرق لإنشاء فريق."))}</p>
-        <a class="button button-primary button-small" href="#teams">${esc(t("Open Teams", "فتح الفرق"))}</a></div>
-      </section>`;
+      // Private one-to-one chats and calls do not need a team. Render the
+      // normal shell so the sidebar can still open/DM any account by email.
+      // The team switcher is simply empty until the user joins a team.
     }
 
     return `<section class="panel live-page ${S.chatFocus && S.activeId ? "chat-focus-mode" : ""}">
@@ -2233,7 +2314,7 @@
       resetVoiceRecording();
       S.replyTo = null;
       if (data) upsertMessage(data);
-      void dispatchMessagePush(conversationId);
+      void dispatchMessagePush(conversationId, data?.id);
       await signAttachments();
       await markConversationRead(conversationId);
       renderMessages();
@@ -2434,7 +2515,7 @@
       const index = S.messages.findIndex((message) => String(message.id) === String(optimisticId));
       if (index >= 0) S.messages[index] = { ...data };
       else appendMessageOnce(data);
-      void dispatchMessagePush(conversationId);
+      void dispatchMessagePush(conversationId, data?.id);
       if (attachment) await signAttachments();
       await markConversationRead(conversationId);
       renderMessages();
@@ -2672,7 +2753,7 @@
   }
 
   async function openDirect(userId) {
-    if (!S.teamId || !userId) return;
+    if (!userId) return;
     const otherUserId = String(userId);
     S.pendingDirectUserId = otherUserId;
     console.info("[team-live] openDirect click", {
@@ -2681,10 +2762,16 @@
       page: deps.getCurrentPage ? deps.getCurrentPage() : undefined,
     });
     try {
-      const rpcResult = await rpc("team_live_open_direct", {
-        p_team_id: S.teamId,
-        p_other_user_id: otherUserId,
-      });
+      // Without a shared team, fall back to the private stack so two accounts
+      // can still DM each other. With a team, keep the team direct path.
+      const rpcResult = S.teamId
+        ? await rpc("team_live_open_direct", {
+            p_team_id: S.teamId,
+            p_other_user_id: otherUserId,
+          })
+        : await rpc("private_conversation_open", {
+            p_other_user_id: otherUserId,
+          });
       const conversationId = String(
         (rpcResult && typeof rpcResult === "object" && (rpcResult.id || rpcResult.conversation_id)) ||
           rpcResult ||
@@ -2803,18 +2890,55 @@
   function notifyIncoming(invite) {
     if (!("Notification" in window) || Notification.permission !== "granted") return;
     if (!document.hidden) return;
+    const id = String(invite.call_id || "");
+    const title = t("Incoming call", "مكالمة واردة");
+    const body = `${memberName(invite.caller_id)} · ${
+      invite.call_type === "audio" ? t("Audio call", "مكالمة صوتية") : t("Video call", "مكالمة مرئية")
+    }${invite.team_name ? ` · ${invite.team_name}` : ""}`;
+    const options = {
+      body,
+      tag: `studyzone-call-${id}`,
+      renotify: true,
+      silent: false,
+      requireInteraction: true,
+      icon: new URL("./icons/icon-192.png", location.href).href,
+      badge: new URL("./icons/icon-192.png", location.href).href,
+      data: {
+        type: "call",
+        call_id: id,
+        call_type: invite.call_type || "video",
+        conversation_id: invite.conversation_id || "",
+        url: `./#team-live?call=${encodeURIComponent(id)}`,
+      },
+    };
+    const fallback = () => {
+      try {
+        const notification = new Notification(title, options);
+        notification.onclick = () => {
+          window.focus();
+          notification.close();
+        };
+      } catch (error) {
+        console.warn("Could not show the incoming call notification.", error);
+      }
+    };
+    // Prefer the Service Worker: it survives the WebView/tab being backgrounded
+    // and is the only path that works when the app UI is suspended.
     try {
-      const notification = new Notification(t("Incoming call", "مكالمة واردة"), {
-        body: `${memberName(invite.caller_id)} · ${invite.team_name || ""}`,
-        tag: `studyzone-call-${invite.call_id}`,
-        silent: false,
-      });
-      notification.onclick = () => {
-        window.focus();
-        notification.close();
-      };
+      const sw = navigator.serviceWorker;
+      if (sw && typeof sw.getRegistration === "function") {
+        sw.ready
+          .then((registration) => registration.showNotification(title, options))
+          .catch((error) => {
+            console.warn("Service worker notification failed; using Notification.", error);
+            fallback();
+          });
+      } else {
+        fallback();
+      }
     } catch (error) {
       console.warn("Could not show the incoming call notification.", error);
+      fallback();
     }
   }
 
@@ -3121,6 +3245,7 @@
     }
     if (String(S.teamId) === String(teamId)) return;
     teardownTeamChannel();
+    teardownConversationChannel();
     teardownReadChannel();
     teardownReactionChannel();
     S.teamId = String(teamId);
@@ -3151,6 +3276,7 @@
       !S.conversationsLoading
     ) {
       teardownTeamChannel();
+      teardownConversationChannel();
       teardownReadChannel();
       teardownReactionChannel();
       S.teamId = String(team.id);
@@ -3359,8 +3485,10 @@
     S.destroyed = true;
     try { resetVoiceRecording(); } catch {}
     teardownTeamChannel();
+    teardownConversationChannel();
     teardownReadChannel();
     teardownReactionChannel();
+    stopConversationPolling();
     stopInviteWatcher();
     stopRing();
     // Module shutdown/unmount must not end the call for everyone.
@@ -3414,15 +3542,14 @@
     if (!initialized) return;
     const user = me();
     if (!user) return;
-    if (!deps.getTeams().length) {
-      void deps.loadTeams?.();
-      return;
-    }
-    const teamId = deps.getSelectedTeamId();
-    if (!teamId) return;
-    const changed = String(S.teamId) !== String(teamId);
+    if (!deps.getTeams().length) void deps.loadTeams?.();
+    // A missing team must not block private chats/calls. teamId stays null and
+    // loadConversations() unions the private conversation list instead.
+    const teamId = deps.getSelectedTeamId() || null;
+    const changed = String(S.teamId || "") !== String(teamId || "");
     if (changed) {
       teardownTeamChannel();
+      teardownConversationChannel();
       teardownReadChannel();
       teardownReactionChannel();
       S.teamId = teamId;
@@ -4447,12 +4574,15 @@
 
   // Privacy-safe message push: never sends the body. The device decides what
   // to show. Failure here must never break sending a message.
-  async function dispatchMessagePush(conversationId) {
+  async function dispatchMessagePush(conversationId, messageId) {
     const client = sb();
     if (!client || !conversationId || !client.functions || typeof client.functions.invoke !== "function") return;
     try {
       await client.functions.invoke("team-live-message-push", {
-        body: { conversation_id: String(conversationId) },
+        body: {
+          conversation_id: String(conversationId),
+          message_id: messageId ? String(messageId) : null,
+        },
       });
     } catch (error) {
       console.warn("Could not dispatch the message push notification.", error);
@@ -4628,15 +4758,33 @@
 
   async function startDirectCall(userId, callType = "video") {
     if (!userId || String(userId) === myId()) return;
-    if (!S.teamId) return;
-    if (!teamMembersOf(S.teamId).includes(String(userId))) {
-      toast(t("That person is not in this team.", "هذا الشخص ليس في هذا الفريق."));
+    const peer = String(userId);
+    const inTeam = Boolean(S.teamId) && teamMembersOf(S.teamId).includes(peer);
+    if (!inTeam) {
+      // Private one-to-one call without a shared team: open (or reuse) the
+      // dedicated private conversation, then start the private call in it.
+      try {
+        const result = await rpc("private_conversation_open", { p_other_user_id: peer });
+        const row = Array.isArray(result) ? result[0] : result;
+        const conversationId = String(
+          (row && (row.conversation_id || row.id)) || result || "",
+        );
+        if (!conversationId) {
+          toast(t("That person is not available for a private call.", "هذا الشخص غير متاح لمكالمة خاصة."));
+          return;
+        }
+        await loadConversations({ silent: true });
+        await openConversation(conversationId);
+        await startPrivateCall({ callType, conversationId });
+      } catch (error) {
+        notifyError(t("Could not start the private call.", "تعذّر بدء المكالمة الخاصة."), error);
+      }
       return;
     }
     await startCall({
       callType,
       scope: "direct",
-      inviteeIds: [String(userId)],
+      inviteeIds: [peer],
       conversationId: null,
     });
   }
@@ -5045,6 +5193,50 @@
     return rows;
   }
 
+  // A private call knows its peer from the conversation even before the server
+  // has a team_call_participants row for them. Resolve that id so the caller
+  // always sees a remote tile (and a ringing/expectant state) instead of a
+  // self-only call screen.
+  function privateCallPeerId(call = S.call) {
+    if (!call) return "";
+    const isPrivate =
+      String(call.scope || "") === "direct" &&
+      (call.team_id == null || call.team_id === "");
+    if (!isPrivate) return "";
+    const row = (call.participants || []).find(
+      (item) => String(item.user_id || "") !== myId(),
+    );
+    if (row && row.user_id) return String(row.user_id);
+    if (!call.conversation_id) return "";
+    const conversation = S.conversations.find(
+      (item) =>
+        String(item.conversation_id || item.id || "") ===
+        String(call.conversation_id),
+    );
+    if (!conversation || conversation.kind !== "direct") return "";
+    const peer = String(conversation.participant_id || "");
+    return peer && peer !== myId() ? peer : "";
+  }
+
+  function callStageRows(call = S.call) {
+    const rows = acceptedParticipants();
+    if (!call) return rows;
+    const peer = privateCallPeerId(call);
+    if (!peer || rows.some((row) => String(row.user_id) === peer)) return rows;
+    rows.push({
+      call_id: call.id,
+      user_id: peer,
+      invite_status: "invited",
+      mic_on: null,
+      camera_on: false,
+      screen_sharing: false,
+      joined_at: null,
+      left_at: null,
+      pending: true,
+    });
+    return rows;
+  }
+
   async function refreshParticipants() {
     const call = S.call;
     if (!call) return;
@@ -5134,7 +5326,22 @@
       } else if (event.track) {
         peer.remoteStream.addTrack(event.track);
       }
+      const track = event.track || (stream && stream.getTracks()[0]);
+      if (track) {
+        track.addEventListener("ended", () => {
+          syncTileVideoVisibility(id);
+          renderCallStage();
+        });
+        track.addEventListener("mute", () => syncTileVideoVisibility(id));
+        track.addEventListener("unmute", () => {
+          syncTileVideoVisibility(id);
+          attachRemoteStream(id, peer.remoteStream);
+        });
+      }
+      // Video may arrive after audio; always re-attach and re-evaluate the tile
+      // instead of trusting the last DB camera_on value.
       attachRemoteStream(id, peer.remoteStream);
+      syncTileVideoVisibility(id);
     };
     pc.onnegotiationneeded = async () => {
       if (!S.call || S.call !== call || peer.suppressNegotiation) return;
@@ -5691,6 +5898,8 @@
     if (call.title) return call.title;
     const conversation = conversationById(call.conversation_id);
     if (conversation) return conversationTitle(conversation);
+    const peer = privateCallPeerId(call);
+    if (peer) return memberName(peer);
     return teamById(call.team_id)?.name || t("Team call", "مكالمة الفريق");
   }
 
@@ -5784,12 +5993,32 @@
     </div>`;
   }
 
+  function tileHasLiveVideo(userId) {
+    const call = S.call;
+    if (!call || call.call_type === "audio") return false;
+    const id = String(userId);
+    if (id === myId()) {
+      return Boolean(
+        call.cameraOn &&
+          call.videoTrack &&
+          call.videoTrack.readyState === "live",
+      );
+    }
+    const peer = call.peers?.get(id);
+    const stream = peer?.remoteStream;
+    return Boolean(
+      stream &&
+        stream.getVideoTracks().some((track) => track.readyState === "live"),
+    );
+  }
+
   function tileMarkup(row, opts = {}) {
     const call = S.call;
     const id = String(row.user_id);
     const self = id === myId();
     const name = `${memberName(id)}${self ? ` ${t("(you)", "(أنت)")}` : ""}`;
-    const cameraOff = !row.camera_on && call.call_type === "video";
+    const liveVideo = tileHasLiveVideo(id);
+    const cameraOff = call.call_type === "video" && !liveVideo;
     const isAudio = call.call_type === "audio";
     const speaking = Boolean(call.speakingIds?.has(id));
     const mirrorSelf = self && !isAudio && !call.screenSharing && call.facing !== "environment" && call.cameraOn;
@@ -5804,8 +6033,9 @@
       speaking ? "speaking" : "",
     ].filter(Boolean).join(" ");
     return `<div class="${classes}" data-live-tile="${esc(id)}" data-self="${self ? "1" : "0"}">
-      <video autoplay playsinline ${self ? "muted" : ""}></video>
+      <video autoplay playsinline webkit-playsinline preload="auto" ${self ? "muted" : ""}></video>
       <div class="live-tile-avatar">${memberAvatar(id, "team-avatar")}</div>
+      <span class="live-tile-waiting" data-live-tile-waiting ${cameraOff && !isAudio ? "" : "hidden"}>${esc(t("Waiting for video…", "في انتظار الفيديو…"))}</span>
       <span class="live-tile-name" dir="auto">${esc(name)}</span>
       <span class="live-tile-mic" data-live-tile-mic>${row.mic_on === false ? "🔇" : ""}</span>
       ${row.screen_sharing ? `<span class="live-tile-share">${esc(t("Screen", "الشاشة"))}</span>` : ""}
@@ -5816,7 +6046,7 @@
     const call = S.call;
     const host = document.querySelector("[data-live-grid]");
     if (!call || !host) return;
-    const rows = acceptedParticipants()
+    const rows = callStageRows(call)
       .slice()
       .sort((a, b) => (String(a.user_id) === myId() ? 1 : 0) - (String(b.user_id) === myId() ? 1 : 0));
     const isAudio = call.call_type === "audio";
@@ -5841,10 +6071,46 @@
     if (localVideo) {
       localVideo.srcObject = call.localStream;
       localVideo.muted = true;
+      playVideoSafely(localVideo, "local");
     }
+    syncTileVideoVisibility(myId());
     for (const [id, peer] of call.peers) {
       attachRemoteStream(id, peer.remoteStream);
     }
+  }
+
+  function playVideoSafely(video, label) {
+    if (!video) return;
+    try {
+      const result = video.play();
+      if (result && typeof result.catch === "function") {
+        result.catch((error) => {
+          // Autoplay can be rejected in a WebView until a user gesture. Retry
+          // once on the next tick so a late gesture unblocks playback.
+          console.warn(`Could not start ${label} video playback.`, error);
+          window.setTimeout(() => {
+            const retry = video.play();
+            if (retry && typeof retry.catch === "function") retry.catch(() => {});
+          }, 400);
+        });
+      }
+    } catch (error) {
+      console.warn(`Could not start ${label} video playback.`, error);
+    }
+  }
+
+  function syncTileVideoVisibility(userId) {
+    const call = S.call;
+    const id = String(userId);
+    const tile = document.querySelector(`[data-live-tile="${id}"]`);
+    if (!call || !tile) return;
+    const isAudio = call.call_type === "audio";
+    const live = tileHasLiveVideo(id);
+    // Track presence is the source of truth. DB camera_on can lag behind by a
+    // polling interval and used to hide a perfectly live remote camera.
+    tile.classList.toggle("camera-off", !isAudio && !live);
+    const waiting = tile.querySelector("[data-live-tile-waiting]");
+    if (waiting) waiting.hidden = isAudio || live;
   }
 
   function initPipDrag(host) {
@@ -5897,14 +6163,18 @@
   }
 
   function attachRemoteStream(userId, stream) {
-    const video = document.querySelector(`[data-live-tile="${String(userId)}"] video`);
-    if (video && stream) {
-      if (video.srcObject !== stream) video.srcObject = stream;
-    } else if (S.call) {
+    if (!stream) return;
+    let video = document.querySelector(`[data-live-tile="${String(userId)}"] video`);
+    if (!video && S.call) {
       renderCallStage();
-      const retry = document.querySelector(`[data-live-tile="${String(userId)}"] video`);
-      if (retry && stream) retry.srcObject = stream;
+      video = document.querySelector(`[data-live-tile="${String(userId)}"] video`);
     }
+    if (video) {
+      if (video.srcObject !== stream) video.srcObject = stream;
+      video.muted = false;
+      playVideoSafely(video, "remote");
+    }
+    syncTileVideoVisibility(userId);
   }
 
   function updateTileFlags() {
@@ -5916,7 +6186,9 @@
       if (!tile) continue;
       const self = id === myId();
       const isAudio = call.call_type === "audio";
-      tile.classList.toggle("camera-off", !row.camera_on && call.call_type === "video");
+      tile.classList.toggle("camera-off", !isAudio && !tileHasLiveVideo(id));
+      const waiting = tile.querySelector("[data-live-tile-waiting]");
+      if (waiting) waiting.hidden = isAudio || tileHasLiveVideo(id);
       tile.classList.toggle("mirror-self", self && !isAudio && !call.screenSharing && call.facing !== "environment" && call.cameraOn);
       const mic = tile.querySelector("[data-live-tile-mic]");
       if (mic) mic.textContent = row.mic_on === false ? "🔇" : "";
@@ -7012,6 +7284,7 @@
     joinCall: (callId) => joinExistingCall(callId),
     declineCall: (callId) => respondToInvite(callId, false),
     acceptCall: (callId) => respondToInvite(callId, true),
+    refreshInvites: () => checkInvites(),
     handleNativeCallAction,
     unreadForTeam: () => unreadTotalForTeam(),
     __state: S,

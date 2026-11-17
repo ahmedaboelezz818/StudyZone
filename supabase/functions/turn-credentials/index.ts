@@ -101,14 +101,19 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Sign in required." }, 401);
   }
 
-  // Credentials are only for people who actually belong to a team. This keeps
-  // every random authenticated account from using the relay.
-  const [owned, member] = await Promise.all([
+  // Credentials are for people who belong to a team or to at least one private
+  // 1:1 conversation. Private chats/calls must work without a shared team.
+  const [owned, member, privateChat] = await Promise.all([
     client.from("teams").select("id").eq("owner_id", user.id).limit(1),
     client.from("team_members").select("team_id").eq("user_id", user.id).limit(1),
+    client
+      .from("team_conversations")
+      .select("id")
+      .or(`participant_a.eq.${user.id},participant_b.eq.${user.id}`)
+      .limit(1),
   ]);
-  if (!owned?.data?.length && !member?.data?.length) {
-    return json({ error: "Team membership required." }, 403);
+  if (!owned?.data?.length && !member?.data?.length && !privateChat?.data?.length) {
+    return json({ error: "Team membership or a private conversation is required." }, 403);
   }
 
   const stunUrls = splitUrls(Deno.env.get("STUN_URLS"), DEFAULT_STUN);

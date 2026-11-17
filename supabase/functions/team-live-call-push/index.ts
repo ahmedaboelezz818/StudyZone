@@ -19,6 +19,7 @@
 //   the native app can display a full-screen incoming call UI.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import webpush from "npm:web-push@3.6.7";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -35,6 +36,22 @@ function json(body: unknown, status = 200) {
       "Cache-Control": "no-store",
     },
   });
+}
+
+function webPushConfigured() {
+  return Boolean(
+    Deno.env.get("VAPID_PUBLIC_KEY") &&
+      Deno.env.get("VAPID_PRIVATE_KEY") &&
+      Deno.env.get("VAPID_SUBJECT"),
+  );
+}
+
+function configureWebPush() {
+  webpush.setVapidDetails(
+    Deno.env.get("VAPID_SUBJECT") as string,
+    Deno.env.get("VAPID_PUBLIC_KEY") as string,
+    Deno.env.get("VAPID_PRIVATE_KEY") as string,
+  );
 }
 
 function b64url(input: Uint8Array | string) {
@@ -204,8 +221,23 @@ Deno.serve(async (req: Request) => {
 
   const participantRows = participants || [];
   const actorId = String(user.id);
-  const myRow = participantRows.find((p: any) => String(p.user_id) === actorId);
+
+  // Private calls live in the same tables but may not have participant rows yet
+  // (the private_call_* stack owns them). Fall back to the conversation's two
+  // participants so a 1:1 call still rings when a row is missing.
+  if (!participantRows.length && call.conversation_id) {
+    const { data: conversation } = await admin
+      .from("team_conversations")
+      .select("participant_a, participant_b")
+      .eq("id", call.conversation_id)
+      .maybeSingle();
+    for (const value of [conversation?.participant_a, conversation?.participant_b]) {
+      if (value) participantRows.push({ user_id: String(value), invite_status: "invited", left_at: null });
+    }
+  }
+
   const isCreator = String(call.created_by) === actorId;
+  const myRow = participantRows.find((p: any) => String(p.user_id) === actorId);
   const isAcceptedParticipant = Boolean(
     myRow &&
     !myRow.left_at &&
@@ -241,34 +273,36 @@ Deno.serve(async (req: Request) => {
       .map((p: any) => String(p.user_id)))];
   }
 
+  const webConfigured = webPushConfigured();
+  const fcmConfigured = Boolean(projectId && saRaw);
+
   if (!targetUserIds.length) {
-    return json({ configured: Boolean(projectId && saRaw), state, sent: 0, reason: "no_targets" });
+    return json({ configured: fcmConfigured || webConfigured, state, sent: 0, reason: "no_targets" });
   }
 
-  if (!projectId || !saRaw) {
-    return json({
-      configured: false,
-      sent: 0,
-      targetUsers: targetUserIds.length,
-      error: "FCM not configured. Set FCM_PROJECT_ID and FCM_SERVICE_ACCOUNT_JSON secrets for team-live-call-push.",
-    });
-  }
-
-  let serviceAccount: any;
-  try {
-    serviceAccount = JSON.parse(saRaw);
-  } catch {
-    return json({ configured: false, sent: 0, error: "FCM_SERVICE_ACCOUNT_JSON is not valid JSON." }, 500);
-  }
-  if (!serviceAccount?.client_email || !serviceAccount?.private_key) {
-    return json({ configured: false, sent: 0, error: "FCM_SERVICE_ACCOUNT_JSON is missing client_email/private_key." }, 500);
-  }
-
+  let serviceAccount: any = null;
   let accessToken = "";
-  try {
-    accessToken = await getAccessToken(serviceAccount);
-  } catch (e) {
-    return json({ configured: false, sent: 0, error: String((e as Error)?.message || e) }, 500);
+  let fcmError = "";
+  let canUseFcm = fcmConfigured;
+  if (canUseFcm) {
+    try {
+      serviceAccount = JSON.parse(saRaw);
+    } catch {
+      canUseFcm = false;
+      fcmError = "FCM_SERVICE_ACCOUNT_JSON is not valid JSON.";
+    }
+    if (canUseFcm && (!serviceAccount?.client_email || !serviceAccount?.private_key)) {
+      canUseFcm = false;
+      fcmError = "FCM_SERVICE_ACCOUNT_JSON is missing client_email/private_key.";
+    }
+    if (canUseFcm) {
+      try {
+        accessToken = await getAccessToken(serviceAccount);
+      } catch (e) {
+        canUseFcm = false;
+        fcmError = String((e as Error)?.message || e);
+      }
+    }
   }
 
   // Resolve caller/team info for display.
@@ -277,7 +311,9 @@ Deno.serve(async (req: Request) => {
   try {
     const [{ data: profile }, { data: team }] = await Promise.all([
       admin.from("profiles").select("id, full_name, name, username").eq("id", user.id).maybeSingle(),
-      admin.from("teams").select("id, name").eq("id", call.team_id).maybeSingle(),
+      call.team_id
+        ? admin.from("teams").select("id, name").eq("id", call.team_id).maybeSingle()
+        : Promise.resolve({ data: null }),
     ]);
     if (!body?.caller_name && !body?.callerName) {
       callerName = profile?.full_name || profile?.name || profile?.username || callerName;
@@ -287,19 +323,19 @@ Deno.serve(async (req: Request) => {
     // best effort
   }
 
-  const { data: tokens, error: tokenError } = await admin
-    .from("device_push_tokens")
-    .select("user_id, token, platform, updated_at")
-    .in("user_id", targetUserIds)
-    .order("updated_at", { ascending: false });
-  if (tokenError) return json({ error: "Could not load device push tokens." }, 500);
+  const tokens = canUseFcm
+    ? (await admin
+      .from("device_push_tokens")
+      .select("user_id, token, platform, updated_at")
+      .in("user_id", targetUserIds)
+      .order("updated_at", { ascending: false })).data
+    : [];
 
   const uniqueTokens = [];
   const seen = new Set();
   for (const row of tokens || []) {
     const t = String(row.token || "");
     if (!t || seen.has(t)) continue;
-    if (row.platform && String(row.platform).toLowerCase() !== "android") continue;
     seen.add(t);
     uniqueTokens.push(row);
   }
@@ -323,14 +359,69 @@ Deno.serve(async (req: Request) => {
     else failures.push({ user_id: row.user_id, ...result });
   }
 
+  // Web Push (Service Worker). Separate from FCM: browsers keep a
+  // push_subscriptions row keyed to the same user account.
+  let webSent = 0;
+  const webFailures: any[] = [];
+  if (webConfigured) {
+    try {
+      configureWebPush();
+      const { data: subscriptions } = await admin
+        .from("push_subscriptions")
+        .select("user_id,endpoint,p256dh,auth_secret")
+        .in("user_id", targetUserIds);
+      for (const sub of subscriptions || []) {
+        const endpoint = String(sub.endpoint || "");
+        if (!endpoint) continue;
+        try {
+          await webpush.sendNotification({
+            endpoint,
+            keys: { p256dh: String(sub.p256dh || ""), auth: String(sub.auth_secret || "") },
+          }, JSON.stringify({
+            title: state === "ringing"
+              ? (payload.call_type === "video" ? "Incoming video call" : "Incoming audio call")
+              : "Call ended",
+            body: callerName,
+            url: state === "ringing"
+              ? `./#team-live?call=${encodeURIComponent(payload.call_id)}`
+              : "./#team-live",
+            tag: `studyzone-call-${payload.call_id}`,
+            type: "call",
+            state,
+            call_id: payload.call_id,
+            call_type: payload.call_type,
+            conversation_id: payload.conversation_id,
+            requireInteraction: state === "ringing",
+          }), { TTL: state === "ringing" ? 55 : 120 });
+          webSent += 1;
+        } catch (error) {
+          const statusCode = Number((error as { statusCode?: number })?.statusCode);
+          if (statusCode === 404 || statusCode === 410) {
+            await admin.from("push_subscriptions").delete()
+              .eq("user_id", sub.user_id).eq("endpoint", endpoint);
+          }
+          webFailures.push({ user_id: sub.user_id, status: statusCode || 0 });
+        }
+      }
+    } catch (error) {
+      webFailures.push({ error: String((error as Error)?.message || error) });
+    }
+  }
+
   return json({
-    configured: true,
+    configured: canUseFcm || webConfigured,
+    fcmConfigured: canUseFcm,
+    webPushConfigured: webConfigured,
+    fcmError: fcmError || undefined,
     callId: String(call.id),
     state,
     targets: targetUserIds.length,
     tokens: uniqueTokens.length,
     sent,
     failures: failures.slice(0, 20),
+    webSubscriptions: webSent + webFailures.length,
+    webSent,
+    webFailures: webFailures.slice(0, 20),
     note: "FCM delivery to background/terminated devices depends on device state and OEM restrictions; force-stopped apps may not receive pushes.",
   });
 });

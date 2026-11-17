@@ -1,4 +1,4 @@
-const CACHE_NAME = "studyzone-shell-v36";
+const CACHE_NAME = "studyzone-shell-v37";
 
 const APP_SHELL = [
   "./",
@@ -159,20 +159,48 @@ self.addEventListener("push", (event) => {
       ? payload.title.slice(0, 140)
       : "Second Brain";
 
+  const type = typeof payload.type === "string" ? payload.type : "";
+  const callState = String(payload.state || "").toLowerCase();
+  const terminalCall = ["ended", "declined", "missed", "cancelled", "canceled"].includes(callState);
+
   const data = {
     url: typeof payload.url === "string" ? payload.url : (typeof payload.conversation_id === "string" ? `./#team-live?conversation=${payload.conversation_id}` : "./#tasks"),
     ...(payload.conversation_id ? { conversation_id: payload.conversation_id } : {}),
-    ...(payload.type ? { type: payload.type } : {}),
+    ...(payload.message_id ? { message_id: payload.message_id } : {}),
+    ...(payload.call_id ? { call_id: payload.call_id } : {}),
+    ...(payload.call_type ? { call_type: payload.call_type } : {}),
+    ...(payload.state ? { state: payload.state } : {}),
+    ...(type ? { type } : {}),
   };
+  const tag =
+    typeof payload.tag === "string"
+      ? payload.tag.slice(0, 120)
+      : "study-zone-reminder";
+
+  // A terminal call push is a cancellation signal: close the ringing
+  // notification instead of stacking a second "call ended" banner.
+  if (type === "call" && terminalCall) {
+    event.waitUntil(
+      (async () => {
+        try {
+          const existing = await self.registration.getNotifications({ tag });
+          for (const notification of existing) notification.close();
+        } catch (error) {
+          console.warn("Second Brain: could not close the call notification.", error);
+        }
+      })(),
+    );
+    return;
+  }
+
   const options = {
     body: typeof payload.body === "string" ? payload.body.slice(0, 500) : "",
     icon: new URL("./icons/icon-192.png", self.registration.scope).href,
     badge: new URL("./icons/icon-192.png", self.registration.scope).href,
-    tag:
-      typeof payload.tag === "string"
-        ? payload.tag.slice(0, 120)
-        : "study-zone-reminder",
+    tag,
     renotify: true,
+    silent: type === "call" ? false : false,
+    requireInteraction: type === "call",
     data,
   };
 

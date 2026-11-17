@@ -1230,6 +1230,27 @@
   display: grid;
 }
 
+.live-tile-waiting {
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  text-align: center;
+  color: rgba(234, 255, 246, 0.82);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 12px;
+}
+
+.live-tile-waiting[hidden] {
+  display: none !important;
+}
+
+.live-tile:not(.camera-off) .live-tile-waiting {
+  display: none !important;
+}
+
 .live-tile-avatar .team-avatar {
   width: clamp(54px, 10vw, 82px);
   height: clamp(54px, 10vw, 82px);
