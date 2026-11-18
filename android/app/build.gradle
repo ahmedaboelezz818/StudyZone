@@ -15,8 +15,8 @@ android {
         applicationId "com.studyzone.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10
-        versionName "2.0.8"
+        versionCode 11
+        versionName "2.0.9"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // Universal APK: keep all four common Android ABIs when a dependency
         // contributes native libraries. The app itself is Java/Kotlin only.

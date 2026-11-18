@@ -66,6 +66,7 @@
     <link rel="stylesheet" href="./premium-dashboard.css?v=1" />
     <link rel="stylesheet" href="./premium-pages.css?v=1" />
     <link rel="stylesheet" href="./premium-responsive.css?v=1" />
+    <link rel="stylesheet" href="./sz-calendar.css?v=1" />
     <script>
       // Apply the saved language and color theme before first paint.
       try {
@@ -103,7 +104,8 @@
     <script src="./flashcards-db.js?v=2" defer></script>
     <script src="./flashcards-sync.js?v=2" defer></script>
     <script src="./flashcards.js?v=2" defer></script>
-    <script src="./app.js?v=1" defer></script>
+    <script src="./timeline-core.js?v=1" defer></script>
+    <script src="./app.js?v=2" defer></script>
     <script src="./sync-ui.js?v=1" defer></script>
     <script src="./native-shell.js?v=1" defer></script>
     <script src="./ui-controls.js?v=1" defer></script>
@@ -223,6 +225,9 @@
           <a class="nav-link" href="#tasks" data-page="tasks"
             ><span class="nav-icon">☷</span>Tasks
             <span class="nav-count" id="task-count">0</span></a
+          >
+          <a class="nav-link" href="#calendar" data-page="calendar"
+            ><span class="nav-icon">▦</span>Calendar</a
           >
           <a class="nav-link" href="#deadlines" data-page="deadlines"
             ><span class="nav-icon">◷</span>Deadlines
@@ -439,6 +444,21 @@
                 max="1440"
                 value="45"
             /></label>
+          </div>
+          <div class="form-row" id="task-item-type-row" hidden>
+            <label
+              >Item type<select name="item_kind">
+                <option value="task">Task</option>
+                <option value="deadline">Deadline</option>
+                <option value="project">Project</option>
+                <option value="phase">Phase of a project</option>
+              </select></label
+            >
+            <label
+              >Parent project<select name="item_parent" id="task-item-parent">
+                <option value="">No parent</option>
+              </select></label
+            >
           </div>
           <div class="form-row">
             <label
@@ -1264,6 +1284,19 @@
             >
           </div>
           <div class="form-row">
+            <label
+              >Type<select name="item_kind">
+                <option value="deadline">Deadline</option>
+                <option value="project">Project</option>
+              </select></label
+            >
+            <label
+              >Parent project<select name="item_parent" id="deadline-item-parent">
+                <option value="">No parent</option>
+              </select></label
+            >
+          </div>
+          <div class="form-row">
             <label>Starts on<input name="starts_on" type="date" /></label>
             <label
               >Due date<input name="due_date" type="date" required
@@ -1351,6 +1384,50 @@
             </button>
           </div>
         </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="calendar-day-modal" hidden>
+      <section
+        class="modal calendar-day-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="calendar-day-title"
+      >
+        <button class="modal-close" data-close-modal aria-label="Close">
+          ×
+        </button>
+        <p class="eyebrow" id="calendar-day-eyebrow">SCHEDULE</p>
+        <h2 id="calendar-day-title">Schedule</h2>
+        <div class="calendar-day-body" id="calendar-day-body"></div>
+        <div class="modal-actions">
+          <button class="button button-secondary" type="button" data-close-modal>
+            Close</button
+          ><button
+            class="button button-primary"
+            type="button"
+            data-action="calendar-add-on-day"
+          >
+            <span class="button-icon">＋</span> Add event
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="timeline-item-modal" hidden>
+      <section
+        class="modal timeline-item-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="timeline-item-title"
+      >
+        <button class="modal-close" data-close-modal aria-label="Close">
+          ×
+        </button>
+        <p class="eyebrow" id="timeline-item-eyebrow">TIMELINE</p>
+        <h2 id="timeline-item-title">Timeline item</h2>
+        <div class="timeline-item-body" id="timeline-item-body"></div>
+        <div class="modal-actions" id="timeline-item-actions"></div>
       </section>
     </div>
 

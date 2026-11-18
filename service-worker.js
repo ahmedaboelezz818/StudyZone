@@ -1,4 +1,4 @@
-const CACHE_NAME = "studyzone-shell-v37";
+const CACHE_NAME = "studyzone-shell-v40";
 
 const APP_SHELL = [
   "./",
@@ -14,6 +14,7 @@ const APP_SHELL = [
   "./premium-dashboard.css",
   "./premium-pages.css",
   "./premium-responsive.css",
+  "./sz-calendar.css",
   "./assets/images/hero-study-desk.webp",
   "./assets/images/study-library.webp",
   "./assets/images/calendar-planning.webp",
@@ -26,6 +27,7 @@ const APP_SHELL = [
   "./assets/images/teams-collaboration.webp",
   "./assets/images/achievements-graduation.webp",
   "./app.js",
+  "./timeline-core.js",
   "./team-live.css",
   "./flashcards.css",
   "./team-live-core.js",

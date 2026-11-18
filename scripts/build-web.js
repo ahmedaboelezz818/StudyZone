@@ -12,6 +12,7 @@ const out = path.join(root, "www");
 const files = [
   "index.html",
   "app.js",
+  "timeline-core.js",
   "team-live.css",
   "team-live-core.js",
   "team-live.js",
@@ -29,6 +30,7 @@ const files = [
   "premium-dashboard.css",
   "premium-pages.css",
   "premium-responsive.css",
+  "sz-calendar.css",
   "design-tokens.css",
   "themes-presets.css",
   "supabase-config.js",

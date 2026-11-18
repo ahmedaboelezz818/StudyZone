@@ -1090,6 +1090,7 @@
     resolveConflict,
     getCachedTableData,
     queueFocusRecord,
+    readStoredSession,
     isOnline: () => state.online,
     refreshCounts,
     db: openDb,

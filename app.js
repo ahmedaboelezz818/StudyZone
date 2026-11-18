@@ -704,20 +704,30 @@
   let deadlineSearch = "";
   let deadlineFilter = "all";
   let deadlineSort = "due";
-  let deadlineView = "list";
-  let deadlineMonth = new Date(
-    new Date().getFullYear(),
-    new Date().getMonth(),
-    1,
-  );
-  let selectedDeadlineDate = dateKey(new Date());
+  let deadlineView = "timeline";
+  let timelineZoom = "week";
+  let timelineAnchor = dateKey(new Date());
+  let timelineFilter = "all";
+  let timelineCollapsed = new Set();
+  let timelineModalId = null;
+  let timelineScrollLeft = -1;
+  let calendarViewMode = "month";
+  let calendarMonth = `${new Date().getFullYear()}-${String(
+    new Date().getMonth() + 1,
+  ).padStart(2, "0")}`;
+  let calendarSelectedDate = dateKey(new Date());
+  let calendarSearch = "";
+  let calendarFilter = "all";
+  let calendarDayModalKey = null;
+  let calendarAnim = "fade";
+  let timelineFilterOpen = false;
+  let timelineAnim = "fade";
   let dashboardMonth = new Date(
     new Date().getFullYear(),
     new Date().getMonth(),
     1,
   );
   let dashboardSelectedDate = dateKey(new Date());
-  let deadlineCalendarMode = "month";
   let editingDeadlineId = null;
   let deadlinesLoading = false;
   const statusChangesInFlight = new Set();
@@ -1693,6 +1703,7 @@
       dayBefore: "1 day before",
       cancel: "Cancel",
       save: "Save deadline",
+      saveChanges: "Save changes",
       saving: "Saving…",
       close: "Close",
       deleteConfirm: "Delete this deadline? This cannot be undone.",
@@ -1710,6 +1721,7 @@
       edit: "Edit",
       delete: "Delete",
       priorityLabel: "Priority",
+      noPriority: "No priority",
       reminderUnavailable:
         "Run the deadline migration to enable saved reminders.",
       reminderNote:
@@ -1732,6 +1744,65 @@
         "November",
         "December",
       ],
+      timeline: "Timeline",
+      newDeadline: "New deadline",
+      newProject: "New project",
+      filterBacklog: "Backlog",
+      filterActive: "Active",
+      archived: "Archived",
+      zoomDay: "Day",
+      zoomWeek: "Week",
+      zoomMonth: "Month",
+      zoomQuarter: "Quarter",
+      todayLabel: "Today",
+      previousPeriod: "Previous period",
+      nextPeriod: "Next period",
+      status: "Status",
+      progress: "Progress",
+      startDate: "Start date",
+      endDate: "End date",
+      dueOn: "Due",
+      phases: "Phases",
+      phaseCount: "phases",
+      subItems: "sub-items",
+      backlog: "Backlog",
+      active: "Active",
+      onHold: "On hold",
+      completedStatus: "Completed",
+      overdueStatus: "Overdue",
+      archive: "Archive",
+      unarchive: "Restore",
+      openEnded: "No end date yet",
+      markerOnly: "Due date",
+      incompleteData: "Incomplete dates",
+      incompleteDataHint:
+        "This item has no start or end date, so it cannot be drawn on the timeline yet.",
+      noTimelineItems: "Nothing to plan here yet",
+      noTimelineItemsHint:
+        "Create a project or a deadline and it will appear on this timeline.",
+      noTimelineResults: "No matching items",
+      noTimelineResultsHint: "Try a different search or status filter.",
+      openDetails: "Open details",
+      daysCount: "days",
+      dayCount: "day",
+      of: "of",
+      projectProgress: "Project progress",
+      dragHint: "Drag a bar to change its dates.",
+      zoomLabel: "Zoom",
+      filterLabel: "Status filter",
+      searchLabel: "Search timeline items",
+      viewList: "List",
+      viewTimeline: "Timeline",
+      noPhases: "No phases yet",
+      totalSpan: "Total span",
+      created: "Created",
+      todayLine: "Today",
+      importantDays: "Days with important items",
+      kindProject: "Project",
+      kindPhase: "Phase",
+      kindDeadline: "Deadline",
+      noParent: "No parent",
+      addPhase: "Add phase",
     },
     ar: {
       eyebrow: "رتّب أولوياتك",
@@ -1804,6 +1875,7 @@
       dayBefore: "قبل يوم",
       cancel: "إلغاء",
       save: "حفظ الموعد",
+      saveChanges: "حفظ التغييرات",
       saving: "جارٍ الحفظ…",
       close: "إغلاق",
       deleteConfirm: "هل تريد حذف هذا الموعد؟ لا يمكن التراجع عن ذلك.",
@@ -1821,6 +1893,7 @@
       edit: "تعديل",
       delete: "حذف",
       priorityLabel: "الأولوية",
+      noPriority: "لا توجد أولوية",
       reminderUnavailable: "شغّل ترحيل المواعيد لتفعيل حفظ التذكيرات.",
       reminderNote:
         "يُحفظ التذكير مع الموعد. يتطلب إرسال التنبيه تفعيل وظيفة Supabase مجدولة.",
@@ -1850,8 +1923,173 @@
         "نوفمبر",
         "ديسمبر",
       ],
+      timeline: "الخط الزمني",
+      newDeadline: "موعد جديد",
+      newProject: "مشروع جديد",
+      filterBacklog: "المخطط",
+      filterActive: "النشطة",
+      archived: "المؤرشفة",
+      zoomDay: "يوم",
+      zoomWeek: "أسبوع",
+      zoomMonth: "شهر",
+      zoomQuarter: "ربع سنة",
+      todayLabel: "اليوم",
+      previousPeriod: "الفترة السابقة",
+      nextPeriod: "الفترة التالية",
+      status: "الحالة",
+      progress: "التقدم",
+      startDate: "تاريخ البداية",
+      endDate: "تاريخ النهاية",
+      dueOn: "يستحق",
+      phases: "المراحل",
+      phaseCount: "مراحل",
+      subItems: "عناصر فرعية",
+      backlog: "المخطط",
+      active: "النشطة",
+      onHold: "معلّقة",
+      completedStatus: "مكتملة",
+      overdueStatus: "متأخرة",
+      archive: "أرشفة",
+      unarchive: "استعادة",
+      openEnded: "لا يوجد تاريخ نهاية",
+      markerOnly: "تاريخ الاستحقاق",
+      incompleteData: "تواريخ غير مكتملة",
+      incompleteDataHint:
+        "لا يملك هذا العنصر تاريخ بداية أو نهاية، لذلك لا يمكن رسمه على الخط الزمني بعد.",
+      noTimelineItems: "لا توجد عناصر للتخطيط بعد",
+      noTimelineItemsHint:
+        "أنشئ مشروعًا أو موعدًا نهائيًا وسيظهر هنا على الخط الزمني.",
+      noTimelineResults: "لا توجد عناصر مطابقة",
+      noTimelineResultsHint: "جرّب بحثًا أو حالة مختلفة.",
+      openDetails: "فتح التفاصيل",
+      daysCount: "أيام",
+      dayCount: "يوم",
+      of: "من",
+      projectProgress: "تقدم المشروع",
+      dragHint: "اسحب الشريط لتغيير تواريخه.",
+      zoomLabel: "التكبير",
+      filterLabel: "تصفية الحالة",
+      searchLabel: "البحث في عناصر الخط الزمني",
+      viewList: "القائمة",
+      viewTimeline: "الخط الزمني",
+      noPhases: "لا توجد مراحل بعد",
+      totalSpan: "المدة الكلية",
+      created: "أُنشئ في",
+      todayLine: "اليوم",
+      importantDays: "أيام بها عناصر مهمة",
+      kindProject: "مشروع",
+      kindPhase: "مرحلة",
+      kindDeadline: "موعد نهائي",
+      noParent: "بدون مشروع أعلى",
+      addPhase: "إضافة مرحلة",
     },
   };
+  const calendarText = {
+    en: {
+      eyebrow: "PLAN YOUR DAY",
+      title: "Calendar",
+      subtitle: "Every task, deadline, and appointment on one calendar.",
+      month: "Month",
+      week: "Week",
+      day: "Day",
+      agenda: "Agenda",
+      search: "Search events",
+      allEvents: "All events",
+      study: "Study",
+      personal: "Personal",
+      archived: "Archived",
+      addEvent: "Add event",
+      today: "Today",
+      previous: "Previous",
+      next: "Next",
+      previousPeriod: "Previous period",
+      nextPeriod: "Next period",
+      allDay: "All day",
+      more: "More",
+      moreLabel: "Show every event on this day",
+      events: "events",
+      event: "event",
+      noEvents: "No events yet",
+      noEventsHint:
+        "Add a task with a date and it will show up right here.",
+      noResults: "No matching events",
+      noResultsHint: "Try a different search or filter.",
+      dayTitle: "Schedule",
+      nothingDay: "Nothing scheduled for this day.",
+      addHere: "Add an event here",
+      openEvent: "Open event",
+      deleteEvent: "Delete event",
+      deleteConfirm: "Delete this event? This cannot be undone.",
+      deleteSuccess: "Event deleted.",
+      classStudy: "Study",
+      classPersonal: "Personal",
+      classArchived: "Archived",
+      noDate: "No date",
+      allDayBadge: "All day",
+      jumpToToday: "Jump to today",
+      switchToWeek: "Switch to week view",
+      switchToMonth: "Switch to month view",
+      agendaEmpty: "Nothing due in this period.",
+      openList: "Open the day",
+      todayIs: "Today",
+      selected: "Selected",
+      outOfMonth: "Outside the current month",
+      eventsOn: "Events on",
+      hint: "Tap a day to see everything scheduled for it.",
+    },
+    ar: {
+      eyebrow: "خطّط ليومك",
+      title: "التقويم",
+      subtitle: "كل مهمة وموعد نهائي وموعد في تقويم واحد.",
+      month: "شهر",
+      week: "أسبوع",
+      day: "يوم",
+      agenda: "جدول",
+      search: "ابحث في الأحداث",
+      allEvents: "كل الأحداث",
+      study: "دراسة",
+      personal: "شخصي",
+      archived: "المؤرشفة",
+      addEvent: "إضافة حدث",
+      today: "اليوم",
+      previous: "السابق",
+      next: "التالي",
+      previousPeriod: "الفترة السابقة",
+      nextPeriod: "الفترة التالية",
+      allDay: "طوال اليوم",
+      more: "المزيد",
+      moreLabel: "عرض كل أحداث هذا اليوم",
+      events: "أحداث",
+      event: "حدث",
+      noEvents: "لا توجد أحداث بعد",
+      noEventsHint: "أضف مهمة بتاريخها وستظهر هنا مباشرة.",
+      noResults: "لا توجد أحداث مطابقة",
+      noResultsHint: "جرّب بحثًا أو تصفية مختلفة.",
+      dayTitle: "جدول اليوم",
+      nothingDay: "لا يوجد شيء مجدول لهذا اليوم.",
+      addHere: "أضف حدثًا هنا",
+      openEvent: "فتح الحدث",
+      deleteEvent: "حذف الحدث",
+      deleteConfirm: "هل تريد حذف هذا الحدث؟ لا يمكن التراجع عن ذلك.",
+      deleteSuccess: "تم حذف الحدث.",
+      classStudy: "دراسة",
+      classPersonal: "شخصي",
+      classArchived: "المؤرشفة",
+      noDate: "بدون تاريخ",
+      allDayBadge: "طوال اليوم",
+      jumpToToday: "الانتقال إلى اليوم",
+      switchToWeek: "التبديل إلى عرض الأسبوع",
+      switchToMonth: "التبديل إلى عرض الشهر",
+      agendaEmpty: "لا استحقاقات في هذه الفترة.",
+      openList: "فتح اليوم",
+      todayIs: "اليوم",
+      selected: "المحدد",
+      outOfMonth: "خارج الشهر الحالي",
+      eventsOn: "أحداث",
+      hint: "اضغط على يوم لعرض كل ما هو مجدول فيه.",
+    },
+  };
+
   const savedLanguage = localStorage.getItem("studyflow.language");
   let appLanguage =
     savedLanguage === "ar" || savedLanguage === "en"
@@ -1883,6 +2121,15 @@
     "Study planner": "مخطط الدراسة",
     Tasks: "المهام",
     Deadlines: "المواعيد النهائية",
+    Calendar: "التقويم",
+    "Item type": "نوع العنصر",
+    "Parent project": "المشروع الأعلى",
+    Type: "النوع",
+    "Phase of a project": "مرحلة ضمن مشروع",
+    "No parent": "بدون مشروع أعلى",
+    Task: "مهمة",
+    Deadline: "موعد نهائي",
+    Project: "مشروع",
     Subjects: "المواد الدراسية",
     "Study files": "ملفات الدراسة",
     Notes: "الملاحظات",
@@ -5326,12 +5573,19 @@
     </article>`;
   }
 
+  /** Deadlines screen = real two-or-more-day items only (never due-date-only). */
+  function getDeadlinesForScreen() {
+    const base = getDeadlines();
+    if (!Timeline) return base;
+    return base.filter((task) => Timeline.isMultiDayItem(task));
+  }
+
   function getFilteredDeadlines() {
     const now = Date.now();
     const normalized = deadlineSearch.toLocaleLowerCase(
       appLanguage === "ar" ? "ar-EG" : "en",
     );
-    const result = getDeadlines().filter((deadline) => {
+    const result = getDeadlinesForScreen().filter((deadline) => {
       const status = getDeadlineStatus(deadline, now);
       const subject = deadline.subject || subjectName(deadline.subject_id);
       const searchMatches =
@@ -5356,6 +5610,207 @@
     return result;
   }
 
+  /* ------------------------------------------------------------------ *
+   * Timeline classification store (device-local, no schema change)      *
+   * ------------------------------------------------------------------ *
+   * Tasks keep syncing exactly as before. This map only records how the
+   * user classified an item (project / deadline / phase / task) plus the
+   * optional progress and archive flag, mirroring the value onto the task
+   * object in memory so every screen reads one shape.
+   */
+  const timelineMetaKey = "studyzone.task-meta.v1";
+  let timelineMetaCache = null;
+
+  function timelineMetaMap() {
+    if (timelineMetaCache) return timelineMetaCache;
+    try {
+      const parsed = JSON.parse(localStorage.getItem(timelineMetaKey));
+      timelineMetaCache =
+        parsed && typeof parsed === "object" && !Array.isArray(parsed)
+          ? parsed
+          : {};
+    } catch {
+      timelineMetaCache = {};
+    }
+    return timelineMetaCache;
+  }
+
+  function persistTimelineMeta() {
+    try {
+      localStorage.setItem(
+        timelineMetaKey,
+        JSON.stringify(timelineMetaCache || {}),
+      );
+    } catch (reason) {
+      console.warn("Could not save the timeline classification.", reason);
+    }
+  }
+
+  function metaForTask(id) {
+    if (id == null) return null;
+    const entry = timelineMetaMap()[String(id)];
+    return entry && typeof entry === "object" ? entry : null;
+  }
+
+  function setMetaForTask(id, patch) {
+    if (id == null) return;
+    const map = timelineMetaMap();
+    const key = String(id);
+    const merged = { ...(map[key] || {}), ...patch };
+    Object.keys(merged).forEach((field) => {
+      const value = merged[field];
+      if (value === null || value === undefined || value === "") {
+        delete merged[field];
+      }
+    });
+    if (Object.keys(merged).length) map[key] = merged;
+    else delete map[key];
+    persistTimelineMeta();
+  }
+
+  function clearMetaForTask(id) {
+    if (id == null) return;
+    const map = timelineMetaMap();
+    if (Object.prototype.hasOwnProperty.call(map, String(id))) {
+      delete map[String(id)];
+      persistTimelineMeta();
+    }
+  }
+
+  const Timeline = typeof StudyZoneTimeline !== "undefined" ? StudyZoneTimeline : null;
+
+  function isRoutineLike(task) {
+    return Boolean(
+      task &&
+        (task.routine_id || String(task.id || "").startsWith("routine:")),
+    );
+  }
+
+  /** Classification record for a task: { kind, parent } or null. */
+  function kindOfTask(task) {
+    if (!task || !Timeline) return null;
+    const meta = metaForTask(task.id);
+    if (meta && meta.kind) task.__item_kind = meta.kind;
+    if (meta && meta.parent) task.__item_parent = meta.parent;
+    if (meta && meta.progress != null) task.__progress = Number(meta.progress);
+    return Timeline.classify(task, meta);
+  }
+
+  /** Every project / deadline / phase with a real two-or-more-day span. */
+  function getTimelineItems() {
+    if (!Timeline) return [];
+    return tasks.filter((task) => {
+      if (isRoutineLike(task)) return false;
+      if (!Timeline.isMultiDayItem(task)) return false;
+      const info = kindOfTask(task);
+      return Boolean(info) && info.kind !== "task";
+    });
+  }
+
+  function isArchivedItem(task) {
+    const meta = metaForTask(task.id);
+    return Boolean(meta && meta.archived) || task.status === "completed";
+  }
+
+  function timelineStateOf(task, now) {
+    return Timeline ? Timeline.stateOf(task, now) : "backlog";
+  }
+
+  function timelineRangeOf(task) {
+    return Timeline ? Timeline.itemRange(task) : null;
+  }
+
+  function childrenOfItem(id, items) {
+    const key = String(id);
+    return items.filter((child) => {
+      const info = kindOfTask(child);
+      return info && info.parent != null && String(info.parent) === key;
+    });
+  }
+
+  function decorateTimelineItem(task, now) {
+    const meta = metaForTask(task.id);
+    const children = childrenOfItem(task.id, tasks);
+    const shaped = { ...task };
+    if (meta && meta.progress != null) shaped.__progress = Number(meta.progress);
+    return {
+      task,
+      id: String(task.id),
+      kind: (kindOfTask(task) || {}).kind || "deadline",
+      parent: (kindOfTask(task) || {}).parent || null,
+      range: timelineRangeOf(task),
+      state: timelineStateOf(task, now),
+      progress: Timeline
+        ? Timeline.progressOf(shaped, children)
+        : null,
+      archived: Boolean(meta && meta.archived),
+      phaseCount: children.length,
+      children,
+      meta,
+    };
+  }
+
+  /** Filtered, sorted rows for the timeline (roots + nested phases). */
+  function getFilteredTimeline() {
+    const now = Date.now();
+    const locale = appLanguage === "ar" ? "ar-EG" : "en";
+    const query = String(deadlineSearch || "")
+      .trim()
+      .toLocaleLowerCase(locale);
+    const showArchived = timelineFilter === "archived";
+    const roots = [];
+    const childIds = new Set();
+    const all = getTimelineItems();
+
+    all.forEach((task) => {
+      const info = kindOfTask(task);
+      if (info && info.parent != null && all.some(
+        (candidate) => String(candidate.id) === String(info.parent),
+      )) {
+        childIds.add(String(task.id));
+      }
+    });
+
+    all.forEach((task) => {
+      if (childIds.has(String(task.id))) return;
+      const item = decorateTimelineItem(task, now);
+      if (showArchived) {
+        if (!item.archived) return;
+      } else if (item.archived) {
+        return;
+      }
+      if (!showArchived && timelineFilter !== "all" && item.state !== timelineFilter) {
+        return;
+      }
+      if (query) {
+        const subject = subjectName(task.subject_id) || "";
+        const haystack = `${task.title} ${task.description || ""} ${subject}`.toLocaleLowerCase(locale);
+        if (!haystack.includes(query)) return;
+      }
+      roots.push(item);
+    });
+
+    const priority = { urgent: 0, high: 1, medium: 2, low: 3 };
+    roots.sort((a, b) => {
+      const aEnd = a.range && (a.range.endKey || a.range.startKey) || "9999-12-31";
+      const bEnd = b.range && (b.range.endKey || b.range.startKey) || "9999-12-31";
+      if (deadlineSort === "priority") {
+        return (
+          (priority[a.task.priority] ?? 2) - (priority[b.task.priority] ?? 2) ||
+          aEnd.localeCompare(bEnd)
+        );
+      }
+      if (deadlineSort === "recent") {
+        return (
+          new Date(b.task.created_at || 0) - new Date(a.task.created_at || 0) ||
+          aEnd.localeCompare(bEnd)
+        );
+      }
+      return aEnd.localeCompare(bEnd) || a.task.title.localeCompare(b.task.title);
+    });
+    return roots;
+  }
+
   function deadlineDateRange(deadline) {
     const due = new Date(deadline.due_at);
     const start = deadline.starts_at ? new Date(deadline.starts_at) : due;
@@ -5363,220 +5818,1085 @@
     return { start: dateKey(first), end: dateKey(due) };
   }
 
-  function calendarView(deadlines) {
+  /* ------------------------------------------------------------------ *
+   * Calendar screen                                                     *
+   * ------------------------------------------------------------------ *
+   * Reads the very same task rows as the Deadlines timeline, so an item
+   * that appears on both screens is always the same record.
+   */
+  function calendarLocale() {
+    return appLanguage === "ar" ? "ar-EG" : "en";
+  }
+
+  function calendarDateOf(key) {
+    const parsed = Timeline ? Timeline.parseKey(key) : null;
+    return parsed ? new Date(parsed.y, parsed.m - 1, parsed.d) : null;
+  }
+
+  function calendarFormat(key, options) {
+    const date = calendarDateOf(key);
+    return date
+      ? new Intl.DateTimeFormat(calendarLocale(), options).format(date)
+      : String(key || "");
+  }
+
+  function calendarRangeLabel(range) {
+    if (!range) return "";
+    if (range.startKey && range.endKey && range.startKey !== range.endKey) {
+      return `${calendarFormat(range.startKey, { month: "short", day: "numeric" })} – ${calendarFormat(range.endKey, { month: "short", day: "numeric", year: "numeric" })}`;
+    }
+    return calendarFormat(range.startKey || range.endKey, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+  }
+
+  /** Every dated record, filtered by the active search + classification. */
+  function calendarEntries() {
+    const locale = calendarLocale();
+    const query = String(calendarSearch || "").trim().toLocaleLowerCase(locale);
+    const result = [];
+    tasks.forEach((task) => {
+      if (!task || String(task.id || "").startsWith("routine:")) return;
+      if (!task.due_at && !task.starts_at) return;
+      const range = timelineRangeOf(task);
+      if (!range) return;
+      const archived = isArchivedItem(task);
+      const classification = archived
+        ? "archived"
+        : task.subject_id
+          ? "study"
+          : "personal";
+      if (calendarFilter !== "all" && classification !== calendarFilter) return;
+      if (query) {
+        const subject = subjectName(task.subject_id) || "";
+        const haystack =
+          `${task.title} ${task.description || ""} ${subject}`.toLocaleLowerCase(
+            locale,
+          );
+        if (!haystack.includes(query)) return;
+      }
+      result.push({ task, range, classification, archived });
+    });
+    result.sort(
+      (a, b) =>
+        String(a.range.startKey || "").localeCompare(
+          String(b.range.startKey || ""),
+        ) ||
+        String(a.range.endKey || "").localeCompare(
+          String(b.range.endKey || ""),
+        ) ||
+        String(a.task.title).localeCompare(String(b.task.title)),
+    );
+    return result;
+  }
+
+  function calendarEventsOn(entries, key) {
+    return entries.filter(
+      (entry) =>
+        String(entry.range.startKey || "") <= key &&
+        String(entry.range.endKey || entry.range.startKey || "") >= key,
+    );
+  }
+
+  function calendarTimeLabel(task) {
+    const ct = calendarText[appLanguage];
+    if (isAllDayTask(task)) return ct.allDay;
+    const raw = task.due_at || task.starts_at;
+    const date = raw ? new Date(raw) : null;
+    if (!date || Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat(calendarLocale(), {
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
+  }
+
+  function calendarEventPill(entry, key) {
+    const task = entry.task;
+    const classes = ["calendar-event", `is-${entry.classification}`];
+    if (entry.range.startKey !== key) classes.push("is-continuation");
+    if (task.status === "completed") classes.push("is-done");
+    const time = calendarTimeLabel(task);
+    return `<button type="button" class="${classes.join(" ")}" data-action="task-edit" data-id="${escapeHtml(task.id)}" title="${escapeHtml(task.title)}">${time ? `<span class="calendar-event-time">${escapeHtml(time)}</span>` : ""}<span class="calendar-event-title" dir="auto">${escapeHtml(task.title)}</span></button>`;
+  }
+
+  function calendarMonthBody(entries) {
+    const ct = calendarText[appLanguage];
+    const locale = calendarLocale();
     const t = deadlineText[appLanguage];
-    const locale = appLanguage === "ar" ? "ar-EG" : "en";
-    const mode = ["month", "week", "day"].includes(deadlineCalendarMode)
-      ? deadlineCalendarMode
-      : "month";
-    const today = dateKey(new Date());
-    const weekdayLabels = t.daysShort
-      .map((day) => `<span class="calendar-weekday">${day}</span>`)
+    const todayKey = dateKey(new Date());
+    const parts = String(calendarMonth).split("-");
+    const year = Number(parts[0]);
+    const monthIndex = Number(parts[1]) - 1;
+    const grid =
+      Timeline && Number.isFinite(year) && Number.isFinite(monthIndex)
+        ? Timeline.monthGrid(year, monthIndex)
+        : [];
+    const weekdayHeader = t.daysShort
+      .map((day) => `<div class="calendar-weekday" role="columnheader">${day}</div>`)
       .join("");
-    const modeSwitch = `<div class="sz-fullcal-mode" role="group" aria-label="${t.calendar}">${[
-      ["month", appLanguage === "ar" ? "شهر" : "Month"],
-      ["week", appLanguage === "ar" ? "أسبوع" : "Week"],
-      ["day", appLanguage === "ar" ? "اليوم" : "Day"],
+    const rows = grid
+      .map((week) => {
+        const cells = week
+          .map((cell) => {
+            const dayEvents = calendarEventsOn(entries, cell.key);
+            const classes = ["calendar-cell"];
+            if (!cell.inMonth) classes.push("is-outside");
+            if (cell.key === todayKey) classes.push("is-today");
+            if (cell.key === calendarSelectedDate) classes.push("is-selected");
+            const maxVisible = 3;
+            const visible = dayEvents.slice(0, maxVisible);
+            const extra = dayEvents.length - visible.length;
+            const label = calendarFormat(cell.key, { dateStyle: "full" });
+            return `<div class="${classes.join(" ")}" role="gridcell">
+              <button type="button" class="calendar-day-number" data-action="calendar-day-open" data-date="${cell.key}" aria-label="${escapeHtml(label)}" aria-pressed="${cell.key === calendarSelectedDate}">${new Intl.NumberFormat(locale).format(cell.day)}</button>
+              <div class="calendar-day-events">${visible
+                .map((entry) => calendarEventPill(entry, cell.key))
+                .join("")}${
+                  extra > 0
+                    ? `<button type="button" class="calendar-more" data-action="calendar-day-open" data-date="${cell.key}" aria-label="${escapeHtml(ct.moreLabel)}">+${extra} ${ct.more}</button>`
+                    : ""
+                }</div>
+            </div>`;
+          })
+          .join("");
+        return `<div class="calendar-week-row">${cells}</div>`;
+      })
+      .join("");
+    if (!rows) return `<div class="empty-state"><strong>${ct.noEvents}</strong></div>`;
+    return `<div class="calendar-weekdays" role="row">${weekdayHeader}</div><div class="calendar-month-grid" role="grid" aria-label="${escapeHtml(calendarFormat(`${calendarMonth}-01`, { month: "long", year: "numeric" }))}">${rows}</div>`;
+  }
+
+  function calendarWeekBody(entries) {
+    const ct = calendarText[appLanguage];
+    const locale = calendarLocale();
+    const todayKey = dateKey(new Date());
+    const keys = Timeline ? Timeline.weekDayKeys(calendarSelectedDate) : [];
+    const columns = keys
+      .map((key) => {
+        const dayEvents = calendarEventsOn(entries, key);
+        const classes = ["calendar-week-col"];
+        if (key === todayKey) classes.push("is-today");
+        if (key === calendarSelectedDate) classes.push("is-selected");
+        return `<div class="${classes.join(" ")}">
+          <header class="calendar-week-col-head">
+            <button type="button" data-action="calendar-day-open" data-date="${key}" aria-label="${escapeHtml(calendarFormat(key, { dateStyle: "full" }))}">
+              <strong>${calendarFormat(key, { weekday: "short" })}</strong>
+              <span>${new Intl.NumberFormat(locale).format(calendarDateOf(key)?.getDate() || 0)}</span>
+            </button>
+          </header>
+          <div class="calendar-week-col-body">${
+            dayEvents.length
+              ? dayEvents.map((entry) => calendarEventPill(entry, key)).join("")
+              : `<span class="calendar-week-empty">${ct.nothingDay}</span>`
+          }</div>
+        </div>`;
+      })
+      .join("");
+    return `<div class="calendar-week-view">${columns}</div>`;
+  }
+
+  function calendarDayBody(entries) {
+    const ct = calendarText[appLanguage];
+    const dayEvents = calendarEventsOn(entries, calendarSelectedDate);
+    if (!dayEvents.length) {
+      return `<div class="empty-state"><strong>${ct.nothingDay}</strong>${ct.noEventsHint}</div>`;
+    }
+    return `<div class="calendar-agenda-list">${dayEvents
+      .map((entry) => calendarAgendaRow(entry, calendarSelectedDate))
+      .join("")}</div>`;
+  }
+
+  function calendarAgendaRow(entry, key) {
+    const dt = deadlineText[appLanguage];
+    const task = entry.task;
+    const status = getDeadlineStatus(task);
+    const stateLabel =
+      task.status === "completed"
+        ? dt.statusCompleted
+        : status === "overdue"
+          ? dt.statusOverdue
+          : dt.pending;
+    const subject = subjectName(task.subject_id);
+    return `<article class="calendar-agenda-row is-${entry.classification} ${task.status === "completed" ? "is-done" : ""}">
+      <button type="button" class="calendar-agenda-main" data-action="task-edit" data-id="${escapeHtml(task.id)}">
+        <span class="calendar-agenda-when"><strong>${escapeHtml(calendarTimeLabel(task) || calendarText[appLanguage].allDay)}</strong><small>${escapeHtml(calendarFormat(key, { weekday: "short", month: "short", day: "numeric" }))}</small></span>
+        <span class="calendar-agenda-copy"><strong dir="auto">${escapeHtml(task.title)}</strong><small dir="auto">${escapeHtml([subject, stateLabel].filter(Boolean).join(" · "))}</small></span>
+      </button>
+      <button type="button" class="icon-button" data-action="calendar-event-delete" data-id="${escapeHtml(task.id)}" data-date="${key}" aria-label="${escapeHtml(calendarText[appLanguage].deleteEvent)}">×</button>
+    </article>`;
+  }
+
+  function calendarAgendaBody(entries) {
+    const ct = calendarText[appLanguage];
+    const startKey = calendarSelectedDate;
+    const days = 45;
+    const groups = [];
+    for (let index = 0; index < days; index += 1) {
+      const key = Timeline.addDays(startKey, index);
+      const dayEvents = calendarEventsOn(entries, key);
+      if (!dayEvents.length) continue;
+      groups.push({ key, entries: dayEvents });
+    }
+    if (!groups.length) {
+      return `<div class="empty-state"><strong>${entries.length ? ct.agendaEmpty : ct.noResults}</strong>${entries.length ? ct.noEventsHint : ct.noResultsHint}</div>`;
+    }
+    return `<div class="calendar-agenda">${groups
+      .map(
+        (group) => `<section class="calendar-agenda-day">
+          <h3>${escapeHtml(calendarFormat(group.key, { weekday: "long", month: "long", day: "numeric", year: "numeric" }))}</h3>
+          <div class="calendar-agenda-list">${group.entries
+            .map((entry) => calendarAgendaRow(entry, group.key))
+            .join("")}</div>
+        </section>`,
+      )
+      .join("")}</div>`;
+  }
+
+  function calendarPeriodLabel(mode) {
+    if (mode === "month") {
+      return calendarFormat(`${calendarMonth}-01`, {
+        month: "long",
+        year: "numeric",
+      });
+    }
+    if (mode === "week") {
+      const keys = Timeline ? Timeline.weekDayKeys(calendarSelectedDate) : [];
+      if (!keys.length) return "";
+      return `${calendarFormat(keys[0], { month: "short", day: "numeric" })} – ${calendarFormat(keys[6], { month: "short", day: "numeric", year: "numeric" })}`;
+    }
+    if (mode === "day") {
+      return calendarFormat(calendarSelectedDate, { dateStyle: "full" });
+    }
+    const endKey = Timeline ? Timeline.addDays(calendarSelectedDate, 44) : calendarSelectedDate;
+    return `${calendarFormat(calendarSelectedDate, { month: "short", day: "numeric", year: "numeric" })} – ${calendarFormat(endKey, { month: "short", day: "numeric", year: "numeric" })}`;
+  }
+
+  function calendarPage() {
+    const ct = calendarText[appLanguage];
+    if (typeof Timeline === "undefined" || !Timeline) {
+      return `${pageHeading(ct.eyebrow, ct.title, ct.subtitle)}
+        <section class="panel"><div class="empty-state"><strong>${ct.title}</strong><span>${ct.noEventsHint}</span></div></section>`;
+    }
+    const entries = calendarEntries();
+    const mode = ["month", "week", "day", "agenda"].includes(calendarViewMode)
+      ? calendarViewMode
+      : "month";
+    const filterOptions = [
+      ["all", ct.allEvents],
+      ["study", ct.study],
+      ["personal", ct.personal],
+      ["archived", ct.archived],
     ]
       .map(
         ([value, label]) =>
-          `<button type="button" class="${mode === value ? "is-active" : ""}" data-action="deadline-calendar-mode" data-mode="${value}" aria-pressed="${mode === value}">${label}</button>`,
+          `<button type="button" class="deadline-filter ${calendarFilter === value ? "selected" : ""}" data-action="calendar-filter" data-filter="${value}" aria-pressed="${calendarFilter === value}">${label}</button>`,
       )
-      .join("")}</div>`;
-    const eventTone = (deadline) => {
-      const status = getDeadlineStatus(deadline);
-      if (status === "completed") return "tone-done";
-      if (status === "overdue") return "tone-overdue";
-      if (deadline.priority === "high") return "tone-red";
-      if (deadline.priority === "low") return "tone-slate";
-      return "tone-blue";
-    };
-    const timeLabel = (deadline) => {
-      const due = new Date(deadline.due_at);
-      if (Number.isNaN(due.getTime())) return "";
-      if (due.getHours() === 23 && due.getMinutes() === 59)
-        return appLanguage === "ar" ? "طوال اليوم" : "All day";
-      return new Intl.DateTimeFormat(locale, {
-        hour: "numeric",
-        minute: "2-digit",
-      }).format(due);
-    };
-    const selected = deadlines.filter((deadline) => {
-      const range = deadlineDateRange(deadline);
-      return (
-        selectedDeadlineDate >= range.start && selectedDeadlineDate <= range.end
-      );
-    });
-    const selectedLabel = selectedDeadlineDate
-      ? new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(
-          new Date(`${selectedDeadlineDate}T12:00:00`),
-        )
-      : t.noDate;
-    const selection = `<div class="calendar-selection">${panelHeading(escapeHtml(selectedLabel), `${selected.length} ${selected.length === 1 ? t.deadline : t.deadlines}`)}<div class="deadline-list">${selected.map(deadlineCard).join("") || `<div class="empty-state">${t.noDateItems}</div>`}</div></div>`;
+      .join("");
+    const viewOptions = [
+      ["month", ct.month],
+      ["week", ct.week],
+      ["day", ct.day],
+      ["agenda", ct.agenda],
+    ]
+      .map(
+        ([value, label]) =>
+          `<button type="button" class="deadline-view-button ${mode === value ? "selected" : ""}" data-action="calendar-view" data-mode="${value}" aria-pressed="${mode === value}">${label}</button>`,
+      )
+      .join("");
+    const body =
+      mode === "month"
+        ? calendarMonthBody(entries)
+        : mode === "week"
+          ? calendarWeekBody(entries)
+          : mode === "day"
+            ? calendarDayBody(entries)
+            : calendarAgendaBody(entries);
+    const emptyNote = entries.length
+      ? ""
+      : `<p class="data-caption">${ct.noEventsHint}</p>`;
+    const animationClass =
+      calendarAnim === "forward"
+        ? "anim-forward"
+        : calendarAnim === "backward"
+          ? "anim-backward"
+          : "anim-fade";
+    return `${pageHeading(ct.eyebrow, ct.title, ct.subtitle, `<button class="button button-primary" data-action="calendar-add"><span class="button-icon">＋</span> ${ct.addEvent}</button>`)}
+      <section class="panel calendar-panel">
+        <div class="calendar-toolbar">
+          <label class="search-box"><span>⌕</span><input id="calendar-search" type="search" dir="auto" value="${escapeHtml(calendarSearch)}" placeholder="${ct.search}" aria-label="${ct.search}"></label>
+          <div class="deadline-filters calendar-filters" role="group" aria-label="${ct.allEvents}">${filterOptions}</div>
+          <div class="calendar-toolbar-end">
+            <div class="deadline-view-switch calendar-views" role="group" aria-label="${ct.month}">${viewOptions}</div>
+          </div>
+        </div>
+        <div class="calendar-subbar">
+          <div class="calendar-period-nav">
+            <button type="button" class="icon-button" data-action="calendar-prev" aria-label="${ct.previousPeriod}">‹</button>
+            <h2 class="calendar-period-label">${escapeHtml(calendarPeriodLabel(mode))}</h2>
+            <button type="button" class="icon-button" data-action="calendar-next" aria-label="${ct.nextPeriod}">›</button>
+          </div>
+          <div class="calendar-subbar-end">
+            <span class="calendar-hint">${ct.hint}</span>
+            <button type="button" class="button button-secondary button-small" data-action="calendar-today">${ct.today}</button>
+          </div>
+        </div>
+        <div class="calendar-body ${animationClass}" dir="ltr">${body}</div>
+        ${emptyNote}
+      </section>`;
+  }
 
-    if (mode === "week" || mode === "day") {
-      const anchor =
-        parseLocalDateKey(selectedDeadlineDate) ||
-        new Date(deadlineMonth.getFullYear(), deadlineMonth.getMonth(), 1);
-      const dayStart =
-        mode === "week" ? new Date(anchor) : new Date(anchor);
-      if (mode === "week") dayStart.setDate(anchor.getDate() - anchor.getDay());
-      const periodDays =
-        mode === "week"
-          ? Array.from({ length: 7 }, (_, index) => {
-              const date = new Date(dayStart);
-              date.setDate(dayStart.getDate() + index);
-              return date;
-            })
-          : [dayStart];
-      const periodLabel =
-        mode === "week"
-          ? `${new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(periodDays[0])} – ${new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", year: "numeric" }).format(periodDays[6])}`
-          : new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(
-              periodDays[0],
-            );
-      const weekGrid = `<div class="sz-week-grid">${periodDays
-        .map((date) => {
-          const key = dateKey(date);
-          const dayEvents = deadlines.filter((deadline) => {
-            const range = deadlineDateRange(deadline);
-            return key >= range.start && key <= range.end;
-          });
-          return `<div class="sz-week-col ${key === today ? "is-today" : ""}"><header><button type="button" data-action="calendar-select" data-date="${key}" aria-label="${escapeHtml(new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(date))}"><strong>${new Intl.DateTimeFormat(locale, { weekday: "short" }).format(date)}</strong><span>${new Intl.NumberFormat(locale).format(date.getDate())}</span></button></header>${dayEvents
-            .map(
-              (deadline) =>
-                `<button type="button" class="sz-week-event ${eventTone(deadline)} ${getDeadlineStatus(deadline) === "completed" ? "is-done" : ""}" data-action="deadline-edit" data-id="${escapeHtml(deadline.id)}"><strong dir="auto">${escapeHtml(deadline.title)}</strong><small>${escapeHtml(timeLabel(deadline))}</small></button>`,
-            )
-            .join("")}</div>`;
-        })
-        .join("")}</div>`;
-      const dayLabel = new Intl.DateTimeFormat(locale, {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-      }).format(periodDays[0]);
-      const dayEvents = deadlines.filter((deadline) => {
-        const range = deadlineDateRange(deadline);
-        return (
-          selectedDeadlineDate >= range.start &&
-          selectedDeadlineDate <= range.end
-        );
-      });
-      const dayAgenda = `<div class="sz-day-agenda">${dayEvents
-        .map((deadline) => {
-          const status = getDeadlineStatus(deadline);
-          return `<div class="sz-day-row ${eventTone(deadline)} ${status === "completed" ? "is-done" : ""} ${status === "overdue" ? "is-overdue" : ""}"><time>${escapeHtml(timeLabel(deadline))}</time><div><strong dir="auto">${escapeHtml(deadline.title)}</strong><small dir="auto">${escapeHtml(deadline.subject || subjectName(deadline.subject_id) || "")} · ${escapeHtml(status === "completed" ? t.statusCompleted : status === "overdue" ? t.statusOverdue : t.pending)}</small></div><button type="button" class="icon-button" data-action="deadline-edit" data-id="${escapeHtml(deadline.id)}" aria-label="${escapeHtml(t.edit)}">✎</button></div>`;
-        })
-        .join("") || `<div class="empty-state"><strong>${t.noDateItems}</strong></div>`}</div>`;
-      return `<div class="calendar-header"><div><h2 class="calendar-month" id="calendar-month">${escapeHtml(periodLabel)}</h2><p class="calendar-subtitle">${mode === "week" ? (appLanguage === "ar" ? "خطة الأسبوع" : "Week at a glance") : escapeHtml(dayLabel)}</p></div><div class="calendar-nav">${modeSwitch}<button class="button button-secondary button-small" data-action="calendar-today">${appLanguage === "ar" ? "اليوم" : "Today"}</button><button class="icon-button" data-action="calendar-prev" aria-label="${appLanguage === "ar" ? "السابق" : "Previous"}">‹</button><button class="icon-button" data-action="calendar-next" aria-label="${appLanguage === "ar" ? "التالي" : "Next"}">›</button></div></div>
-        ${mode === "week" ? weekGrid : dayAgenda}
-        ${mode === "week" ? selection : ""}`;
+  function shiftCalendarPeriod(direction) {
+    calendarAnim = direction < 0 ? "backward" : "forward";
+    if (calendarViewMode === "month") {
+      const parts = String(calendarMonth).split("-");
+      const base = new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
+      base.setMonth(base.getMonth() + direction);
+      calendarMonth = `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}`;
+      if (calendarSelectedDate.slice(0, 7) !== calendarMonth) {
+        calendarSelectedDate = `${calendarMonth}-01`;
+      }
+      return;
     }
+    const step =
+      calendarViewMode === "week" ? 7 : calendarViewMode === "agenda" ? 30 : 1;
+    const current = parseLocalDateKey(calendarSelectedDate) || new Date();
+    const next = addLocalDays(current, step * direction);
+    calendarSelectedDate = dateKey(next);
+    calendarMonth = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
+  }
 
-    const year = deadlineMonth.getFullYear();
-    const month = deadlineMonth.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const startOffset = firstDay.getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const weekCount = Math.ceil((startOffset + daysInMonth) / 7);
-    const startOfGrid = new Date(year, month, 1 - startOffset);
-    const weeks = Array.from({ length: weekCount }, (_, weekIndex) => {
-      const weekStart = new Date(startOfGrid);
-      weekStart.setDate(startOfGrid.getDate() + weekIndex * 7);
-      const dayDates = Array.from({ length: 7 }, (_, dayIndex) => {
-        const date = new Date(weekStart);
-        date.setDate(weekStart.getDate() + dayIndex);
-        const key = dateKey(date);
-        const hasDeadlines = deadlines.some((deadline) => {
-          const range = deadlineDateRange(deadline);
-          return key >= range.start && key <= range.end;
-        });
-        const classes = ["calendar-day"];
-        if (date.getMonth() !== month) classes.push("outside-month");
-        if (key === today) classes.push("today");
-        if (key === selectedDeadlineDate) classes.push("selected");
-        if (hasDeadlines) classes.push("has-deadlines");
-        return {
-          date,
-          key,
-          button: `<button class="${classes.join(" ")}" data-action="calendar-select" data-date="${key}" aria-label="${escapeHtml(new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(date))}" aria-pressed="${key === selectedDeadlineDate}">${new Intl.NumberFormat(locale).format(date.getDate())}</button>`,
-        };
+  function openCalendarDay(key) {
+    const ct = calendarText[appLanguage];
+    const dt = deadlineText[appLanguage];
+    const modal = document.getElementById("calendar-day-modal");
+    if (!modal) return;
+    calendarDayModalKey = key;
+    const entries = calendarEventsOn(calendarEntries(), key);
+    document.getElementById("calendar-day-title").textContent = calendarFormat(
+      key,
+      { dateStyle: "full" },
+    );
+    document.getElementById("calendar-day-eyebrow").textContent = ct.eventsOn;
+    document.getElementById("calendar-day-body").innerHTML = entries.length
+      ? `<ul class="calendar-day-list">${entries
+          .map((entry) => {
+            const task = entry.task;
+            const status = getDeadlineStatus(task);
+            const subject = subjectName(task.subject_id);
+            const stateLabel =
+              task.status === "completed"
+                ? dt.statusCompleted
+                : status === "overdue"
+                  ? dt.statusOverdue
+                  : dt.pending;
+            return `<li class="calendar-day-item is-${entry.classification} ${task.status === "completed" ? "is-done" : ""}">
+              <button type="button" class="calendar-day-item-main" data-action="task-edit" data-id="${escapeHtml(task.id)}">
+                <span class="calendar-event-dot" aria-hidden="true"></span>
+                <span class="calendar-day-item-copy"><strong dir="auto">${escapeHtml(task.title)}</strong><small dir="auto">${escapeHtml([calendarTimeLabel(task), subject].filter(Boolean).join(" · "))}</small></span>
+                <span class="calendar-day-item-state">${escapeHtml(stateLabel)}</span>
+              </button>
+              <button type="button" class="icon-button" data-action="calendar-event-delete" data-id="${escapeHtml(task.id)}" data-date="${key}" aria-label="${escapeHtml(ct.deleteEvent)}">×</button>
+            </li>`;
+          })
+          .join("")}</ul>`
+      : `<div class="empty-state"><strong>${ct.nothingDay}</strong><span>${ct.noEventsHint}</span></div>`;
+    openModal(modal);
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Deadlines — dedicated horizontal timeline                           *
+   * ------------------------------------------------------------------ */
+
+  function timelineWindow() {
+    const zoom = Timeline ? Timeline.normalizeZoom(timelineZoom) : "week";
+    const start = Timeline
+      ? Timeline.windowStart(timelineAnchor, zoom)
+      : dateKey(new Date());
+    const days = Timeline ? Timeline.windowDays(zoom) : 21;
+    const width = Timeline ? Timeline.dayWidth(zoom) : 76;
+    return { zoom, start, days, width, total: days * width };
+  }
+
+  function timelineStateLabel(state, t) {
+    if (state === "completed") return t.completedStatus;
+    if (state === "overdue") return t.overdueStatus;
+    if (state === "active") return t.active;
+    return t.backlog;
+  }
+
+  function timelineKindLabel(kind, t) {
+    if (kind === "project") return t.kindProject;
+    if (kind === "phase") return t.kindPhase;
+    return t.kindDeadline;
+  }
+
+  function timelineFormatDay(key) {
+    return calendarFormat(key, { month: "short", day: "numeric" });
+  }
+
+  function timelinePeriodLabel(win) {
+    const endKey = Timeline.addDays(win.start, win.days - 1);
+    return `${timelineFormatDay(win.start)} – ${calendarFormat(endKey, { month: "short", day: "numeric", year: "numeric" })}`;
+  }
+
+  function timelineTrack(inner, win) {
+    return `<div class="timeline-track" style="width:${win.total}px">${inner}</div>`;
+  }
+
+  /** Priority class for display purposes, taken from the recorded priority
+   *  on the task (never inferred from dates or invented). */
+  function priorityClassOf(task) {
+    const value = String((task && task.priority) || "").trim().toLowerCase();
+    if (value === "urgent") return "urgent";
+    if (value === "high") return "high";
+    if (value === "medium") return "medium";
+    if (value === "low") return "low";
+    return "none";
+  }
+
+  function priorityLabelOf(task, t) {
+    const value = String((task && task.priority) || "").trim().toLowerCase();
+    if (value === "urgent") return t.urgent;
+    if (value === "high") return t.high;
+    if (value === "medium") return t.medium;
+    if (value === "low") return t.low;
+    return t.noPriority;
+  }
+
+  function timelineBarMarkup(item, win) {
+    const t = deadlineText[appLanguage];
+    const range = item.range;
+    const prioLabel = priorityLabelOf(item.task, t);
+    if (!range) {
+      return timelineTrack(
+        `<div class="timeline-incomplete"><span class="timeline-incomplete-flag">${t.incompleteData}</span><span class="timeline-incomplete-hint">${t.incompleteDataHint}</span></div>`,
+        win,
+      );
+    }
+    const markerOnly = !range.startKey && Boolean(range.endKey);
+    if (markerOnly) {
+      const marker = Timeline.markerGeometry(
+        range.endKey,
+        win.start,
+        win.days,
+        win.width,
+      );
+      if (!marker) {
+        return timelineTrack(
+          `<div class="timeline-offscreen" aria-hidden="true"></div>`,
+          win,
+        );
+      }
+      const label = `${t.markerOnly} · ${timelineFormatDay(range.endKey)}`;
+      return timelineTrack(
+        `<button type="button" class="timeline-marker state-${item.state} prio-${priorityClassOf(item.task)}" style="left:${marker.left}px" data-action="timeline-open" data-id="${escapeHtml(item.id)}" title="${escapeHtml(`${item.task.title} — ${label} · ${prioLabel}`)}" aria-label="${escapeHtml(`${item.task.title} — ${label} · ${prioLabel}`)}"><span class="timeline-marker-pin" aria-hidden="true"></span><span class="timeline-marker-label" dir="auto">${escapeHtml(item.task.title)}</span></button>`,
+        win,
+      );
+    }
+    const geo = Timeline.barGeometry(
+      range,
+      win.start,
+      win.days,
+      win.width,
+    );
+    if (!geo) {
+      return timelineTrack(
+        `<div class="timeline-offscreen" aria-hidden="true"></div>`,
+        win,
+      );
+    }
+    const progress = item.progress;
+    const stateLabel = timelineStateLabel(item.state, t);
+    const spanLabel = `${geo.spanDays} ${geo.spanDays === 1 ? t.dayCount : t.daysCount}`;
+    const datesLabel = range.endKey
+      ? `${timelineFormatDay(range.startKey)} – ${timelineFormatDay(range.endKey)}`
+      : `${timelineFormatDay(range.startKey)} → ${t.openEnded}`;
+    const classes = [
+      "timeline-bar",
+      `prio-${priorityClassOf(item.task)}`,
+      `state-${item.state}`,
+      geo.openEnded ? "is-open-ended" : "",
+      geo.clippedStart ? "is-clipped-start" : "",
+      geo.clippedEnd ? "is-clipped-end" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const showMeta = geo.width >= 190;
+    const showState = geo.width >= 300;
+    return timelineTrack(
+      `<button type="button" class="${classes}" style="left:${geo.left}px;width:${geo.width}px" data-action="timeline-open" data-id="${escapeHtml(item.id)}" data-bar-id="${escapeHtml(item.id)}" title="${escapeHtml(`${item.task.title} · ${datesLabel} · ${spanLabel} · ${stateLabel} · ${prioLabel}`)}" aria-label="${escapeHtml(`${item.task.title}, ${datesLabel}, ${spanLabel}, ${stateLabel}, ${prioLabel}`)}">
+        ${progress != null ? `<span class="timeline-bar-progress" style="width:${progress}%"></span>` : ""}
+        <span class="timeline-bar-inner">
+          <span class="timeline-bar-title" dir="auto">${escapeHtml(item.task.title)}</span>
+          ${
+            showMeta
+              ? `<span class="timeline-bar-meta"><span>${escapeHtml(datesLabel)}</span><span>${escapeHtml(spanLabel)}</span>${
+                  progress != null ? `<span>${progress}%</span>` : ""
+                }${showState ? `<span class="timeline-bar-state">${escapeHtml(stateLabel)}</span>` : ""}</span>`
+              : ""
+          }
+        </span>
+        ${geo.openEnded ? `<span class="timeline-bar-cap" aria-hidden="true"></span>` : ""}
+      </button>`,
+      win,
+    );
+  }
+
+  function timelineChildrenOf(item) {
+    return childrenOfItem(item.id, tasks).filter((child) => {
+      const info = kindOfTask(child);
+      return Boolean(info) && info.kind !== "task";
+    });
+  }
+
+  function timelineRowMarkup(item, win, depth) {
+    const t = deadlineText[appLanguage];
+    const children = timelineChildrenOf(item);
+    const expanded = !timelineCollapsed.has(item.id);
+    const hasChildren = children.length > 0;
+    const stateLabel = timelineStateLabel(item.state, t);
+    const progress = item.progress;
+    const metaBits = [];
+    if (hasChildren) {
+      metaBits.push(`${children.length} ${children.length === 1 ? t.phaseCount : t.subItems}`);
+    }
+    if (progress != null) metaBits.push(`${progress}%`);
+    metaBits.push(stateLabel);
+    const expander = hasChildren
+      ? `<button type="button" class="timeline-expander ${expanded ? "is-open" : ""}" data-action="timeline-toggle" data-id="${escapeHtml(item.id)}" aria-expanded="${expanded}" aria-label="${escapeHtml(item.task.title)}">▸</button>`
+      : `<span class="timeline-expander-spacer" aria-hidden="true"></span>`;
+    const prio = priorityClassOf(item.task);
+    const row = `<div class="timeline-row ${depth ? "is-child" : ""} state-${item.state} prio-${prio}" data-timeline-id="${escapeHtml(item.id)}" style="--row-depth:${depth}">
+      <div class="timeline-row-name">
+        ${expander}
+        <span class="timeline-prio-dot prio-${prio}" aria-hidden="true"></span>
+        <span class="timeline-kind kind-${item.kind}">${timelineKindLabel(item.kind, t)}</span>
+        <button type="button" class="timeline-name-text" data-action="timeline-open" data-id="${escapeHtml(item.id)}" dir="auto">${escapeHtml(item.task.title)}</button>
+        <span class="timeline-name-meta">${escapeHtml(metaBits.join(" · "))}</span>
+      </div>
+      ${timelineBarMarkup(item, win)}
+    </div>`;
+    if (!expanded || !hasChildren) return row;
+    return (
+      row +
+      children
+        .map((child) =>
+          timelineRowMarkup(decorateTimelineItem(child, Date.now()), win, depth + 1),
+        )
+        .join("")
+    );
+  }
+
+  function timelineHeaderMarkup(win, items) {
+    const t = deadlineText[appLanguage];
+    const locale = calendarLocale();
+    const todayKey = dateKey(new Date());
+    const dayKeys = Array.from({ length: win.days }, (_, index) =>
+      Timeline.addDays(win.start, index),
+    );
+    const segments = [];
+    dayKeys.forEach((key) => {
+      const parsed = Timeline.parseKey(key);
+      const monthKey = parsed ? `${parsed.y}-${parsed.m}` : "";
+      const last = segments[segments.length - 1];
+      if (last && last.monthKey === monthKey) last.span += 1;
+      else segments.push({ monthKey, span: 1, parsed });
+    });
+    const band = segments
+      .map(
+        (segment) =>
+          `<div class="timeline-month-seg" style="width:${segment.span * win.width}px">${
+            segment.parsed
+              ? new Intl.DateTimeFormat(locale, {
+                  month: "long",
+                  year: "numeric",
+                }).format(new Date(segment.parsed.y, segment.parsed.m - 1, 1))
+              : ""
+          }</div>`,
+      )
+      .join("");
+    const important = new Map();
+    items.forEach((item) => {
+      if (!item.range) return;
+      const keys = [item.range.startKey, item.range.endKey].filter(Boolean);
+      keys.forEach((key) => {
+        if (!Timeline.windowContains(key, win.start, win.days)) return;
+        const current = important.get(key) || { count: 0, alert: false };
+        current.count += 1;
+        if (item.state === "overdue" || item.kind === "project") {
+          current.alert = true;
+        }
+        important.set(key, current);
       });
+    });
+    const dayCells = dayKeys
+      .map((key) => {
+        const parsed = Timeline.parseKey(key);
+        const date = parsed
+          ? new Date(parsed.y, parsed.m - 1, parsed.d)
+          : null;
+        const weekday = date ? date.getDay() : 0;
+        const classes = ["timeline-day-cell"];
+        if (key === todayKey) classes.push("is-today");
+        if (weekday === 0 || weekday === 6) classes.push("is-weekend");
+        const note = important.get(key);
+        return `<div class="${classes.join(" ")}" style="width:${win.width}px" title="${escapeHtml(calendarFormat(key, { dateStyle: "full" }))}"><span class="timeline-day-num">${parsed ? new Intl.NumberFormat(locale).format(parsed.d) : ""}</span><span class="timeline-day-dow ${note ? "has-note" : ""} ${note && note.alert ? "is-alert" : ""}" aria-hidden="true"></span></div>`;
+      })
+      .join("");
+    return `<div class="timeline-header">
+      <div class="timeline-header-name">
+        <strong>${t.title}</strong>
+        <small>${t.importantDays}</small>
+      </div>
+      <div class="timeline-header-days" style="width:${win.total}px">
+        <div class="timeline-month-band" aria-hidden="true">${band}</div>
+        <div class="timeline-day-row" role="row">${dayCells}</div>
+      </div>
+    </div>`;
+  }
 
-      const weekStartKey = dayDates[0].key;
-      const weekEndKey = dayDates[6].key;
-      const laneEnds = [];
-      const bars = deadlines
-        .map((deadline) => {
-          const range = deadlineDateRange(deadline);
-          if (range.start > weekEndKey || range.end < weekStartKey) return null;
-          const startColumn = Math.max(
-            0,
-            Math.round(
-              (new Date(`${range.start}T00:00:00`) - weekStart) / 86400000,
-            ),
-          );
-          const endColumn = Math.min(
-            6,
-            Math.round(
-              (new Date(`${range.end}T00:00:00`) - weekStart) / 86400000,
-            ),
-          );
-          let lane = laneEnds.findIndex(
-            (lastColumn) => lastColumn < startColumn,
-          );
-          if (lane < 0) lane = laneEnds.length;
-          laneEnds[lane] = endColumn;
-          const status = getDeadlineStatus(deadline);
-          const classNames = ["calendar-span-bar"];
-          if (status === "overdue") classNames.push("overdue");
-          if (status === "completed") classNames.push("completed");
-          if (startColumn === endColumn) classNames.push("single-day");
-          const label = range.start >= weekStartKey ? deadline.title : "";
-          return `<span class="${classNames.join(" ")}" style="grid-column:${startColumn + 1}/${endColumn + 2};grid-row:${lane + 1}" title="${escapeHtml(deadline.title)}" aria-label="${escapeHtml(deadline.title)}">${escapeHtml(label)}</span>`;
-        })
-        .filter(Boolean)
-        .join("");
-      return `<div class="calendar-week"><div class="calendar-week-days">${dayDates.map((item) => item.button).join("")}</div><div class="calendar-week-bars" style="grid-template-rows:repeat(${Math.max(1, laneEnds.length)},18px)">${bars}</div></div>`;
-    }).join("");
-    const monthLabel = new Intl.DateTimeFormat(locale, {
-      month: "long",
-      year: "numeric",
-    }).format(deadlineMonth);
-    return `<div class="calendar-header"><h2 class="calendar-month" id="calendar-month">${escapeHtml(monthLabel)}</h2><div class="calendar-nav">${modeSwitch}<button class="button button-secondary button-small" data-action="calendar-today">${t.currentMonth}</button><button class="icon-button" data-action="calendar-prev" aria-label="${t.previous}">‹</button><button class="icon-button" data-action="calendar-next" aria-label="${t.next}">›</button></div></div>
-      <div class="calendar-grid" role="grid" aria-labelledby="calendar-month"><div class="calendar-weekdays">${weekdayLabels}</div>${weeks}</div>
-      ${selection}`;
+  function timelineBody(items, win) {
+    const t = deadlineText[appLanguage];
+    if (!items.length) {
+      const anyItem = getTimelineItems().length > 0;
+      return `<div class="timeline-empty empty-state"><strong>${anyItem ? t.noTimelineResults : t.noTimelineItems}</strong><span>${anyItem ? t.noTimelineResultsHint : t.noTimelineItemsHint}</span></div>`;
+    }
+    const rowsHtml = items
+      .map((item) => timelineRowMarkup(item, win, 0))
+      .join("");
+    const todayKey = dateKey(new Date());
+    const offset = Timeline.dayIndex(todayKey, win.start);
+    const inWindow = offset != null && offset >= 0 && offset < win.days;
+    const animationClass =
+      timelineAnim === "forward"
+        ? "anim-forward"
+        : timelineAnim === "backward"
+          ? "anim-backward"
+          : "anim-fade";
+    return `<div class="timeline-scroll" id="timeline-scroll" dir="ltr">
+      <div class="timeline-canvas ${animationClass}" style="--timeline-day-width:${win.width}px;--timeline-total:${win.total}px">
+        ${
+          inWindow
+            ? `<div class="timeline-today-col" style="left:calc(var(--timeline-name-width) + ${offset * win.width}px);width:${win.width}px" aria-hidden="true"></div>
+        <div class="timeline-today-line" style="left:calc(var(--timeline-name-width) + ${offset * win.width + Math.floor(win.width / 2)}px)" aria-hidden="true"></div>`
+            : ""
+        }
+        ${timelineHeaderMarkup(win, items)}
+        <div class="timeline-rows">${rowsHtml}</div>
+      </div>
+    </div>`;
+  }
+
+  function timelineArchivedCount() {
+    return getTimelineItems().filter((task) => {
+      const meta = metaForTask(task.id);
+      return Boolean(meta && meta.archived);
+    }).length;
   }
 
   function deadlinesPage() {
     const t = deadlineText[appLanguage];
-    const deadlines = getDeadlines();
-    const filtered = getFilteredDeadlines();
-    const activeCount = filtered.length;
-    const list = activeCount
-      ? filtered.map(deadlineCard).join("")
-      : `<div class="empty-state"><strong>${deadlines.length ? t.noResults : t.noDeadlines}</strong>${deadlines.length ? t.noResultsHint : t.noDeadlinesHint}</div>`;
+    if (typeof Timeline === "undefined" || !Timeline) {
+      return `${pageHeading(t.eyebrow, t.title, t.subtitle)}
+        <section class="panel"><div class="empty-state"><strong>${t.title}</strong><span>${t.noDeadlinesHint}</span></div></section>`;
+    }
+    const rows = getFilteredTimeline();
+    const archivedCount = timelineArchivedCount();
     const filterOptions = [
       ["all", t.all],
-      ["upcoming", t.filterUpcoming],
-      ["overdue", t.filterOverdue],
+      ["backlog", t.filterBacklog],
+      ["active", t.filterActive],
       ["completed", t.filterCompleted],
+      ["overdue", t.filterOverdue],
+      ["archived", `${t.archived} (${archivedCount})`],
     ]
       .map(
         ([value, label]) =>
-          `<button class="deadline-filter ${deadlineFilter === value ? "selected" : ""}" data-deadline-filter="${value}" aria-pressed="${deadlineFilter === value}">${label}</button>`,
+          `<button type="button" class="deadline-filter ${timelineFilter === value ? "selected" : ""}" data-action="timeline-filter" data-filter="${value}" aria-pressed="${timelineFilter === value}">${label}</button>`,
       )
       .join("");
-    const listControls = `<div class="deadline-toolbar"><div class="deadline-filters" role="group" aria-label="${t.title} filters">${filterOptions}</div><div class="deadline-controls"><label class="search-box"><span>⌕</span><input id="deadline-search" type="search" dir="auto" value="${escapeHtml(deadlineSearch)}" placeholder="${t.search}" aria-label="${t.search}"></label><select class="filter-select" id="deadline-sort" aria-label="${t.priorityLabel}"><option value="due" ${deadlineSort === "due" ? "selected" : ""}>${t.dueDate}</option><option value="priority" ${deadlineSort === "priority" ? "selected" : ""}>${t.priority}</option><option value="recent" ${deadlineSort === "recent" ? "selected" : ""}>${t.recentlyAdded}</option></select></div></div>`;
-    const viewControls = `<div class="deadline-view-switch" role="group"><button class="deadline-view-button ${deadlineView === "list" ? "selected" : ""}" data-deadline-view="list" aria-pressed="${deadlineView === "list"}">☷ ${t.list}</button><button class="deadline-view-button ${deadlineView === "calendar" ? "selected" : ""}" data-deadline-view="calendar" aria-pressed="${deadlineView === "calendar"}">▦ ${t.calendar}</button></div>`;
-    const display =
-      deadlineView === "list"
-        ? `<div class="deadline-list-heading"><strong>${t.title}</strong><span>${t.showing} ${activeCount} ${activeCount === 1 ? t.deadline : t.deadlines}</span></div><div class="deadline-list">${list}</div>`
-        : calendarView(filtered);
-    return `${pageHeading(t.eyebrow, t.title, t.subtitle, `<button class="button button-primary" data-action="deadline-add"><span class="button-icon">＋</span> ${t.add}</button>`)}
-      ${deadlineStats(deadlines)}
-      <section class="panel"><div class="deadline-toolbar-row">${listControls}${viewControls}</div>${deadlinesLoading ? `<div class="deadline-loading"><div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div></div>` : display}</section>
-      <p class="data-caption">${session ? t.reminderNote : t.sampleNote}</p>`;
+    const viewSwitch = `<div class="deadline-view-switch" role="group" aria-label="${t.viewTimeline}">
+      <button type="button" class="deadline-view-button ${deadlineView === "timeline" ? "selected" : ""}" data-deadline-view="timeline" aria-pressed="${deadlineView === "timeline"}">▤ ${t.viewTimeline}</button>
+      <button type="button" class="deadline-view-button ${deadlineView === "list" ? "selected" : ""}" data-deadline-view="list" aria-pressed="${deadlineView === "list"}">☷ ${t.list}</button>
+    </div>`;
+    const actions = `<button class="button button-secondary" data-action="deadline-project-add"><span class="button-icon">＋</span> ${t.newProject}</button><button class="button button-primary" data-action="deadline-add"><span class="button-icon">＋</span> ${t.newDeadline}</button>`;
+    const filterPanel = timelineFilterOpen
+      ? `<div class="timeline-filter-panel">
+          <label class="search-box"><span>⌕</span><input id="timeline-search" type="search" dir="auto" value="${escapeHtml(deadlineSearch)}" placeholder="${t.search}" aria-label="${t.search}"></label>
+          <select class="filter-select" id="timeline-sort" aria-label="${t.priorityLabel}">
+            <option value="due" ${deadlineSort === "due" ? "selected" : ""}>${t.dueDate}</option>
+            <option value="priority" ${deadlineSort === "priority" ? "selected" : ""}>${t.priority}</option>
+            <option value="recent" ${deadlineSort === "recent" ? "selected" : ""}>${t.recentlyAdded}</option>
+          </select>
+        </div>`
+      : "";
+    const toolbar = `<div class="timeline-toolbar">
+        <div class="deadline-filters" role="group" aria-label="${t.filterLabel}">${filterOptions}</div>
+        <div class="timeline-toolbar-end">
+          <button type="button" class="button button-secondary button-small ${timelineFilterOpen ? "is-active" : ""}" data-action="timeline-filter-toggle" aria-expanded="${timelineFilterOpen}">⚙ ${t.filterLabel}</button>
+          ${viewSwitch}
+        </div>
+      </div>${filterPanel}`;
+
+    if (deadlineView === "list") {
+      const deadlines = getDeadlinesForScreen();
+      const filtered = getFilteredDeadlines();
+      const activeCount = filtered.length;
+      const list = activeCount
+        ? filtered.map(deadlineCard).join("")
+        : `<div class="empty-state"><strong>${deadlines.length ? t.noResults : t.noDeadlines}</strong>${deadlines.length ? t.noResultsHint : t.noDeadlinesHint}</div>`;
+      const listFilters = [
+        ["all", t.all],
+        ["upcoming", t.filterUpcoming],
+        ["overdue", t.filterOverdue],
+        ["completed", t.filterCompleted],
+      ]
+        .map(
+          ([value, label]) =>
+            `<button type="button" class="deadline-filter ${deadlineFilter === value ? "selected" : ""}" data-deadline-filter="${value}" aria-pressed="${deadlineFilter === value}">${label}</button>`,
+        )
+        .join("");
+      const listControls = `<div class="deadline-toolbar"><div class="deadline-filters" role="group" aria-label="${t.title}">${listFilters}</div><div class="deadline-controls"><label class="search-box"><span>⌕</span><input id="deadline-search" type="search" dir="auto" value="${escapeHtml(deadlineSearch)}" placeholder="${t.search}" aria-label="${t.search}"></label><select class="filter-select" id="deadline-sort" aria-label="${t.priorityLabel}"><option value="due" ${deadlineSort === "due" ? "selected" : ""}>${t.dueDate}</option><option value="priority" ${deadlineSort === "priority" ? "selected" : ""}>${t.priority}</option><option value="recent" ${deadlineSort === "recent" ? "selected" : ""}>${t.recentlyAdded}</option></select></div></div>`;
+      return `${pageHeading(t.eyebrow, t.title, t.subtitle, actions)}
+        ${deadlineStats(deadlines)}
+        <section class="panel"><div class="deadline-toolbar-row">${listControls}${viewSwitch}</div>${deadlinesLoading ? `<div class="deadline-loading"><div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div></div>` : `<div class="deadline-list-heading"><strong>${t.title}</strong><span>${t.showing} ${activeCount} ${activeCount === 1 ? t.deadline : t.deadlines}</span></div><div class="deadline-list">${list}</div>`}</section>
+        <p class="data-caption">${session ? t.reminderNote : t.sampleNote}</p>`;
+    }
+
+    const win = timelineWindow();
+    return `${pageHeading(t.eyebrow, t.title, t.subtitle, actions)}
+      <section class="panel timeline-panel">
+        ${toolbar}
+        <div class="timeline-nav">
+          <button type="button" class="icon-button" data-action="timeline-prev" aria-label="${t.previousPeriod}">‹</button>
+          <button type="button" class="button button-secondary button-small" data-action="timeline-today">${t.todayLabel}</button>
+          <button type="button" class="icon-button" data-action="timeline-next" aria-label="${t.nextPeriod}">›</button>
+          <strong class="timeline-period-label">${escapeHtml(timelinePeriodLabel(win))}</strong>
+          <div class="timeline-zoom" role="group" aria-label="${t.zoomLabel}">
+            ${[
+              ["day", t.zoomDay],
+              ["week", t.zoomWeek],
+              ["month", t.zoomMonth],
+              ["quarter", t.zoomQuarter],
+            ]
+              .map(
+                ([value, label]) =>
+                  `<button type="button" class="deadline-filter ${win.zoom === value ? "selected" : ""}" data-action="timeline-zoom" data-zoom="${value}" aria-pressed="${win.zoom === value}">${label}</button>`,
+              )
+              .join("")}
+          </div>
+        </div>
+        ${
+          deadlinesLoading
+            ? `<div class="deadline-loading"><div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div></div>`
+            : timelineBody(rows, win)
+        }
+      </section>
+      <p class="data-caption">${t.dragHint} ${session ? t.reminderNote : t.sampleNote}</p>`;
+  }
+
+  function projectOptions(selectedId) {
+    const projects = getTimelineItems().filter((task) => {
+      const info = kindOfTask(task);
+      return info && info.kind === "project";
+    });
+    const options = [`<option value="">${deadlineText[appLanguage].noParent}</option>`];
+    projects.forEach((project) => {
+      options.push(
+        `<option value="${escapeHtml(project.id)}" ${String(selectedId) === String(project.id) ? "selected" : ""}>${escapeHtml(project.title)}</option>`,
+      );
+    });
+    return options.join("");
+  }
+
+  function openTimelineItem(id) {
+    const t = deadlineText[appLanguage];
+    const task = tasks.find((item) => String(item.id) === String(id));
+    if (!task) {
+      showToast(t.saveError);
+      return;
+    }
+    timelineModalId = String(id);
+    const item = decorateTimelineItem(task, Date.now());
+    const spanDays = item.range ? Timeline.spanDays(item.range) : 0;
+    const stateLabel = timelineStateLabel(item.state, t);
+    const childCount = timelineChildrenOf(item).length;
+    const statusValue = task.status === "completed" ? "completed" : task.status === "in_progress" ? "in_progress" : "not_started";
+    const dueDate = task.due_at ? new Date(task.due_at) : null;
+    const startDate = task.starts_at ? new Date(task.starts_at) : null;
+    document.getElementById("timeline-item-eyebrow").textContent =
+      timelineKindLabel(item.kind, t);
+    document.getElementById("timeline-item-title").textContent = task.title;
+    document.getElementById("timeline-item-body").innerHTML = `
+      <div class="timeline-item-chips">
+        <span class="timeline-chip kind-${item.kind}">${timelineKindLabel(item.kind, t)}</span>
+        <span class="timeline-chip state-${item.state}">${escapeHtml(stateLabel)}</span>
+        <span class="timeline-chip prio-${priorityClassOf(task)}">${escapeHtml(priorityLabelOf(task, t))}</span>
+        ${childCount ? `<span class="timeline-chip">${childCount} ${childCount === 1 ? t.phaseCount : t.subItems}</span>` : ""}
+        ${item.archived ? `<span class="timeline-chip">${t.archived}</span>` : ""}
+      </div>
+      <dl class="timeline-item-facts">
+        <div><dt>${t.startDate}</dt><dd>${item.range && item.range.startKey ? escapeHtml(timelineFormatDay(item.range.startKey)) : "—"}</dd></div>
+        <div><dt>${t.endDate}</dt><dd>${item.range && item.range.endKey ? escapeHtml(timelineFormatDay(item.range.endKey)) : "—"}</dd></div>
+        <div><dt>${t.totalSpan}</dt><dd>${item.range ? `${spanDays} ${spanDays === 1 ? t.dayCount : t.daysCount}` : "—"}</dd></div>
+        <div><dt>${t.progress}</dt><dd>${item.progress != null ? `${item.progress}%` : "—"}</dd></div>
+      </dl>
+      ${item.range ? "" : `<p class="data-caption timeline-incomplete-note"><strong>${t.incompleteData}</strong> ${t.incompleteDataHint}</p>`}
+      <form class="form-stack" id="timeline-item-form">
+        <div class="form-row">
+          <label>${t.status}<select name="status">
+            <option value="not_started" ${statusValue === "not_started" ? "selected" : ""}>${t.backlog}</option>
+            <option value="in_progress" ${statusValue === "in_progress" ? "selected" : ""}>${t.active}</option>
+            <option value="completed" ${statusValue === "completed" ? "selected" : ""}>${t.completedStatus}</option>
+          </select></label>
+          <label>${t.progress}<input name="progress" type="number" min="0" max="100" step="5" value="${item.progress != null ? item.progress : 0}" ${childCount ? "disabled" : ""}></label>
+        </div>
+        <div class="form-row">
+          <label>${t.startDate}<input name="starts_on" type="date" value="${startDate ? dateKey(startDate) : ""}"></label>
+          <label>${t.endDate}<input name="due_date" type="date" value="${dueDate && !isAllDayTask(task) ? dateKey(dueDate) : dueDate ? dateKey(dueDate) : ""}"></label>
+        </div>
+        ${childCount ? `<p class="data-caption">${t.projectProgress}</p>` : ""}
+        <div class="form-error" id="timeline-item-error" role="alert"></div>
+      </form>`;
+    document.getElementById("timeline-item-actions").innerHTML = `
+      <button type="button" class="button button-secondary" data-action="timeline-delete">${t.delete}</button>
+      <button type="button" class="button button-secondary" data-action="timeline-archive">${item.archived ? t.unarchive : t.archive}</button>
+      <button type="button" class="button button-secondary" data-action="timeline-edit">${t.edit}</button>
+      ${item.kind === "project" ? `<button type="button" class="button button-secondary" data-action="timeline-add-phase">${t.addPhase}</button>` : ""}
+      <button type="button" class="button button-primary" data-action="timeline-save">${t.saveChanges}</button>`;
+    openModal(document.getElementById("timeline-item-modal"));
+  }
+
+  /**
+   * Saves a date/status change for a timeline item. The local copy is always
+   * updated; when Supabase is unreachable the edit is kept locally and the
+   * user is told the sync will happen later — no data is ever lost.
+   */
+  async function patchTimelineTask(task, patch, successMessage) {
+    const ar = appLanguage === "ar";
+    if (supabase && session) {
+      try {
+        const result = await supabase
+          .from("tasks")
+          .update(patch)
+          .eq("id", task.id);
+        if (result.error) throw result.error;
+      } catch (reason) {
+        console.error("Timeline sync failed; keeping the local edit.", reason);
+        Object.assign(task, patch);
+        saveLocalTasks();
+        render();
+        showToast(
+          ar
+            ? "تعذّرت المزامنة — حُفظ التعديل محليًا وسيُرفع تلقائيًا لاحقًا."
+            : "Could not sync — your change is saved locally and will upload later.",
+        );
+        return false;
+      }
+    }
+    Object.assign(task, patch);
+    if (!supabase || !session) saveLocalTasks();
+    render();
+    if (successMessage) showToast(successMessage);
+    return true;
+  }
+
+  async function shiftTimelineItem(id, deltaDays) {
+    const task = tasks.find((item) => String(item.id) === String(id));
+    if (!task || !deltaDays) return;
+    const shift = (value) => {
+      if (!value) return value;
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return addLocalDays(date, deltaDays).toISOString();
+    };
+    const patch = {};
+    if (task.starts_at) patch.starts_at = shift(task.starts_at);
+    if (task.due_at) patch.due_at = shift(task.due_at);
+    if (!Object.keys(patch).length) return;
+    const ar = appLanguage === "ar";
+    await patchTimelineTask(
+      task,
+      patch,
+      ar
+        ? `تم تحديث تواريخ «${task.title}».`
+        : `Dates updated for “${task.title}”.`,
+    );
+  }
+
+  async function saveTimelineItemForm() {
+    const t = deadlineText[appLanguage];
+    const form = document.getElementById("timeline-item-form");
+    const task = tasks.find(
+      (item) => String(item.id) === String(timelineModalId),
+    );
+    if (!form || !task) return;
+    const errorBox = document.getElementById("timeline-item-error");
+    const ar = appLanguage === "ar";
+    const fail = (message) => {
+      if (errorBox) errorBox.textContent = message;
+    };
+    const statusValue = String(
+      form.elements.status.value || task.status || "not_started",
+    );
+    const progressRaw = form.elements.progress.disabled
+      ? null
+      : Number(form.elements.progress.value);
+    const startValue = String(form.elements.starts_on.value || "");
+    const endValue = String(form.elements.due_date.value || "");
+    if (startValue && endValue && startValue > endValue) {
+      fail(
+        ar
+          ? "تاريخ البداية يجب أن يكون قبل تاريخ النهاية."
+          : "The start date must be on or before the end date.",
+      );
+      return;
+    }
+    if (!startValue && !endValue) {
+      fail(
+        ar
+          ? "اختر تاريخ بداية أو تاريخ نهاية."
+          : "Choose a start date or an end date.",
+      );
+      return;
+    }
+    const timeOf = (value, fallback) => {
+      if (!value) return fallback;
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return fallback;
+      return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+    };
+    const dueTime = timeOf(task.due_at, "23:59");
+    const startTime = timeOf(task.starts_at, dueTime);
+    const startsAt = startValue ? localDateTimeToIso(startValue, startTime) : null;
+    const dueAt = endValue ? localDateTimeToIso(endValue, dueTime) : null;
+    if (startsAt && dueAt && new Date(startsAt) > new Date(dueAt)) {
+      fail(
+        ar
+          ? "تاريخ البداية يجب أن يكون قبل تاريخ النهاية."
+          : "The start date must be on or before the end date.",
+      );
+      return;
+    }
+    if (progressRaw != null && Number.isFinite(progressRaw)) {
+      setMetaForTask(task.id, {
+        progress: Math.max(0, Math.min(100, Math.round(progressRaw))),
+      });
+    }
+    closeModal(document.getElementById("timeline-item-modal"));
+    await patchTimelineTask(
+      task,
+      {
+        status: statusValue,
+        completed_at:
+          statusValue === "completed"
+            ? task.completed_at || new Date().toISOString()
+            : null,
+        starts_at: startsAt,
+        due_at: dueAt,
+      },
+      ar ? "تم حفظ التغييرات." : "Changes saved.",
+    );
+    void t;
+  }
+
+  async function toggleTimelineArchive() {
+    const id = timelineModalId;
+    const meta = metaForTask(id);
+    const next = !(meta && meta.archived);
+    setMetaForTask(id, { archived: next ? true : null });
+    closeModal(document.getElementById("timeline-item-modal"));
+    render();
+    showToast(
+      appLanguage === "ar"
+        ? next
+          ? "تمت الأرشفة."
+          : "تمت الاستعادة."
+        : next
+          ? "Archived."
+          : "Restored.",
+    );
+  }
+
+  let timelineDragState = null;
+  let timelineSuppressClick = false;
+
+  function attachTimelineInteractions() {
+    const scroll = document.getElementById("timeline-scroll");
+    if (!scroll) return;
+    scroll.addEventListener(
+      "scroll",
+      () => {
+        timelineScrollLeft = scroll.scrollLeft;
+      },
+      { passive: true },
+    );
+    if (timelineScrollLeft < 0) {
+      const win = timelineWindow();
+      let focusKey = dateKey(new Date());
+      let focusOffset = Timeline.dayIndex(focusKey, win.start);
+      if (focusOffset == null || focusOffset < 0 || focusOffset >= win.days) {
+        focusKey = timelineAnchor;
+        focusOffset = Timeline.dayIndex(focusKey, win.start) || 0;
+      }
+      scroll.scrollLeft = Math.max(
+        0,
+        focusOffset * win.width - Math.round(scroll.clientWidth / 2),
+      );
+      timelineScrollLeft = scroll.scrollLeft;
+    } else {
+      scroll.scrollLeft = timelineScrollLeft;
+    }
+    scroll.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "touch" || event.button !== 0) return;
+      const bar = event.target.closest?.(".timeline-bar[data-bar-id]");
+      if (!bar) return;
+      timelineDragState = {
+        bar,
+        id: bar.dataset.barId,
+        startX: event.clientX,
+        delta: 0,
+        pointerId: event.pointerId,
+      };
+      try {
+        bar.setPointerCapture(event.pointerId);
+      } catch {
+        /* pointer capture is optional */
+      }
+    });
+    scroll.addEventListener("pointermove", (event) => {
+      const state = timelineDragState;
+      if (!state) return;
+      const width = Timeline.dayWidth(timelineZoom);
+      const delta = Math.round((event.clientX - state.startX) / width);
+      if (delta === state.delta) return;
+      state.delta = delta;
+      state.bar.style.transform = `translateX(${delta * width}px)`;
+      state.bar.classList.add("is-dragging");
+      state.bar.classList.toggle("is-drag-back", delta < 0);
+    });
+    const finishDrag = async () => {
+      const state = timelineDragState;
+      if (!state) return;
+      timelineDragState = null;
+      state.bar.classList.remove("is-dragging", "is-drag-back");
+      state.bar.style.transform = "";
+      try {
+        state.bar.releasePointerCapture(state.pointerId);
+      } catch {
+        /* already released */
+      }
+      if (!state.delta) return;
+      timelineSuppressClick = true;
+      window.setTimeout(() => {
+        timelineSuppressClick = false;
+      }, 400);
+      await shiftTimelineItem(state.id, state.delta);
+    };
+    scroll.addEventListener("pointerup", finishDrag);
+    scroll.addEventListener("pointercancel", finishDrag);
   }
 
   function plannerPage() {
@@ -14584,6 +15904,7 @@
     dashboard: dashboardPage,
     planner: plannerPage,
     tasks: taskPage,
+    calendar: calendarPage,
     deadlines: deadlinesPage,
     subjects: subjectsPage,
     files: filesPage,
@@ -14622,6 +15943,7 @@
     dashboard: "Dashboard",
     planner: "Study planner",
     tasks: "Tasks",
+    calendar: "Calendar",
     deadlines: "Deadlines",
     subjects: "Subjects",
     files: "Study files",
@@ -14879,6 +16201,37 @@
         ?.addEventListener("change", (event) => {
           deadlineSort = event.target.value;
           render();
+        });
+      document
+        .getElementById("timeline-search")
+        ?.addEventListener("input", (event) => {
+          deadlineSearch = event.target.value;
+          const cursor = event.target.selectionStart;
+          render();
+          const input = document.getElementById("timeline-search");
+          input.focus();
+          input.setSelectionRange(cursor, cursor);
+        });
+      document
+        .getElementById("timeline-sort")
+        ?.addEventListener("change", (event) => {
+          deadlineSort = event.target.value;
+          render();
+        });
+      if (deadlineView === "timeline" && !deadlinesLoading) {
+        attachTimelineInteractions();
+      }
+    }
+    if (currentPage === "calendar") {
+      document
+        .getElementById("calendar-search")
+        ?.addEventListener("input", (event) => {
+          calendarSearch = event.target.value;
+          const cursor = event.target.selectionStart;
+          render();
+          const input = document.getElementById("calendar-search");
+          input.focus();
+          input.setSelectionRange(cursor, cursor);
         });
     }
     if (
@@ -16444,6 +17797,22 @@
     if (task) void trackTaskUsage(task, "open_count");
     form.reset();
     form.elements.routine_id.value = routine?.id || "";
+    const itemTypeRow = document.getElementById("task-item-type-row");
+    const kindSelect = form.elements.namedItem("item_kind");
+    const parentSelect = form.elements.namedItem("item_parent");
+    if (itemTypeRow && kindSelect && parentSelect) {
+      const currentKind = task ? (kindOfTask(task) || {}).kind || "task" : "task";
+      const currentParent =
+        options.parentId ||
+        (task ? ((kindOfTask(task) || {}).parent || "") : "");
+      parentSelect.innerHTML = projectOptions(currentParent);
+      kindSelect.value = options.itemKind || currentKind;
+      parentSelect.hidden = kindSelect.value !== "phase";
+      parentSelect.onchange = () => {
+        parentSelect.hidden = kindSelect.value !== "phase";
+      };
+      itemTypeRow.hidden = !options.showItemType && currentKind === "task";
+    }
     const seriesNote = form.querySelector("[data-series-note]");
     const repeatConfig = form.querySelector("[data-repeat-config]");
     const stopButton = form.querySelector('[data-action="task-stop-series"]');
@@ -17321,7 +18690,7 @@
     return localDate.toISOString();
   }
 
-  function openDeadlineModal(id = null) {
+  function openDeadlineModal(id = null, options = {}) {
     const t = deadlineText[appLanguage];
     const form = document.getElementById("deadline-form");
     const deadline = id ? tasks.find((item) => item.id === id) : null;
@@ -17331,6 +18700,24 @@
     }
     editingDeadlineId = id;
     form.reset();
+    const kindSelect = form.elements.namedItem("item_kind");
+    const parentSelect = form.elements.namedItem("item_parent");
+    if (kindSelect && parentSelect) {
+      const currentKind = deadline
+        ? ((kindOfTask(deadline) || {}).kind === "project"
+            ? "project"
+            : "deadline")
+        : "deadline";
+      const currentParent =
+        options.parentId ||
+        (deadline ? ((kindOfTask(deadline) || {}).parent || "") : "");
+      parentSelect.innerHTML = projectOptions(currentParent);
+      kindSelect.value = options.kind === "project" ? "project" : currentKind;
+      parentSelect.hidden = kindSelect.value !== "deadline";
+      parentSelect.onchange = () => {
+        parentSelect.hidden = kindSelect.value !== "deadline";
+      };
+    }
     const subjectSelect = document.getElementById("deadline-subject");
     subjectSelect.innerHTML = `<option value="">${t.independent}</option>${subjects.map((subject) => `<option value="${escapeHtml(subject.id)}">${escapeHtml(subject.name)}</option>`).join("")}`;
     document.getElementById("deadline-modal-title").textContent = deadline
@@ -17435,6 +18822,7 @@
       }
     }
 
+    const idsBeforeSave = new Set(tasks.map((item) => item.id));
     if (supabase && session) {
       const baseSelectColumns =
         "id,title,description,subject_id,starts_at,due_at,priority,status,estimated_minutes,reminder_before_minutes,created_at,completed_at,subjects(name)";
@@ -17586,6 +18974,23 @@
       }
       saveLocalTasks();
     }
+
+    const kindChoice =
+      String(formData.get("item_kind") || "deadline") === "project"
+        ? "project"
+        : "deadline";
+    const parentChoice = String(formData.get("item_parent") || "");
+    const kindTargetIds = editingDeadlineId
+      ? [editingDeadlineId]
+      : tasks
+          .filter((item) => !idsBeforeSave.has(item.id))
+          .map((item) => item.id);
+    kindTargetIds.forEach((id) => {
+      setMetaForTask(id, {
+        kind: kindChoice,
+        parent: kindChoice === "deadline" && parentChoice ? parentChoice : null,
+      });
+    });
 
     closeModal(document.getElementById("deadline-modal"));
     document.getElementById("deadline-form").reset();
@@ -17759,26 +19164,35 @@
       return;
     }
     let authResult;
+    let authError = null;
     try {
       authResult = await supabase.auth.getSession();
     } catch (thrown) {
       console.error("Could not restore the Supabase session.", thrown);
-      showToast("Could not restore session. Check your connection.");
-      if (currentPage === "admin") await verifyAdminAccess();
-      return;
+      authError = thrown;
     }
-    const { data, error } = authResult;
+    const data = authResult?.data || { session: null };
+    const error = authError || authResult?.error || null;
+    // Offline-first: when the device is offline there is no Supabase round-trip to
+    // recover from, so trust the locally stored session before falling back to the
+    // unauthenticated workspace.
+    const offlineNow =
+      navigator.onLine === false || window.StudyZoneOffline?.isOnline?.() === false;
+    if (!data.session && offlineNow) {
+      const localSession = window.StudyZoneOffline?.readStoredSession?.() || null;
+      if (localSession?.user?.id) data.session = localSession;
+    }
+    session = data.session;
     if (error) {
       console.error("Could not restore the Supabase session.", error);
       showToast(`Could not restore session: ${error.message}`);
-      if (!localStorage.getItem(authPromptStorageKey)) {
+      if (!data.session && !localStorage.getItem(authPromptStorageKey)) {
         openModal(document.getElementById("auth-modal"));
         localStorage.setItem(authPromptStorageKey, "seen");
       }
       if (currentPage === "admin") await verifyAdminAccess();
       return;
     }
-    session = data.session;
     lastAuthUserId = session?.user?.id || null;
     window.StudyZoneTeamLive?.syncSession?.(session);
     window.StudyZoneFlashcards?.syncSession?.(session);
@@ -17810,8 +19224,17 @@
         endRenderBatch();
       }
     }
-    supabase.auth.onAuthStateChange((_event, nextSession) => {
-      session = nextSession;
+    supabase.auth.onAuthStateChange((event, nextSession) => {
+      let next = nextSession;
+      // Offline-first: an INITIAL_SESSION emission that arrives while offline must
+      // not wipe a locally stored session back to the unauthenticated fallback.
+      const offlineNowListener =
+        navigator.onLine === false || window.StudyZoneOffline?.isOnline?.() === false;
+      if (event === "INITIAL_SESSION" && !next?.user?.id && offlineNowListener) {
+        const local = window.StudyZoneOffline?.readStoredSession?.();
+        if (local?.user?.id) next = local;
+      }
+      session = next;
       const nextUserId = session?.user?.id || null;
       const userChanged = nextUserId !== lastAuthUserId;
       lastAuthUserId = nextUserId;
@@ -19506,71 +20929,116 @@
         );
         void window.StudyZoneApp?.syncWidgets?.();
       }
-    } else if (target.matches('[data-action="deadline-calendar-mode"]')) {
-      deadlineCalendarMode = ["month", "week", "day"].includes(
+    } else if (target.matches('[data-action="calendar-view"]')) {
+      const nextMode = ["month", "week", "day", "agenda"].includes(
         target.dataset.mode,
       )
         ? target.dataset.mode
         : "month";
-      const anchor = parseLocalDateKey(selectedDeadlineDate) || new Date();
-      deadlineMonth = new Date(
-        anchor.getFullYear(),
-        anchor.getMonth(),
-        1,
-      );
-      render();
-    } else if (target.matches('[data-action="calendar-select"]')) {
-      selectedDeadlineDate = target.dataset.date;
-      const selected = parseLocalDateKey(selectedDeadlineDate);
-      if (selected)
-        deadlineMonth = new Date(
-          selected.getFullYear(),
-          selected.getMonth(),
-          1,
-        );
-      render();
-    } else if (target.matches('[data-action="calendar-prev"]')) {
-      if (deadlineCalendarMode === "month") {
-        deadlineMonth = new Date(
-          deadlineMonth.getFullYear(),
-          deadlineMonth.getMonth() - 1,
-          1,
-        );
-      } else {
-        const anchor = parseLocalDateKey(selectedDeadlineDate) || new Date();
-        const next = addLocalDays(
-          anchor,
-          deadlineCalendarMode === "week" ? -7 : -1,
-        );
-        selectedDeadlineDate = dateKey(next);
-        deadlineMonth = new Date(next.getFullYear(), next.getMonth(), 1);
+      if (nextMode !== calendarViewMode) {
+        calendarViewMode = nextMode;
+        calendarAnim = "forward";
+        render();
       }
+    } else if (target.matches('[data-action="calendar-filter"]')) {
+      calendarFilter = target.dataset.filter || "all";
+      render();
+    } else if (target.matches('[data-action="calendar-day-open"]')) {
+      const dayKey = target.dataset.date;
+      if (dayKey) {
+        calendarSelectedDate = dayKey;
+        openCalendarDay(dayKey);
+      }
+    } else if (target.matches('[data-action="calendar-add"]')) {
+      openTaskModal(null, calendarSelectedDate);
+    } else if (target.matches('[data-action="calendar-add-on-day"]')) {
+      const preset = calendarDayModalKey || calendarSelectedDate;
+      closeModal(document.getElementById("calendar-day-modal"));
+      openTaskModal(null, preset);
+    } else if (target.matches('[data-action="calendar-event-delete"]')) {
+      const dayModal = document.getElementById("calendar-day-modal");
+      const keepDay =
+        dayModal && !dayModal.hidden ? calendarDayModalKey : null;
+      const beforeCount = tasks.length;
+      await deleteTask(target.dataset.id);
+      if (keepDay && tasks.length < beforeCount) openCalendarDay(keepDay);
+    } else if (target.matches('[data-action="calendar-prev"]')) {
+      shiftCalendarPeriod(-1);
       render();
     } else if (target.matches('[data-action="calendar-next"]')) {
-      if (deadlineCalendarMode === "month") {
-        deadlineMonth = new Date(
-          deadlineMonth.getFullYear(),
-          deadlineMonth.getMonth() + 1,
-          1,
-        );
-      } else {
-        const anchor = parseLocalDateKey(selectedDeadlineDate) || new Date();
-        const next = addLocalDays(
-          anchor,
-          deadlineCalendarMode === "week" ? 7 : 1,
-        );
-        selectedDeadlineDate = dateKey(next);
-        deadlineMonth = new Date(next.getFullYear(), next.getMonth(), 1);
-      }
+      shiftCalendarPeriod(1);
       render();
     } else if (target.matches('[data-action="calendar-today"]')) {
-      deadlineMonth = new Date(
-        new Date().getFullYear(),
-        new Date().getMonth(),
-        1,
-      );
-      selectedDeadlineDate = dateKey(new Date());
+      const now = new Date();
+      calendarMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      calendarSelectedDate = dateKey(now);
+      calendarAnim = "fade";
       render();
+    } else if (target.matches('[data-action="timeline-filter"]')) {
+      timelineFilter = target.dataset.filter || "all";
+      timelineScrollLeft = -1;
+      render();
+    } else if (target.matches('[data-action="timeline-filter-toggle"]')) {
+      timelineFilterOpen = !timelineFilterOpen;
+      render();
+    } else if (target.matches('[data-action="timeline-zoom"]')) {
+      const zoom = target.dataset.zoom;
+      if (
+        Timeline &&
+        Timeline.ZOOM_ORDER.includes(zoom) &&
+        zoom !== timelineZoom
+      ) {
+        timelineZoom = zoom;
+        timelineScrollLeft = -1;
+        timelineAnim = "fade";
+        render();
+      }
+    } else if (target.matches('[data-action="timeline-prev"]')) {
+      timelineAnchor = Timeline.shiftAnchor(timelineAnchor, timelineZoom, -1);
+      timelineScrollLeft = -1;
+      timelineAnim = "backward";
+      render();
+    } else if (target.matches('[data-action="timeline-next"]')) {
+      timelineAnchor = Timeline.shiftAnchor(timelineAnchor, timelineZoom, 1);
+      timelineScrollLeft = -1;
+      timelineAnim = "forward";
+      render();
+    } else if (target.matches('[data-action="timeline-today"]')) {
+      timelineAnchor = dateKey(new Date());
+      timelineScrollLeft = -1;
+      timelineAnim = "fade";
+      render();
+    } else if (target.matches('[data-action="timeline-toggle"]')) {
+      const rowId = String(target.dataset.id);
+      if (timelineCollapsed.has(rowId)) timelineCollapsed.delete(rowId);
+      else timelineCollapsed.add(rowId);
+      render();
+    } else if (target.matches('[data-action="timeline-open"]')) {
+      if (!timelineSuppressClick) openTimelineItem(target.dataset.id);
+    } else if (target.matches('[data-action="timeline-save"]')) {
+      await saveTimelineItemForm();
+    } else if (target.matches('[data-action="timeline-edit"]')) {
+      const editId = timelineModalId;
+      closeModal(document.getElementById("timeline-item-modal"));
+      if (editId) openTaskModal(editId, null, { showItemType: true });
+    } else if (target.matches('[data-action="timeline-archive"]')) {
+      await toggleTimelineArchive();
+    } else if (target.matches('[data-action="timeline-delete"]')) {
+      const removeId = timelineModalId;
+      closeModal(document.getElementById("timeline-item-modal"));
+      if (removeId) await deleteTask(removeId);
+    } else if (target.matches('[data-action="timeline-add-phase"]')) {
+      const projectId = timelineModalId;
+      closeModal(document.getElementById("timeline-item-modal"));
+      if (projectId) {
+        openTaskModal(null, null, {
+          showItemType: true,
+          itemKind: "phase",
+          parentId: projectId,
+        });
+      }
+    } else if (target.matches('[data-action="deadline-project-add"]')) {
+      openDeadlineModal(null, { kind: "project" });
     } else if (target.matches('[data-action="toggle-task"]')) {
       await updateTaskStatus(target.dataset.id);
       void window.StudyZoneApp?.syncWidgets?.();
@@ -19845,6 +21313,14 @@
       error.textContent = "";
       try {
         const formData = new FormData(form);
+        const applyKindMeta = (id) => {
+          const kind = String(formData.get("item_kind") || "task");
+          const parent = String(formData.get("item_parent") || "");
+          setMetaForTask(id, {
+            kind: kind || null,
+            parent: kind === "phase" && parent ? parent : null,
+          });
+        };
         const routineId = String(formData.get("routine_id") || "");
         const editingRoutine = routineId
           ? routines.find((item) => String(item.id) === routineId)
@@ -19861,8 +21337,13 @@
             return;
           }
           await applyTaskEdit(editingTask, payload);
+          applyKindMeta(editingTask.id);
         } else {
+          const idsBeforeCreate = new Set(tasks.map((item) => item.id));
           await createTask(formData);
+          tasks.forEach((item) => {
+            if (!idsBeforeCreate.has(item.id)) applyKindMeta(item.id);
+          });
         }
         form.reset();
       } catch (reason) {

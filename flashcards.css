@@ -422,3 +422,161 @@
 .fc-hero-right { display: flex; gap: 8px; align-items: center; }
 .fc-home-btn { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--border-soft); background: rgba(var(--surface-rgb), 0.45); color: var(--muted); font-size: 19px; cursor: pointer; transition: all 150ms ease; }
 .fc-home-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ============================================================================
+   Premium redesign â€” Study Mode & Review card (Task: Flashcards redesign)
+   Theme-aware: every colour is derived from the existing design tokens.
+   ============================================================================ */
+
+/* Ambient backdrop for the review stage: soft radial glows derived from the
+   current theme's accent â€” behind the card, non-interactive. */
+.fc-card-stage {
+  position: relative;
+  isolation: isolate;
+}
+.fc-card-stage::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: -40px -60px;
+  border-radius: 48px;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 70% at 50% -10%, color-mix(in srgb, var(--color-primary) 34%, transparent) 0%, transparent 60%),
+    radial-gradient(90% 60% at 50% 110%, color-mix(in srgb, var(--color-info) 22%, transparent) 0%, transparent 62%),
+    radial-gradient(60% 50% at 110% 40%, color-mix(in srgb, var(--color-primary) 14%, transparent) 0%, transparent 55%);
+  filter: blur(18px);
+}
+
+/* Layered "deck" silhouettes behind the active card â€” decorative only,
+   they never capture taps, never rotate with the 3D card. */
+.fc-card-stage::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 8% 14% -6% 14%;
+  border-radius: var(--radius-lg, 24px);
+  pointer-events: none;
+  background:
+    linear-gradient(160deg,
+      color-mix(in srgb, var(--color-primary) 16%, transparent) 0%,
+      color-mix(in srgb, var(--color-surface-raised) 78%, transparent) 100%),
+    var(--color-surface-raised);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 26%, var(--color-border-soft));
+  transform: scale(0.965) translateY(10px);
+  opacity: 0.55;
+  box-shadow: 0 26px 48px rgba(0, 0, 0, 0.32);
+}
+.fc-card-stage > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Main card â€” premium glass surface with a theme-tinted border and a soft glow. */
+.fc-card-3d {
+  z-index: 2;
+}
+.fc-card {
+  border-radius: var(--radius-lg, 24px);
+  background: linear-gradient(160deg,
+      color-mix(in srgb, var(--color-primary) 18%, transparent) 0%,
+      color-mix(in srgb, var(--color-surface-raised) 82%, transparent) 46%,
+      var(--color-surface-raised) 100%);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 34%, var(--color-border-soft));
+  box-shadow:
+    0 30px 60px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+    0 0 44px color-mix(in srgb, var(--color-primary) 26%, transparent);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform-style: preserve-3d;
+  transition: transform 520ms cubic-bezier(0.2, 0.7, 0.25, 1), box-shadow 420ms ease;
+  will-change: transform;
+}
+.fc-card:hover {
+  box-shadow:
+    0 34px 68px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 0 66px color-mix(in srgb, var(--color-primary) 34%, transparent);
+}
+
+/* Front / back faces: preserve the 3D setup and theme tint on the back face. */
+.fc-card-face {
+  border-radius: inherit;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform-style: preserve-3d;
+}
+.fc-card-face-back {
+  background: linear-gradient(150deg,
+      color-mix(in srgb, var(--color-primary) 26%, transparent) 0%,
+      color-mix(in srgb, var(--color-surface-raised) 88%, transparent) 52%,
+      var(--color-surface-raised) 100%);
+}
+
+/* Tap hint and actions maintenance. */
+.fc-tap-hint {
+  opacity: 0.66;
+  letter-spacing: 0.02em;
+  transition: opacity 250ms ease;
+}
+.fc-card:hover .fc-tap-hint { opacity: 0.9; }
+
+/* Slide-in animation for the next card â€” smooth scale + opacity. */
+@keyframes fc-card-slide-in-premium {
+  0%   { opacity: 0; transform: translateX(52px) scale(0.94); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: none; }
+}
+.fc-card-3d-anim { animation: fc-card-slide-in-premium 420ms cubic-bezier(0.2, 0.7, 0.25, 1) both; }
+
+/* Progress bar â€” smoother, with a subtle glow. */
+.fc-progress { overflow: hidden; }
+.fc-progress-fill {
+  background: linear-gradient(90deg,
+    var(--color-primary) 0%,
+    color-mix(in srgb, var(--color-primary) 65%, var(--color-info)) 55%,
+    var(--color-info) 100%);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--color-primary) 55%, transparent);
+  transition: width 520ms cubic-bezier(0.2, 0.7, 0.25, 1);
+}
+
+/* Circular progress ring used by the session progress section. */
+.fc-session-ring {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  flex: 0 0 auto;
+}
+.fc-session-ring svg {
+  transform: rotate(-90deg);
+}
+.fc-session-ring-track {
+  stroke: color-mix(in srgb, var(--color-border) 80%, transparent);
+}
+.fc-session-ring-fill {
+  stroke: var(--color-primary);
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--color-primary) 60%, transparent));
+  transition: stroke-dashoffset 520ms cubic-bezier(0.2, 0.7, 0.25, 1);
+}
+.fc-session-ring-text {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Reduced motion: neutralise every motion added by this stylesheet. */
+@media (prefers-reduced-motion: reduce) {
+  .fc-card-stage::before,
+  .fc-card { transition: none !important; }
+  .fc-card-3d-anim { animation: none !important; }
+  .fc-progress-fill,
+  .fc-session-ring-fill { transition: none !important; }
+}
+
