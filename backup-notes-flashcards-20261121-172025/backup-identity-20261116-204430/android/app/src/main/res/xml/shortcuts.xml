@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="my_tasks"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_my_tasks"
+        android:shortcutLongLabel="@string/shortcut_my_tasks_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.studyzone.app"
+            android:targetClass="com.studyzone.app.MainActivity" />
+        <extra
+            android:name="page"
+            android:value="tasks" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="focus_mode"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_focus_mode"
+        android:shortcutLongLabel="@string/shortcut_focus_mode_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.studyzone.app"
+            android:targetClass="com.studyzone.app.MainActivity" />
+        <extra
+            android:name="page"
+            android:value="focus" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="my_notes"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_my_notes"
+        android:shortcutLongLabel="@string/shortcut_my_notes_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.studyzone.app"
+            android:targetClass="com.studyzone.app.MainActivity" />
+        <extra
+            android:name="page"
+            android:value="notes" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="daily_schedule"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_daily_schedule"
+        android:shortcutLongLabel="@string/shortcut_daily_schedule_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.studyzone.app"
+            android:targetClass="com.studyzone.app.MainActivity" />
+        <extra
+            android:name="page"
+            android:value="planner" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="analytics"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_analytics"
+        android:shortcutLongLabel="@string/shortcut_analytics_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.studyzone.app"
+            android:targetClass="com.studyzone.app.MainActivity" />
+        <extra
+            android:name="page"
+            android:value="analytics" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+</shortcuts>

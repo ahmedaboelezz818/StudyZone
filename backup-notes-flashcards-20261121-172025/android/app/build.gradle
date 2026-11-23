@@ -1,0 +1,95 @@
+apply plugin: 'com.android.application'
+
+// Optional release signing. Create android/keystore.properties (ignored by git)
+// with storeFile/storePassword/keyAlias/keyPassword to enable it.
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+android {
+    namespace "com.studyzone.app"
+    compileSdk rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.studyzone.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 12
+        versionName "2.1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // Universal APK: keep all four common Android ABIs when a dependency
+        // contributes native libraries. The app itself is Java/Kotlin only.
+        ndk {
+            abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+        }
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile rootProject.file(keystoreProperties["storeFile"])
+                storePassword keystoreProperties["storePassword"]
+                keyAlias keystoreProperties["keyAlias"]
+                keyPassword keystoreProperties["keyPassword"]
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    implementation "com.google.firebase:firebase-messaging:24.1.0"
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.exists() && servicesJSON.text?.trim()) {
+        apply plugin: 'com.google.gms.google-services'
+    } else {
+        logger.warn(
+            "\n[Second Brain] android/app/google-services.json is missing or empty.\n" +
+            "  The Google Services plugin is NOT applied, so Firebase has no default app\n" +
+            "  and FCM push notifications stay disabled. The app still builds and runs:\n" +
+            "  StudyZonePush.status() reports 'missing-google-services' and the web layer\n" +
+            "  skips push registration instead of crashing.\n" +
+            "  To enable push, download google-services.json for com.studyzone.app from\n" +
+            "  the Firebase console, place it in android/app/, and rebuild.\n"
+        )
+    }
+} catch (Exception e) {
+    logger.warn("[Second Brain] could not read android/app/google-services.json: " + e.message)
+}

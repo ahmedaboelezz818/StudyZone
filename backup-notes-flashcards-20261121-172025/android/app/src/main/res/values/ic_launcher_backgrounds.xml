@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background_original">#0C4137</color>
+    <color name="ic_launcher_background_ocean">#0B3245</color>
+    <color name="ic_launcher_background_emerald">#0A3529</color>
+    <color name="ic_launcher_background_purple">#241A44</color>
+    <color name="ic_launcher_background_crimson">#4A1220</color>
+    <color name="ic_launcher_background_midnight">#101C33</color>
+    <color name="ic_launcher_background_sky">#0F172A</color>
+    <color name="ic_launcher_background_cyan">#022C33</color>
+    <color name="ic_launcher_background_turquoise">#012A26</color>
+    <color name="ic_launcher_background_teal">#011F1D</color>
+    <color name="ic_launcher_background_mint">#022C22</color>
+    <color name="ic_launcher_background_lime">#1C2B0C</color>
+    <color name="ic_launcher_background_violet">#1A0A2E</color>
+    <color name="ic_launcher_background_lavender">#1E0A3A</color>
+    <color name="ic_launcher_background_indigo">#171433</color>
+    <color name="ic_launcher_background_rose">#2A0A16</color>
+    <color name="ic_launcher_background_pink">#2A0A2A</color>
+    <color name="ic_launcher_background_magenta">#2A0A3A</color>
+    <color name="ic_launcher_background_coral">#2A0B10</color>
+    <color name="ic_launcher_background_amber">#2A1B04</color>
+    <color name="ic_launcher_background_yellow">#2A2404</color>
+    <color name="ic_launcher_background_graphite">#0B0B0C</color>
+</resources>

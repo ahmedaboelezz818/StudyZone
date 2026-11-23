@@ -1,0 +1,12 @@
+const fs = require("fs");
+let s = fs.readFileSync("android/app/build.gradle", "utf8");
+s = s.replace("versionCode 8", "versionCode 9");
+s = s.replace('versionName "2.0.6"', 'versionName "2.0.7"');
+fs.writeFileSync("android/app/build.gradle", s, "utf8");
+let p = fs.readFileSync("package.json", "utf8");
+p = p.replace(/"version":\s*"2\.0\.6"/, '"version": "2.0.7"');
+fs.writeFileSync("package.json", p, "utf8");
+let t = fs.readFileSync("package-lock.json", "utf8");
+t = t.replace(/"version":\s*"2\.0\.6"/g, '"version": "2.0.7"');
+fs.writeFileSync("package-lock.json", t, "utf8");
+console.log("bumped to 2.0.7 / versionCode 9");

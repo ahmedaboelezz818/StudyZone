@@ -1,4 +1,4 @@
-const CACHE_NAME = "studyzone-shell-v40";
+const CACHE_NAME = "studyzone-shell-v42";
 
 const APP_SHELL = [
   "./",
@@ -36,6 +36,9 @@ const APP_SHELL = [
   "./flashcards-db.js",
   "./flashcards-sync.js",
   "./flashcards.js",
+  "./notes-store.js",
+  "./notes-smart.js",
+  "./notes.css",
   "./offline-sync.js",
   "./sync-ui.js",
   "./native-shell.js",

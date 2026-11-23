@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand colors referenced by the base AppCompat theme. -->
+    <color name="colorPrimary">#0C4137</color>
+    <color name="colorPrimaryDark">#071C18</color>
+    <color name="colorAccent">#06D6A0</color>
+</resources>

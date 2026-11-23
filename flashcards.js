@@ -50,8 +50,13 @@
   const XP_BY_RATING = { again: 2, hard: 5, good: 10, easy: 15 };
   const DECK_COLORS = ["#8b5cf6", "#22d3ee", "#34d399", "#fbbf24", "#fb7185", "#60a5fa", "#f97316", "#a3e635"];
   const DECK_ICONS = ["🧠", "📚", "🔬", "🌍", "➗", "🧪", "💊", "💻", "🎨", "🗣️"];
+  // Real speech synthesis (Web Speech API) powers the pronunciation / slow-play
+  // buttons. When unavailable the buttons never render — no fake sounds.
+  const ttsSupported = typeof window !== "undefined" && Boolean(window.speechSynthesis);
 
   let host = null;
+  let evaluationInFlight = false;
+  let ratingInFlight = false;
   let view = VIEW.DASHBOARD;
   let decks = null; // null = not loaded yet
   let cards = [];
@@ -86,6 +91,13 @@
   let syncTimer = null;
   let syncInterval = null;
   try { const saved = localStorage.getItem("studyflow.flashcards-view"); if (saved === "grid" || saved === "list") browseView = saved; } catch (_) { /* ignore */ }
+  // Pronunciation speed preference (settings → sound). Kept in localStorage so
+  // it never touches the SRS settings row or the review log.
+  let speechRate = 1;
+  try {
+    const storedRate = Number(localStorage.getItem("studyflow.flashcards-speech-rate"));
+    if ([0.75, 1, 1.25].includes(storedRate)) speechRate = storedRate;
+  } catch (_) { /* ignore */ }
 
   // Local XP ledger (offline-first). Server ledger (flashcard_xp_awards) wins when online.
   let xpLocal = { total: 0, byDay: {}, seen: [] };
@@ -157,6 +169,72 @@
     if (pref === "off" || !motionAllowed("flashcards")) return "is-motion-off";
     if (pref === "full") return "is-motion-full";
     return "is-motion-subtle";
+  }
+
+  // Flip debounce: rapid taps on the study card must never restart the 3D
+  // transition mid-flight (which shows jitter / doubles the animation).
+  const FC_FLIP_LOCK_MS = 300;
+  let lastStudyFlipAt = 0;
+
+  // True card navigation: moves the session index and reveals the next/previous
+  // card. Never touches review state (no SRS write, no XP) — only reveal flips
+  // through the normal UI.
+  function navigateCard(delta) {
+    const state = sessionState;
+    if (!state || !Array.isArray(state.queue) || !state.queue.length || state.done) return null;
+    const nextIndex = Math.max(0, Math.min(state.queue.length - 1, state.index + delta));
+    if (nextIndex === state.index) return null;
+    stopFlashcardSpeech();
+    state.navDirection = delta > 0 ? "next" : "prev";
+    state.index = nextIndex;
+    state.currentCard = state.queue[nextIndex] || null;
+    state.revealed = false;
+    state.peekIndex = null;
+    const direction = state.navDirection;
+    const html = render();
+    state.navDirection = null;
+    return html;
+  }
+
+  // Applies a reveal flip through the debounce lock and keeps session state in
+  // sync with the rendered card element.
+  function applyStudyFlip(tile) {
+    const studyState = sessionState;
+    const currentlyRevealed = Boolean(studyState && studyState.revealed) || tile.classList.contains("is-revealed");
+    const next = !currentlyRevealed;
+    const now = Date.now();
+    if (now - lastStudyFlipAt < FC_FLIP_LOCK_MS) return false;
+    lastStudyFlipAt = now;
+    tile.classList.toggle("is-revealed", next);
+    tile.setAttribute("aria-pressed", next ? "true" : "false");
+    if (studyState) studyState.revealed = next;
+    const stageCard = tile.closest("[data-fc-card]");
+    if (stageCard) stageCard.classList.toggle("is-revealed", next);
+    return true;
+  }
+
+  // Keyboard navigation respects reading direction: ArrowLeft/ArrowRight map to
+  // previous/next in LTR, and mirror in RTL.
+  function fcNavKeyDelta(key) {
+    const rtl = isAr();
+    if (key === "ArrowLeft") return rtl ? 1 : -1;
+    if (key === "ArrowRight") return rtl ? -1 : 1;
+    return 0;
+  }
+
+  function fcNavSwipeDelta(dx) {
+    const rtl = isAr();
+    const movingNext = rtl ? dx > 0 : dx < 0;
+    return movingNext ? 1 : -1;
+  }
+
+  function flipKeyTarget(tile, onStudyCard) {
+    if (onStudyCard) return applyStudyFlip(tile);
+    const tileId = tile.getAttribute("data-card-id");
+    const flipped = !tile.classList.contains("is-flipped");
+    if (tileId) { if (flipped) flippedTiles.add(tileId); else flippedTiles.delete(tileId); }
+    tile.setAttribute("aria-pressed", flipped ? "true" : "false");
+    return flipped;
   }
 
   async function getDb() {
@@ -723,6 +801,7 @@
       (decks || []).filter((d) => d && !d.deleted_at).map((d) =>
         `<option value="${esc(d.id)}" ${d.id === selectedDeck ? "selected" : ""}>${esc(d.name)}</option>`).join("");
     const cardActions = (card) => `<div class="fc-row-actions">
+        <button type="button" class="button button-primary button-small" data-action="fc-study-card" data-card-id="${esc(card.id)}">${esc(t("Study", "ادرس"))}</button>
         <button type="button" class="button button-secondary button-small" data-action="fc-edit-card" data-card-id="${esc(card.id)}">${esc(t("Edit", "تعديل"))}</button>
         <button type="button" class="button button-quiet button-small" data-action="fc-preview-card" data-card-id="${esc(card.id)}" title="${esc(t("Preview", "معاينة"))}">👁️</button>
         <button type="button" class="button button-quiet button-small" data-action="fc-move-card" data-card-id="${esc(card.id)}" title="${esc(t("Move to deck", "نقل إلى مجموعة"))}">➡️</button>
@@ -755,6 +834,7 @@
             </div>
           </div>
           <div class="fc-tile-actions">
+            <button type="button" class="button button-quiet" data-action="fc-study-card" data-card-id="${esc(card.id)}" title="${esc(t("Study this card", "ادرس هذه البطاقة"))}" aria-label="${esc(t("Study this card", "ادرس هذه البطاقة"))}">▶</button>
             <button type="button" class="button button-quiet" data-action="fc-preview-card" data-card-id="${esc(card.id)}" title="${esc(t("Preview", "معاينة"))}" aria-label="${esc(t("Preview", "معاينة"))}">👁️</button>
             <button type="button" class="button button-quiet" data-action="fc-edit-card" data-card-id="${esc(card.id)}" title="${esc(t("Edit", "تعديل"))}" aria-label="${esc(t("Edit", "تعديل"))}">✏️</button>
             <button type="button" class="button button-quiet" data-action="fc-move-card" data-card-id="${esc(card.id)}" title="${esc(t("Move to deck", "نقل إلى مجموعة"))}" aria-label="${esc(t("Move to deck", "نقل إلى مجموعة"))}">➡️</button>
@@ -819,8 +899,53 @@
     const rendered = parts.map((part) => part.type === "cloze"
       ? `<span class="fc-cloze" data-fc-cloze="${esc(part.value)}" data-fc-hint="${esc(part.hint || "")}">${esc(part.value)}</span>`
       : esc(part.value)).join("");
+    // Small supporting line under the question: tags / card type when the user
+    // actually added them. Never invented and never the answer itself.
+    const tags = Array.isArray(card.tags) ? card.tags.filter(Boolean).slice(0, 3) : [];
+    const typeLabel = card.type && card.type !== "basic" ? String(card.type) : "";
+    const metaBits = [tags.join(" · "), typeLabel].filter(Boolean);
+    const meta = side === "front" && metaBits.length
+      ? `<div class="fc-card-meta" dir="auto">${esc(metaBits.join(" · "))}</div>`
+      : "";
     const extra = side === "back" && card.example ? `<div class="fc-card-example" dir="auto">${esc(card.example)}</div>` : "";
-    return `<div class="fc-card-content" dir="auto">${rendered}${extra}</div>`;
+    const audio = side === "front" && ttsSupported ? `<div class="fc-card-audio" dir="auto">
+        <button type="button" class="fc-audio-button" data-action="fc-audio" data-card-id="${esc(card.id || "")}" data-audio-kind="word" aria-label="${esc(t("Play pronunciation", "تشغيل النطق"))}" title="${esc(t("Play pronunciation", "تشغيل النطق"))}"><span aria-hidden="true">🔊</span> ${esc(t("Listen", "استمع"))}</button>
+        <button type="button" class="fc-audio-button" data-action="fc-audio" data-card-id="${esc(card.id || "")}" data-audio-kind="slow" aria-label="${esc(t("Play slowly", "تشغيل بطيء"))}" title="${esc(t("Play slowly", "تشغيل بطيء"))}"><span aria-hidden="true">🐢</span> ${esc(t("Slow", "بطيء"))}</button>
+      </div>` : "";
+    return `<div class="fc-card-content" dir="auto">${rendered}${meta}${audio}${extra}</div>`;
+  }
+
+  function stopFlashcardSpeech() {
+    if (!ttsSupported || !window.speechSynthesis) return;
+    try { window.speechSynthesis.cancel(); } catch (_) { /* ignore */ }
+  }
+
+  function speakFlashcardText(text, rate) {
+    if (!ttsSupported || !window.speechSynthesis) return false;
+    const spoken = String(text || "").trim();
+    if (!spoken) return false;
+    try {
+      // Always stop the previous utterance so only one voice plays at a time.
+      stopFlashcardSpeech();
+      const utterance = new SpeechSynthesisUtterance(spoken);
+      utterance.rate = Math.max(0.4, Math.min(1.5, Number(rate) || 1));
+      utterance.lang = isAr() ? "ar-EG" : "en-US";
+      utterance.pitch = 1;
+      window.speechSynthesis.speak(utterance);
+      return true;
+    } catch (_) { return false; }
+  }
+
+  function fcAudioAction(button) {
+    const cardId = String((button && button.getAttribute("data-card-id")) || "");
+    const kind = String((button && button.getAttribute("data-audio-kind")) || "word");
+    const card = (cards || []).find((item) => item && item.id === cardId) || (sessionState && sessionState.currentCard) || null;
+    const text = String((card && card.front) || "").trim();
+    if (!text) { showToast(t("Nothing to pronounce yet.", "لا يوجد نص للنطق بعد.")); return null; }
+    const rate = kind === "slow" ? Math.min(0.85, speechRate * 0.6) : speechRate;
+    const ok = speakFlashcardText(text, rate);
+    if (!ok) showToast(t("Speech synthesis is not available on this device.", "توفير النطق غير متاح على هذا الجهاز."));
+    return ok;
   }
 
   function reviewPeekHtml(state) {
@@ -865,11 +990,7 @@
     const navBase = state && state.peekIndex != null ? Number(state.peekIndex) : (state ? state.index : 0);
     const atFirst = navBase <= 0;
     const atLast = navBase >= Math.max(0, queueTotal - 1);
-    const cardIdValue = current && current.id ? String(current.id) : "";
-    const cardActions = cardIdValue ? `<div class="fc-card-actions">
-        <button type="button" class="fc-card-action fc-card-action-edit" data-action="fc-edit-card" data-card-id="${esc(cardIdValue)}" aria-label="${esc(t("Edit card", "تعديل البطاقة"))}" title="${esc(t("Edit card", "تعديل البطاقة"))}">✏️</button>
-        <button type="button" class="fc-card-action fc-card-action-delete" data-action="fc-delete-card" data-card-id="${esc(cardIdValue)}" aria-label="${esc(t("Delete card", "حذف البطاقة"))}" title="${esc(t("Delete card", "حذف البطاقة"))}">✕</button>
-      </div>` : "";
+    const cardActions = "";
     const progress = total ? Math.min(100, Math.round(((revealed ? index + 1 : index) / total) * 100)) : 0;
     const remaining = Math.max(0, total - index - (revealed ? 1 : 0));
     const frontHtml = reviewCardContent(current, "front");
@@ -885,28 +1006,49 @@
         <small>${esc(intervalText)}</small>
       </button>`;
     }).join("") : "";
+    const navDirection = state && state.navDirection;
+    const stageClass = `fc-card-stage${navDirection ? ` fc-card-stage-nav-${navDirection}` : ""}`;
+    const cardAnimClass = `fc-card-3d${revealed ? "" : " fc-card-3d-anim"}${navDirection ? ` fc-card-3d-nav-${navDirection}` : ""}`;
+    const prevGlyph = isAr() ? "›" : "‹";
+    const nextGlyph = isAr() ? "‹" : "›";
+    const consumed = revealed ? index + 1 : index;
+    const segments = Array.from({ length: Math.max(0, total || 0) }, (_, position) => `<span class="fc-progress-segment${position < consumed ? " is-done" : ""}${position === index ? " is-current" : ""}" data-fc-segment="${position}"></span>`).join("");
+    const knowButtonHtml = revealed ? `<button type="button" class="fc-evaluate-button fc-evaluate-know" data-action="fc-evaluate" data-evaluation="good">
+        <span class="fc-evaluate-mark" aria-hidden="true">↑</span>
+        <strong>${esc(t("I know", "أعرف"))}</strong>
+        <small>${esc(t("Got it", "فهمته"))}</small>
+      </button>` : "";
+    const dontKnowButtonHtml = revealed ? `<button type="button" class="fc-evaluate-button fc-evaluate-dont-know" data-action="fc-evaluate" data-evaluation="again">
+        <span class="fc-evaluate-mark" aria-hidden="true">↓</span>
+        <strong>${esc(t("I don't know", "لا أعرف"))}</strong>
+        <small>${esc(t("Review again", "راجعها"))}</small>
+      </button>` : "";
     return `<section class="fc-view fc-review ${motionClass()}" data-fc-view="review">
       <div class="fc-review-top">
-        <div class="fc-review-title">
-          <span class="fc-review-deck" dir="auto">${deck ? esc(deck.name) : esc(t("All decks", "كل المجموعات"))}</span>
+        <button type="button" class="fc-card-arrow fc-card-arrow-top" data-action="fc-nav-back" ${atFirst ? "disabled" : ""} aria-label="${esc(t("Previous card", "البطاقة السابقة"))}" title="${esc(t("Previous card", "البطاقة السابقة"))}">‹</button>
+        <div class="fc-review-progress" role="progressbar" aria-valuemin="0" aria-valuemax="${esc(String(Math.max(0, total || 0)))}" aria-valuenow="${esc(String(Math.min(consumed, Math.max(0, total || 0))))}">
+          <div class="fc-progress"><div class="fc-progress-segments">${segments}</div></div>
+          <span class="fc-review-count">${esc(fmtInt(Math.min(index + 1, total)))} / ${esc(fmtInt(total))}</span>
         </div>
-        <div class="fc-review-progress"><div class="fc-progress"><div class="fc-progress-fill" style="width:${esc(String(progress))}%"></div></div><span class="fc-review-count">${esc(fmtInt(Math.min(index + 1, total)))} / ${esc(fmtInt(total))}</span></div>
-        <button type="button" class="icon-button" data-action="fc-review-end" title="${esc(t("End session", "إنهاء الجلسة"))}" aria-label="${esc(t("End session", "إنهاء الجلسة"))}">✕</button>
+        <div class="fc-review-top-actions">
+          <button type="button" class="icon-button" data-action="fc-open-settings" aria-label="${esc(t("Flashcards settings", "إعدادات البطاقات"))}" title="${esc(t("Flashcards settings", "إعدادات البطاقات"))}">⚙</button>
+          <button type="button" class="icon-button" data-action="fc-review-end" title="${esc(t("End session", "إنهاء الجلسة"))}" aria-label="${esc(t("End session", "إنهاء الجلسة"))}">✕</button>
+        </div>
       </div>
-      <div class="fc-card-stage" id="fc-card-stage">
-        <button type="button" class="fc-card-arrow fc-card-arrow-prev" data-action="fc-peek-prev" ${atFirst ? "disabled" : ""} aria-label="${esc(t("Previous card", "البطاقة السابقة"))}" title="${esc(t("Previous card", "البطاقة السابقة"))}">‹</button>
-        <div class="fc-card-3d${revealed ? "" : " fc-card-3d-anim"}">
+      <div class="${stageClass}" id="fc-card-stage">
+        <button type="button" class="fc-card-arrow fc-card-arrow-prev" data-action="fc-nav-prev" ${atFirst ? "disabled" : ""} aria-label="${esc(t("Previous card", "البطاقة السابقة"))}" title="${esc(t("Previous card", "البطاقة السابقة"))}">${esc(prevGlyph)}</button>
+        <div class="${cardAnimClass}">
           <div class="fc-card ${revealed ? "is-revealed" : ""}" data-fc-card role="button" tabindex="0" aria-label="${esc(t("Toggle answer", "إظهار/إخفاء الإجابة"))}">
             <div class="fc-card-face fc-card-face-front">${frontHtml}<span class="fc-tap-hint">${esc(t("Tap to reveal", "انقر للإجابة"))}</span></div>
             <div class="fc-card-face fc-card-face-back">${backHtml}</div>
-            ${cardActions}
           </div>
         </div>
-        <button type="button" class="fc-card-arrow fc-card-arrow-next" data-action="fc-peek-next" ${atLast ? "disabled" : ""} aria-label="${esc(t("Next card", "البطاقة التالية"))}" title="${esc(t("Next card", "البطاقة التالية"))}">›</button>
+        ${cardActions}
+        <button type="button" class="fc-card-arrow fc-card-arrow-next" data-action="fc-nav-next" ${atLast ? "disabled" : ""} aria-label="${esc(t("Next card", "البطاقة التالية"))}" title="${esc(t("Next card", "البطاقة التالية"))}">${esc(nextGlyph)}</button>
       </div>
       <div class="fc-review-actions">
         ${revealed
-          ? `<div class="fc-rate-row">${ratingButtons}</div>`
+          ? `<div class="fc-evaluation">${knowButtonHtml}${dontKnowButtonHtml}</div>`
           : `<button type="button" class="button button-primary button-large fc-reveal-cta" data-action="fc-reveal">${esc(t("Show answer", "إظهار الإجابة"))}</button>`}
         <div class="fc-review-meta">
           <span>${esc(t("Remaining", "المتبقي"))}: ${esc(fmtInt(remaining))}</span>
@@ -1019,24 +1161,14 @@
 
   // ------------------------------------------------------------------ settings
 
-  function settingsHtml() {
+  function settingsFormHtml() {
     const sv = (id, fallback) => (settingsFormCache[id] !== undefined ? settingsFormCache[id] : fallback);
     const reminder = (settings && settings.reminder) || { enabled: false, time: "19:00", days: [1, 2, 3, 4, 5, 6, 0] };
     const cachedMotion = settingsFormCache["fc-setting-motion"];
     const intensity = cachedMotion || (motionClass() === "is-motion-off" ? "off" : motionClass() === "is-motion-full" ? "full" : "subtle");
     const reminderEnabled = settingsFormCache["fc-setting-reminder"] !== undefined ? Boolean(settingsFormCache["fc-setting-reminder"]) : Boolean(reminder.enabled);
     const reminderTime = settingsFormCache["fc-setting-reminder-time"] !== undefined ? String(settingsFormCache["fc-setting-reminder-time"]) : (reminder.time || "19:00");
-    return `<section class="fc-view ${motionClass()}" data-fc-view="settings">
-      <header class="fc-hero">
-        <div class="fc-hero-top">
-          <div>
-            <p class="fc-kicker">${esc(t("Preferences", "التفضيلات"))}</p>
-            <h1>${esc(t("Flashcards settings", "إعدادات البطاقات"))}</h1>
-          </div>
-          ${heroRightHtml()}
-        </div>
-      </header>
-      <div class="fc-grid fc-grid-2">
+    return `<div class="fc-grid fc-grid-2">
         <div class="sz-card fc-stack">
           <h2>${esc(t("Daily limits", "الحدود اليومية"))}</h2>
           <label class="fc-label" for="fc-setting-new">${esc(t("New cards per day", "بطاقات جديدة في اليوم"))}</label>
@@ -1064,12 +1196,33 @@
             <option value="subtle" ${intensity === "subtle" ? "selected" : ""}>${esc(t("Subtle", "خفيف"))}</option>
             <option value="full" ${intensity === "full" ? "selected" : ""}>${esc(t("Full", "كامل"))}</option>
           </select>
+          <label class="fc-label" for="fc-setting-speech-rate">${esc(t("Pronunciation speed", "سرعة النطق"))}</label>
+          <select id="fc-setting-speech-rate" class="fc-input" ${ttsSupported ? "" : "disabled"}>
+            <option value="0.75" ${speechRate === 0.75 ? "selected" : ""}>${esc(t("Slow", "بطيء"))} · 0.75×</option>
+            <option value="1" ${speechRate === 1 ? "selected" : ""}>${esc(t("Normal", "عادي"))} · 1×</option>
+            <option value="1.25" ${speechRate === 1.25 ? "selected" : ""}>${esc(t("Fast", "سريع"))} · 1.25×</option>
+          </select>
+          ${ttsSupported ? "" : `<p class="fc-hint">${esc(t("Speech is not available on this device.", "النطق غير متاح على هذا الجهاز."))}</p>`}
           <label class="fc-check"><input id="fc-setting-reminder" type="checkbox" ${reminderEnabled ? "checked" : ""} /> <span>${esc(t("Enable study reminder", "تفعيل تذكير الدراسة"))}</span></label>
           <label class="fc-label" for="fc-setting-reminder-time">${esc(t("Reminder time", "وقت التذكير"))}</label>
           <input id="fc-setting-reminder-time" class="fc-input" value="${esc(reminderTime)}" dir="ltr" />
-          <div class="fc-hero-actions"><button type="button" class="button button-primary" data-action="fc-save-settings">${esc(t("Save settings", "حفظ الإعدادات"))}</button></div>
         </div>
-      </div>
+      </div>`;
+  }
+
+  function settingsHtml() {
+    return `<section class="fc-view ${motionClass()}" data-fc-view="settings">
+      <header class="fc-hero">
+        <div class="fc-hero-top">
+          <div>
+            <p class="fc-kicker">${esc(t("Preferences", "التفضيلات"))}</p>
+            <h1>${esc(t("Flashcards settings", "إعدادات البطاقات"))}</h1>
+          </div>
+          ${heroRightHtml()}
+        </div>
+      </header>
+      ${settingsFormHtml()}
+      <div class="fc-hero-actions"><button type="button" class="button button-primary" data-action="fc-save-settings">${esc(t("Save settings", "حفظ الإعدادات"))}</button></div>
     </section>`;
   }
   // ------------------------------------------------------------------ modals
@@ -1234,7 +1387,8 @@
       </div>`;
     const footer = `
       <button type="button" class="button button-secondary" data-action="fc-modal-close">${esc(t("Close", "إغلاق"))}</button>
-      <button type="button" class="button button-primary" data-action="fc-edit-card" data-card-id="${esc(card.id)}">${esc(t("Edit", "تعديل"))}</button>`;
+      <button type="button" class="button button-quiet" data-action="fc-edit-card" data-card-id="${esc(card.id)}">${esc(t("Edit", "تعديل"))}</button>
+      <button type="button" class="button button-primary" data-action="fc-study-card" data-card-id="${esc(card.id)}">${esc(t("Study this card", "ادرس هذه البطاقة"))}</button>`;
     return modalShell(t("Card preview", "معاينة البطاقة"), body, footer);
   }
 
@@ -1299,6 +1453,7 @@
       case "card-move": { const card = modal.cardId ? (cards || []).find((c) => c && c.id === modal.cardId) : null; return card ? cardMoveHtml(card) : ""; }
       case "card-preview": { const card = modal.cardId ? (cards || []).find((c) => c && c.id === modal.cardId) : null; return card ? cardPreviewHtml(card) : ""; }
       case "import": return importModalHtml();
+      case "settings": return modalShell(t("Flashcards settings", "إعدادات البطاقات"), settingsFormHtml(), `<button type="button" class="button button-secondary" data-action="fc-modal-close">${esc(t("Close", "إغلاق"))}</button><button type="button" class="button button-primary" data-action="fc-save-settings">${esc(t("Save settings", "حفظ الإعدادات"))}</button>`, true);
       default: return "";
     }
   }
@@ -1381,19 +1536,12 @@
       const tile = target ? (target.closest(".fc-tile") || target.closest("[data-fc-card]")) : null;
       if (tile && !target.closest(".fc-tile-actions") && !target.closest("a") && !target.closest("button")) {
         const onStudyCard = Boolean(tile.closest("[data-fc-card]"));
-        const flipped = onStudyCard
-          ? !tile.classList.contains("is-revealed")
-          : tile.classList.toggle("is-flipped");
-        if (onStudyCard) {
-          tile.classList.toggle("is-revealed", flipped);
-          tile.setAttribute("aria-pressed", flipped ? "true" : "false");
-          const studyState = sessionState;
-          if (studyState) studyState.revealed = flipped;
-        } else {
-          const tileId = tile.getAttribute("data-card-id") || tile.querySelector("[data-card-id]")?.getAttribute("data-card-id");
-          if (tileId) { if (flipped) flippedTiles.add(tileId); else flippedTiles.delete(tileId); }
-          tile.setAttribute("aria-pressed", flipped ? "true" : "false");
-        }
+        const applied = onStudyCard
+          ? applyStudyFlip(tile)
+          : flipKeyTarget(tile, false);
+        // Rapid double taps within the flip debounce window are ignored, so the
+        // 3D transition is never restarted mid-flight.
+        if (onStudyCard && !applied) { event.preventDefault(); return; }
         event.preventDefault();
         return;
       }
@@ -1419,7 +1567,7 @@
       const dy = (Number(event.clientY) || 0) - (Number(start.y) || 0);
       if (Math.abs(dx) < 48 || Math.abs(dx) <= Math.abs(dy)) return;
       swipeGuardUntil = Date.now() + 450;
-      void handleAction(dx > 0 ? "fc-peek-next" : "fc-peek-prev", null);
+      void handleAction(fcNavSwipeDelta(dx) > 0 ? "fc-nav-next" : "fc-nav-prev", null);
     });
     content.addEventListener("pointercancel", (event) => {
       if (swipeStart && swipeStart.pointerId === event.pointerId) swipeStart = null;
@@ -1450,6 +1598,15 @@
         return;
       }
       if (id === "fc-import-skip") { importSkipDuplicates = Boolean(target.checked); return; }
+      if (id === "fc-setting-speech-rate") {
+        const value = Number(target.value);
+        if ([0.75, 1, 1.25].includes(value)) {
+          speechRate = value;
+          try { localStorage.setItem("studyflow.flashcards-speech-rate", String(value)); } catch (_) { /* ignore */ }
+          stopFlashcardSpeech();
+        }
+        return;
+      }
       if (id === "fc-setting-motion") { try { localStorage.setItem("studyflow.flashcards-motion", String(target.value || "subtle")); } catch (_) { /* ignore */ } return render(); }
       if (id.startsWith("fc-setting-")) return;
     });
@@ -1462,20 +1619,9 @@
       // from fighting over the same key press.
       if (tile && (event.key === "Enter" || event.key === " ")) {
         event.preventDefault();
-        const flipped = onStudyCard
-          ? !tile.classList.contains("is-revealed")
-          : tile.classList.toggle("is-flipped");
-        if (onStudyCard) {
-          tile.classList.toggle("is-revealed", flipped);
-          tile.setAttribute("aria-pressed", flipped ? "true" : "false");
-          const studyState = sessionState;
-          if (studyState) studyState.revealed = flipped;
-        } else {
-          const tileId = tile.getAttribute("data-card-id");
-          if (tileId) { if (flipped) flippedTiles.add(tileId); else flippedTiles.delete(tileId); }
-          tile.setAttribute("aria-pressed", flipped ? "true" : "false");
-        }
+        const applied = onStudyCard ? applyStudyFlip(tile) : flipKeyTarget(tile, false);
         event.stopPropagation();
+        if (onStudyCard && !applied) return;
       }
     });
     // Register the hotkey handler exactly once; it handles the CURRENT keydown.
@@ -1503,23 +1649,13 @@
       if (tag === "input" || tag === "textarea" || (event.target && event.target.isContentEditable)) return;
       const tile = event.target && event.target.closest ? (event.target.closest(".fc-tile") || event.target.closest("[data-fc-card]")) : null;
       const onStudyCard = tile ? Boolean(tile.closest("[data-fc-card]")) : false;
-      if (event.key === "ArrowLeft") { event.preventDefault(); void peekMove(-1); return; }
-      if (event.key === "ArrowRight") { event.preventDefault(); void peekMove(1); return; }
+      const navDelta = fcNavKeyDelta(event.key);
+      if (navDelta) { event.preventDefault(); void navigateCard(navDelta); return; }
       if (tile && (event.key === "Enter" || event.key === " ")) {
         event.preventDefault();
-        const flipped = onStudyCard
-          ? !tile.classList.contains("is-revealed")
-          : tile.classList.toggle("is-flipped");
-        if (onStudyCard) {
-          tile.classList.toggle("is-revealed", flipped);
-          const studyState = sessionState;
-          if (studyState) studyState.revealed = flipped;
-        } else {
-          const tileId = tile.getAttribute("data-card-id");
-          if (tileId) { if (flipped) flippedTiles.add(tileId); else flippedTiles.delete(tileId); }
-          tile.setAttribute("aria-pressed", flipped ? "true" : "false");
-        }
-        return;
+        const applied = onStudyCard ? applyStudyFlip(tile) : flipKeyTarget(tile, false);
+        event.stopPropagation();
+        if (onStudyCard && !applied) return;
       }
       if (event.key === "1") void rate("again");
       else if (event.key === "2") void rate("hard");
@@ -1609,6 +1745,7 @@
       case "fc-edit-deck": { const deck = deckById(deckIdOf()); return deck ? openModal("deck-form", { deck }) : null; }
       case "fc-delete-deck": return openModal("deck-delete", { deckId: deckIdOf() });
       case "fc-start-deck": { fcUi.deckId = deckIdOf() || fcUi.deckId; return startSession("due"); }
+      case "fc-study-card": return startCardSession((button && button.getAttribute("data-card-id")) || null);
       case "fc-deck-filter": deckFilter = String((button && button.getAttribute("data-filter")) || "all"); return render();
       case "fc-browse-filter": browseFilter = String((button && button.getAttribute("data-filter")) || "all"); browsePage = 0; return render();
       case "fc-browse-view": browseView = String((button && button.getAttribute("data-view")) || "grid"); try { localStorage.setItem("studyflow.flashcards-view", browseView); } catch (_) { /* ignore */ } return render();
@@ -1651,8 +1788,18 @@
       }
       case "fc-review-suspend": return suspendCurrent();
       case "fc-review-end": return endSession(false);
-      case "fc-peek-prev": return peekMove(-1);
-      case "fc-peek-next": return peekMove(1);
+      case "fc-nav-prev": return navigateCard(-1);
+      case "fc-nav-next": return navigateCard(1);
+      case "fc-nav-back": {
+        if (!sessionState) return navigateTo(VIEW.DASHBOARD);
+        if ((sessionState.index || 0) <= 0) { return endSession(false); }
+        return navigateCard(-1);
+      }
+      case "fc-open-settings": return openModal("settings", {});
+      case "fc-audio": return fcAudioAction(button);
+      case "fc-evaluate": return evaluateCard(String((button && button.getAttribute("data-evaluation")) || "again"));
+      case "fc-peek-prev": return navigateCard(-1);
+      case "fc-peek-next": return navigateCard(1);
       case "fc-peek-back": if (sessionState) sessionState.peekIndex = null; return render();
       case "fc-summary-done": { sessionState = null; view = VIEW.DASHBOARD; lastRenderedView = view; return render(); }
       case "fc-cancel-edit": closeModal(); return render();
@@ -1848,6 +1995,37 @@
   }
   // ------------------------------------------------------------------ session
 
+  /**
+   * Study exactly one card chosen from the word list. This is a normal review
+   * session (same SRS write, review log and XP rules) with a single-item queue,
+   * so "open this card" never bypasses the existing spaced-repetition system.
+   */
+  function startCardSession(cardId) {
+    const card = (cards || []).find((item) => item && item.id === cardId && !item.deleted_at);
+    if (!card) { showToast(t("Card not found.", "لم يتم العثور على البطاقة.")); return null; }
+    modal = null;
+    editorDraft = null;
+    sessionState = {
+      mode: "single",
+      deckId: card.deck_id || null,
+      queue: [card],
+      index: 0,
+      currentCard: card,
+      revealed: false,
+      answers: [],
+      peekIndex: null,
+      startedAt: Date.now(),
+      paused: false,
+      total: 1,
+      xpEarned: 0,
+      done: false,
+      navDirection: null,
+    };
+    view = VIEW.REVIEW;
+    lastRenderedView = view;
+    return render();
+  }
+
   async function startSession(mode) {
     const at = Date.now();
     const deckId = fcUi.deckId || browseDeckId || null;
@@ -1875,6 +2053,7 @@
       total: pool.length,
       xpEarned: 0,
       done: false,
+      navDirection: null,
     };
     view = VIEW.REVIEW;
     lastRenderedView = view;
@@ -1897,6 +2076,19 @@
   }
 
   async function rate(rating) {
+    // One review write at a time. Rapid double taps (or a tap plus a keyboard
+    // shortcut / Know button) can otherwise schedule the same card twice and
+    // award duplicate XP.
+    if (ratingInFlight) return null;
+    ratingInFlight = true;
+    try {
+      return await rateInternal(rating);
+    } finally {
+      ratingInFlight = false;
+    }
+  }
+
+  async function rateInternal(rating) {
     const state = sessionState;
     if (!state || !state.currentCard || state.done) return null;
     if (state.revealed !== true) state.revealed = true;
@@ -1941,10 +2133,14 @@
     state.answers.push({ cardId: card.id, rating, intervalDays: result.card.interval_days, dueAt: result.card.due_at, xp: xpAward });
     state.peekIndex = null;
     state.index += 1;
+    stopFlashcardSpeech();
     if (state.index < state.queue.length) {
       state.currentCard = state.queue[state.index] || null;
       state.revealed = false;
-      return render();
+      state.navDirection = "next";
+      const html = render();
+      state.navDirection = null;
+      return html;
     }
     state.currentCard = null;
     state.done = true;
@@ -1952,6 +2148,7 @@
   }
 
   async function endSession(skipSummary) {
+    stopFlashcardSpeech();
     const state = sessionState;
     if (state && !state.done && state.answers && state.answers.length && !skipSummary) {
       // Explicit finish with progress → show summary instead of jumping to dashboard.
@@ -1968,6 +2165,7 @@
   async function suspendCurrent() {
     const state = sessionState;
     if (!state || !state.currentCard) return null;
+    stopFlashcardSpeech();
     const card = state.currentCard;
     const db = await getDb();
     if (!db) return null;
@@ -1982,6 +2180,9 @@
       if (state.index < state.queue.length) {
         state.currentCard = state.queue[state.index] || null;
         state.revealed = false;
+        state.navDirection = "next";
+        const html = render();
+        state.navDirection = null;
       } else {
         state.currentCard = null;
         state.done = true;
@@ -1992,6 +2193,17 @@
       console.error("Flashcards: suspend failed", err);
       showToast(t("Could not suspend the card.", "تعذر تعليق البطاقة."));
       return null;
+    }
+  }
+
+  async function evaluateCard(evaluation) {
+    if (evaluationInFlight) return null;
+    const rating = evaluation === "good" ? "good" : "again";
+    evaluationInFlight = true;
+    try {
+      return await rate(rating);
+    } finally {
+      evaluationInFlight = false;
     }
   }
 

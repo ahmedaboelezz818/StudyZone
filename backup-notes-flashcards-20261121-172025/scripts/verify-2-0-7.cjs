@@ -1,0 +1,11 @@
+const fs = require("fs");
+const t = fs.readFileSync("www/native-shell.js", "utf8");
+const idx = fs.readFileSync("www/index.html", "utf8");
+const pkg = fs.readFileSync("package.json", "utf8");
+const gradle = fs.readFileSync("android/app/build.gradle", "utf8");
+console.log("native-shell OK:", t.length > 30000);
+console.log("www/index.html has Second Brain title:", idx.includes("Second Brain — Your Mind. Organized."));
+console.log("package.json version 2.0.7:", pkg.includes('"version": "2.0.7"'));
+console.log("package-lock version 2.0.7:", fs.readFileSync("package-lock.json", "utf8").includes('"version": "2.0.7"'));
+console.log("build.gradle versionCode 9:", gradle.includes("versionCode 9"));
+console.log("build.gradle versionName 2.0.7:", gradle.includes('versionName "2.0.7"'));

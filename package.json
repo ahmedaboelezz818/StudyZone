@@ -8,7 +8,7 @@
     "build:web": "node scripts/build-web.js",
     "locales": "node scripts/extract-locales.js",
     "i18n:audit": "node scripts/i18n-audit.js",
-    "check": "node --check app.js && node --check timeline-core.js && node --check offline-sync.js && node --check native-shell.js && node --check service-worker.js && node --check server.js && node --check team-live-core.js && node --check team-live.js && node --check flashcards-core.js && node --check flashcards-db.js && node --check flashcards-sync.js && node --check flashcards.js && node tests/timeline-core.js && node tests/timeline-priority-colors.js && node tests/team-live-unit.js && node tests/flashcards-core.js && node tests/static-checks.js && node tests/platform-checks.js && node tests/comms-repair-checks.js && node scripts/i18n-audit.js",
+    "check": "node --check app.js && node --check timeline-core.js && node --check offline-sync.js && node --check native-shell.js && node --check service-worker.js && node --check server.js && node --check team-live-core.js && node --check team-live.js && node --check flashcards-core.js && node --check flashcards-db.js && node --check flashcards-sync.js && node --check flashcards.js && node tests/timeline-core.js && node tests/timeline-priority-colors.js && node tests/team-live-unit.js && node tests/flashcards-core.js && node tests/notes-smart.js && node tests/static-checks.js && node tests/platform-checks.js && node tests/comms-repair-checks.js && node scripts/i18n-audit.js",
     "cap:sync": "npm run build:web && npx cap sync android",
     "cap:open": "npx cap open android",
     "android:debug": "npm run cap:sync && cd android && gradlew.bat assembleDebug",

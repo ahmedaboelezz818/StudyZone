@@ -184,13 +184,113 @@
     }
   }
 
+  /* ---- local instants & task day ranges --------------------------------- */
+
+  /**
+   * Build a local Date and reject impossible calendar values instead of letting
+   * the engine silently roll them into the next month/day.
+   */
+  function localDate(year, month, day, hours, minutes, seconds, millis) {
+    const date = new Date(
+      year,
+      month - 1,
+      day,
+      hours || 0,
+      minutes || 0,
+      seconds || 0,
+      millis || 0,
+    );
+    if (
+      date.getFullYear() !== year ||
+      date.getMonth() !== month - 1 ||
+      date.getDate() !== day
+    ) {
+      return null;
+    }
+    return date;
+  }
+
+  /**
+   * Parse a stored date value without ever moving it to a neighbouring day.
+   *
+   * - "YYYY-MM-DD" (all-day tasks, date-only rows) is LOCAL midnight, not UTC
+   *   midnight. `new Date("2026-11-07")` would otherwise become Nov 6 in
+   *   negative-offset zones.
+   * - "YYYY-MM-DDTHH:mm[:ss]" without a zone is LOCAL wall-clock time.
+   * - Full ISO strings with `Z` or an offset are real instants and are parsed
+   *   by the engine, then read back with local getters.
+   */
+  function localInstant(value) {
+    if (value == null || value === "") return null;
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : new Date(value.getTime());
+    }
+    const text = String(value).trim();
+    let match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+    if (match) {
+      return localDate(Number(match[1]), Number(match[2]), Number(match[3]));
+    }
+    match = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/.exec(text);
+    if (match) {
+      return localDate(
+        Number(match[1]),
+        Number(match[2]),
+        Number(match[3]),
+        Number(match[4]),
+        Number(match[5]),
+        Number(match[6] || 0),
+        Number(String(match[7] || "0").padEnd(3, "0")),
+      );
+    }
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  function startOfLocalDay(value) {
+    const date = value instanceof Date ? value : localInstant(value);
+    if (!date || Number.isNaN(date.getTime())) return null;
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  }
+
+  /** Normalised { start, end } local midnights for a task's real dates. */
+  function taskDayRange(task) {
+    if (!task) return null;
+    const startDate = localInstant(task.starts_at || task.due_at);
+    const endDate = localInstant(task.due_at || task.starts_at);
+    if (!startDate || !endDate) return null;
+    const start = startOfLocalDay(startDate);
+    const end = startOfLocalDay(endDate);
+    if (!start || !end) return null;
+    return start <= end ? { start, end } : { start: end, end: start };
+  }
+
+  /** { startKey, endKey } for a task, or null when it has no usable date. */
+  function taskDayKeys(task) {
+    const range = taskDayRange(task);
+    return range
+      ? { startKey: keyOf(range.start), endKey: keyOf(range.end) }
+      : null;
+  }
+
+  /**
+   * Exact full-date occurrence test (YYYY-MM-DD). This is the single source of
+   * truth for every calendar view: month cells, week columns, day view, agenda,
+   * the day-details modal and the "+N more" popover all call it, so a task can
+   * never appear on another day that merely shares the same day-of-month.
+   */
+  function taskOccursOnDay(task, key) {
+    const keys = taskDayKeys(task);
+    const parsed = parseKey(key);
+    if (!keys || !parsed) return false;
+    const targetKey = `${parsed.y}-${pad2(parsed.m)}-${pad2(parsed.d)}`;
+    return targetKey >= keys.startKey && targetKey <= keys.endKey;
+  }
+
   /* ---- item ranges ------------------------------------------------------ */
 
   function dayKeyOfInstant(value) {
-    if (!value) return null;
-    const date = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date.getTime())) return null;
-    return keyOf(date);
+    const date = localInstant(value);
+    return date ? keyOf(date) : null;
   }
 
   /**
@@ -417,6 +517,11 @@
     dayIndex,
     windowContains,
     shiftAnchor,
+    localInstant,
+    startOfLocalDay,
+    taskDayRange,
+    taskDayKeys,
+    taskOccursOnDay,
     itemRange,
     spanDays,
     barGeometry,

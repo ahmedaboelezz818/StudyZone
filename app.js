@@ -733,6 +733,9 @@
   const statusChangesInFlight = new Set();
   const taskDayStorageKey = "studyzone.task-view.v1";
   const localNotesKey = "studyzone.notes.v1";
+  const noteTombstonesKey = "studyzone.notes.deleted.v1";
+  const noteDraftStorageKey = "studyzone.note-drafts.v1";
+  const noteSpeechConsentKey = "studyzone.notes.voice-consent.v1";
   let taskViewMode = "day";
   let taskViewDate = startOfLocalDay(new Date());
   let taskShowCompleted =
@@ -756,6 +759,26 @@
   let noteSaveTimer = null;
   let noteSaveStatus = "idle";
   let noteEditorElement = null;
+  let noteSaveChain = Promise.resolve();
+  let noteSaveQueued = false;
+  let noteMirrorTimer = null;
+  let pendingNoteFlushPromise = null;
+  let noteSmartPreview = null;
+  let noteSpeech = {
+    recognition: null,
+    listening: false,
+    lang: "ar-EG",
+    finalText: "",
+    interimText: "",
+    lastFinalIndex: -1,
+    anchor: null,
+    endMarker: null,
+    restartTimer: null,
+    restartCount: 0,
+    manualStop: false,
+    error: "",
+    supported: false,
+  };
   // Mobile keyboards (Gboard and other Android IMEs) compose Arabic text in
   // several input events. Autosave and any DOM rewrite must wait until the
   // composition is committed, otherwise the caret jumps and letters repeat.
@@ -1538,6 +1561,7 @@
     console.warn("Could not restore the saved task view.", error);
   }
   let notes = readLocalNotes();
+  let notesIdbHydrated = new Set();
 
   // ---- Focus intelligence state -------------------------------------------
   const routinesStorageKey = "studyzone.routines.v1";
@@ -3776,27 +3800,147 @@
     const visible = stored.filter((note) =>
       accountId ? !note.ownerId || note.ownerId === accountId : !note.ownerId,
     );
-    if (visible.length) return visible;
-    return sampleNotes.map((note, index) => normalizeNoteRecord({
-      id: `local-note-${index + 1}`,
-      title: note.title,
-      content: `<p>${escapeHtml(
-        note.title === "Core theorem summary"
-          ? "A shortest path is only as good as the weights you give it. Revisit Dijkstra's assumptions before the next problem set."
-          : note.title === "Cell structure recall"
-            ? "Mitochondria: ATP production. Ribosomes: protein synthesis. Nucleus: stores genetic material."
-            : "Thesis: progress in the discipline came from small, repeatable experiments rather than one big breakthrough.",
-      )}</p>`,
-      subject_id: "",
-      subject: note.subject,
-      is_favorite: index === 0,
-      color: "",
-      type: "text",
-      attachments: [],
-      description: "",
-      created_at: new Date(Date.now() - index * 86400000).toISOString(),
-      updated_at: new Date(Date.now() - index * 86400000).toISOString(),
-    }));
+    // Never inject demo notes. A brand-new workspace must show the real empty
+    // state so the user can create the first note without deleting samples.
+    return visible;
+  }
+
+  function readNoteTombstones() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(noteTombstonesKey) || "[]");
+      if (!Array.isArray(raw)) return [];
+      return raw
+        .filter((item) => item && item.id)
+        .map((item) => ({
+          id: String(item.id),
+          deletedAt: Number(item.deletedAt) || Date.now(),
+        }));
+    } catch {
+      return [];
+    }
+  }
+
+  function saveNoteTombstones(list) {
+    try {
+      const now = Date.now();
+      const keep = (Array.isArray(list) ? list : [])
+        .filter((item) => item && item.id)
+        .filter((item) => now - (Number(item.deletedAt) || now) < 90 * 86400000);
+      localStorage.setItem(noteTombstonesKey, JSON.stringify(keep));
+    } catch {
+      /* quota or private mode: deletion still applies to the in-memory list */
+    }
+  }
+
+  function markNoteDeleted(id) {
+    if (!id) return;
+    const tombstones = readNoteTombstones().filter(
+      (item) => String(item.id) !== String(id),
+    );
+    tombstones.push({ id: String(id), deletedAt: Date.now() });
+    saveNoteTombstones(tombstones);
+  }
+
+  function clearNoteTombstone(id) {
+    if (!id) return;
+    const tombstones = readNoteTombstones().filter(
+      (item) => String(item.id) !== String(id),
+    );
+    saveNoteTombstones(tombstones);
+  }
+
+  function noteTime(value) {
+    const time = new Date(value || 0).getTime();
+    return Number.isFinite(time) ? time : 0;
+  }
+
+  function noteIdentity(note) {
+    if (!note?.id) return "";
+    return String(note.id);
+  }
+
+  /**
+   * Merge two note collections without ever losing a newer local edit.
+   * The server copy only wins when it is genuinely newer and the local copy
+   * is not waiting in the durable sync queue.
+   */
+  function mergeNoteCollections(localList, remoteList, options = {}) {
+    const pending = options.pendingIds instanceof Set ? options.pendingIds : new Set();
+    const tombstones = new Set(
+      readNoteTombstones().map((item) => String(item.id)),
+    );
+    const merged = new Map();
+    const add = (note, source) => {
+      if (!note?.id) return;
+      const id = noteIdentity(note);
+      if (!id || tombstones.has(id)) return;
+      const existing = merged.get(id);
+      if (!existing) {
+        merged.set(id, { note, source });
+        return;
+      }
+      const localNote = source === "local" ? note : existing.note;
+      const remoteNote = source === "remote" ? note : existing.note;
+      const localPending =
+        Boolean(localNote.localPending) || pending.has(String(localNote.id));
+      const localTime = noteTime(localNote.updated_at);
+      const remoteTime = noteTime(remoteNote.updated_at);
+      if (localPending || localTime > remoteTime + 1500) {
+        merged.set(id, { note: localNote, source: "local" });
+      } else {
+        merged.set(id, { note: remoteNote, source: "remote" });
+      }
+    };
+    (localList || []).forEach((note) => add(note, "local"));
+    (remoteList || []).forEach((note) => add(note, "remote"));
+    return [...merged.values()].map((entry) => entry.note);
+  }
+
+  function queueNoteMirror() {
+    if (noteMirrorTimer) return;
+    noteMirrorTimer = window.setTimeout(() => {
+      noteMirrorTimer = null;
+      void mirrorNotesToIdb();
+    }, 350);
+  }
+
+  async function mirrorNotesToIdb() {
+    const store = window.StudyZoneNotesStore;
+    if (!store?.putMany) return;
+    const scope = session?.user?.id || null;
+    const own = notes
+      .filter((note) => note?.id)
+      .filter((note) => (note.ownerId || null) === scope || !note.ownerId)
+      .map((note) => ({ ...note, ownerId: note.ownerId || scope }));
+    if (own.length) await store.putMany(own);
+  }
+
+  async function hydrateNotesFromIdb() {
+    const store = window.StudyZoneNotesStore;
+    if (!store?.getAll) return false;
+    let rows = [];
+    try {
+      rows = await store.getAll();
+    } catch {
+      return false;
+    }
+    if (!Array.isArray(rows) || !rows.length) return false;
+    const accountId = session?.user?.id || null;
+    const visible = rows
+      .filter((note) => note && note.id)
+      .filter((note) =>
+        accountId ? !note.ownerId || note.ownerId === accountId : !note.ownerId,
+      )
+      .map((note) => normalizeNoteRecord(note));
+    if (!visible.length) return false;
+    const merged = mergeNoteCollections(notes, visible, {
+      pendingIds: await pendingNoteIds(),
+    });
+    const changed = merged.length !== notes.length;
+    notes = merged;
+    saveLocalNotes();
+    if (changed && currentPage === "notes") scheduleRender();
+    return changed;
   }
 
   function saveLocalNotes() {
@@ -3816,8 +3960,143 @@
       }));
       localStorage.setItem(localNotesKey, JSON.stringify([...foreign, ...own]));
     } catch (error) {
-      console.error("Could not save notes in this browser.", error);
+      // localStorage can be full (rich notes) or unavailable (private mode).
+      // The IndexedDB mirror below still keeps the data; never clear notes.
+      console.warn("Could not save notes in localStorage; using IndexedDB mirror.", error?.name || "");
     }
+    queueNoteMirror();
+  }
+
+  function readNoteDrafts() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(noteDraftStorageKey) || "{}");
+      return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function writeNoteDrafts(map) {
+    try {
+      localStorage.setItem(noteDraftStorageKey, JSON.stringify(map || {}));
+    } catch {
+      /* IndexedDB draft backup is written by persistNoteDraftFromEditor */
+    }
+  }
+
+  function noteDraftKey(id) {
+    return id ? String(id) : "__new__";
+  }
+
+  function newNoteId() {
+    try {
+      if (typeof crypto !== "undefined" && crypto.randomUUID)
+        return crypto.randomUUID();
+    } catch {
+      /* fall through */
+    }
+    return `local-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  function readNoteDraft(id) {
+    const drafts = readNoteDrafts();
+    return drafts[noteDraftKey(id)] || null;
+  }
+
+  function clearNoteDraft(id) {
+    const key = noteDraftKey(id);
+    const drafts = readNoteDrafts();
+    if (drafts[key]) {
+      delete drafts[key];
+      writeNoteDrafts(drafts);
+    }
+    try {
+      void window.StudyZoneNotesStore?.clearDraft?.(key);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function persistNoteDraftFromEditor(state) {
+    const editor = document.getElementById("note-editor");
+    const titleInput = document.getElementById("note-editor-title");
+    if (!state || !editor || !titleInput) return null;
+    const content = noteBodyForHtml(editor.innerHTML);
+    const title = titleInput.value.trim();
+    const hasText = Boolean(
+      title || (editor.textContent || "").trim() || content.replace(/<[^>]+>/g, "").trim(),
+    );
+    const key = noteDraftKey(state.id);
+    const drafts = readNoteDrafts();
+    if (!hasText) {
+      if (drafts[key]) {
+        delete drafts[key];
+        writeNoteDrafts(drafts);
+      }
+      return null;
+    }
+    const draft = {
+      key,
+      id: state.id || null,
+      title,
+      content,
+      subject_id:
+        document.getElementById("note-editor-subject")?.value || null,
+      is_favorite: Boolean(document.getElementById("note-editor-pin")?.checked),
+      color: state.color || "",
+      updatedAt: Date.now(),
+    };
+    drafts[key] = draft;
+    writeNoteDrafts(drafts);
+    try {
+      void window.StudyZoneNotesStore?.putDraft?.(draft);
+    } catch {
+      /* ignore */
+    }
+    return draft;
+  }
+
+  /**
+   * Synchronous last-chance save used by pagehide/beforeunload and when the
+   * user leaves the editor. It never waits for the network.
+   */
+  function persistEditorLocally(state = noteEditorState) {
+    const editor = document.getElementById("note-editor");
+    const titleInput = document.getElementById("note-editor-title");
+    if (!state || !editor || !titleInput) return null;
+    const content = noteBodyForHtml(editor.innerHTML);
+    const title = titleInput.value.trim();
+    if (!title && !content.replace(/<[^>]+>/g, "").trim()) return null;
+    const now = new Date().toISOString();
+    const id = state.id || newNoteId();
+    const existing = notes.find((note) => String(note.id) === String(id));
+    const saved = {
+      ...(existing || {}),
+      id,
+      title:
+        title || (appLanguage === "ar" ? "ملاحظة بدون عنوان" : "Untitled note"),
+      content,
+      subject_id:
+        document.getElementById("note-editor-subject")?.value || null,
+      subject: subjectName(
+        document.getElementById("note-editor-subject")?.value || null,
+      ),
+      is_favorite: Boolean(document.getElementById("note-editor-pin")?.checked),
+      color: state.color || "",
+      ownerId: session?.user?.id || existing?.ownerId || null,
+      localPending: Boolean(session) || Boolean(existing?.localPending),
+      created_at: existing?.created_at || now,
+      updated_at: now,
+    };
+    if (existing)
+      notes = notes.map((note) =>
+        String(note.id) === String(id) ? saved : note,
+      );
+    else notes = [saved, ...notes];
+    state.id = id;
+    saveLocalNotes();
+    persistNoteDraftFromEditor(state);
+    return saved;
   }
 
   function saveLocalTasks() {
@@ -5067,6 +5346,15 @@
   }
 
   function taskDateRange(task) {
+    // The shared timeline core owns timezone-safe parsing: date-only values are
+    // local midnights (never UTC), wall-clock values stay local, and real
+    // instants are read back with local getters. Both Calendar and Deadlines
+    // therefore agree on the exact day.
+    const sharedTimeline =
+      typeof StudyZoneTimeline !== "undefined" ? StudyZoneTimeline : null;
+    if (sharedTimeline && typeof sharedTimeline.taskDayRange === "function") {
+      return sharedTimeline.taskDayRange(task);
+    }
     if (!task) return null;
     const startValue = task.starts_at || task.due_at;
     const endValue = task.due_at || task.starts_at;
@@ -5079,9 +5367,20 @@
   }
 
   function taskOccursOnKey(task, key) {
+    // Exact full-date (YYYY-MM-DD) matching in the local calendar. Never
+    // compares day-of-month numbers, so Nov 7 and Dec 7 are different days.
+    const sharedTimeline =
+      typeof StudyZoneTimeline !== "undefined" ? StudyZoneTimeline : null;
+    if (sharedTimeline && typeof sharedTimeline.taskOccursOnDay === "function") {
+      return sharedTimeline.taskOccursOnDay(task, key);
+    }
     const range = taskDateRange(task);
     const day = parseLocalDateKey(key);
-    return Boolean(range && day && day >= range.start && day <= range.end);
+    if (!range || !day) return false;
+    const startKey = dateKey(range.start);
+    const endKey = dateKey(range.end);
+    const targetKey = dateKey(day);
+    return targetKey >= startKey && targetKey <= endKey;
   }
 
   function taskEndKey(task) {
@@ -5852,32 +6151,50 @@
     });
   }
 
+  /** Classification shared by stored tasks and virtual routine occurrences. */
+  function calendarEntryForTask(task) {
+    const archived = isArchivedItem(task);
+    const classification = archived
+      ? "archived"
+      : task.subject_id
+        ? "study"
+        : "personal";
+    return {
+      task,
+      range: timelineRangeOf(task),
+      classification,
+      archived,
+    };
+  }
+
+  /** True when a task passes the active Calendar search + filter. */
+  function calendarTaskVisible(task) {
+    if (!task) return false;
+    const entry = calendarEntryForTask(task);
+    if (calendarFilter !== "all" && entry.classification !== calendarFilter) {
+      return false;
+    }
+    const query = String(calendarSearch || "").trim();
+    if (!query) return true;
+    const locale = calendarLocale();
+    const subject = subjectName(task.subject_id) || task.subject || "";
+    const haystack =
+      `${task.title || ""} ${task.description || ""} ${subject}`.toLocaleLowerCase(
+        locale,
+      );
+    return haystack.includes(query.toLocaleLowerCase(locale));
+  }
+
   /** Every dated record, filtered by the active search + classification. */
   function calendarEntries() {
-    const locale = calendarLocale();
-    const query = String(calendarSearch || "").trim().toLocaleLowerCase(locale);
     const result = [];
     tasks.forEach((task) => {
       if (!task || String(task.id || "").startsWith("routine:")) return;
       if (!task.due_at && !task.starts_at) return;
-      const range = timelineRangeOf(task);
-      if (!range) return;
-      const archived = isArchivedItem(task);
-      const classification = archived
-        ? "archived"
-        : task.subject_id
-          ? "study"
-          : "personal";
-      if (calendarFilter !== "all" && classification !== calendarFilter) return;
-      if (query) {
-        const subject = subjectName(task.subject_id) || "";
-        const haystack =
-          `${task.title} ${task.description || ""} ${subject}`.toLocaleLowerCase(
-            locale,
-          );
-        if (!haystack.includes(query)) return;
-      }
-      result.push({ task, range, classification, archived });
+      if (!calendarTaskVisible(task)) return;
+      const entry = calendarEntryForTask(task);
+      if (!entry.range) return;
+      result.push(entry);
     });
     result.sort(
       (a, b) =>
@@ -5892,12 +6209,45 @@
     return result;
   }
 
+  /**
+   * Entries for one exact calendar day.
+   *
+   * Every view (month cells, week columns, day view, 45-day agenda, the day
+   * modal and the "+N more" popover) funnels through here, so they can never
+   * disagree. Matching uses the full local YYYY-MM-DD key, entries are
+   * de-duplicated by task id (local + Supabase overlap can never double a
+   * card), and virtual routine occurrences are included only on the dates
+   * their recurrence rule actually covers.
+   */
   function calendarEventsOn(entries, key) {
-    return entries.filter(
-      (entry) =>
-        String(entry.range.startKey || "") <= key &&
-        String(entry.range.endKey || entry.range.startKey || "") >= key,
-    );
+    const target = String(key || "");
+    const day = parseLocalDateKey(target);
+    if (!day) return [];
+    const matched = [];
+    const seen = new Set();
+    const push = (entry) => {
+      if (!entry || !entry.task) return;
+      const id = String(entry.task.id || "");
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      matched.push(entry);
+    };
+    (entries || [])
+      .filter((entry) => taskOccursOnKey(entry?.task, target))
+      .forEach(push);
+    // Permanent routines are virtual occurrences (never stored in `tasks`),
+    // so they are added here only when routineOccursOnKey() says the rule
+    // covers this exact date — never every day.
+    routineTasksForDay(target).forEach((task) => {
+      if (!calendarTaskVisible(task)) return;
+      push({
+        task,
+        range: { startKey: target, endKey: target, hasStart: true, hasEnd: true },
+        classification: calendarEntryForTask(task).classification,
+        archived: calendarEntryForTask(task).archived,
+      });
+    });
+    return matched;
   }
 
   function calendarTimeLabel(task) {
@@ -8352,6 +8702,23 @@
           <label class="note-pin-toggle"><input type="checkbox" id="note-editor-pin" ${note?.is_favorite ? "checked" : ""} /> <span>${appLanguage === "ar" ? "تثبيت" : "Pin"}</span></label>
           <span class="note-save-status" id="note-save-status">${isNew ? "" : appLanguage === "ar" ? "محفوظة" : "Saved"}</span>
         </div>
+        <div class="note-smart-row">
+          <button type="button" class="button button-secondary button-small note-smart-btn" data-action="note-smart-format" aria-label="${appLanguage === "ar" ? "تنظيم ذكي" : "Smart organize"}">✨ ${appLanguage === "ar" ? "تنظيم ذكي" : "Smart organize"}</button>
+          <span class="note-smart-hint">${appLanguage === "ar" ? "تنظيم محلي بقواعد — يعمل دون إنترنت" : "Local rules — works offline"}</span>
+          <div class="note-voice-controls">
+            <button type="button" class="note-voice-btn" id="note-voice-btn" data-action="note-voice-toggle" aria-pressed="false" aria-label="${appLanguage === "ar" ? "الإملاء الصوتي" : "Voice dictation"}" title="${appLanguage === "ar" ? "الإملاء الصوتي" : "Voice dictation"}"><span class="note-voice-icon" aria-hidden="true">🎙</span><span class="note-voice-label">${appLanguage === "ar" ? "إملاء" : "Dictate"}</span></button>
+            <select id="note-voice-lang" class="filter-select note-voice-lang" aria-label="${appLanguage === "ar" ? "لغة الإملاء" : "Dictation language"}">
+              <option value="ar-EG">العربية (مصري)</option>
+              <option value="ar-SA">العربية الفصحى</option>
+              <option value="en-US">English</option>
+            </select>
+          </div>
+        </div>
+        <div class="note-voice-status" id="note-voice-status" hidden>
+          <span class="note-voice-dot" aria-hidden="true"></span>
+          <span id="note-voice-status-text"></span>
+          <button type="button" class="note-voice-stop" data-action="note-voice-stop">${appLanguage === "ar" ? "إيقاف" : "Stop"}</button>
+        </div>
         ${
           isNew
             ? `<div class="note-template-row" role="group" aria-label="${appLanguage === "ar" ? "قوالب الملاحظات" : "Note templates"}"><span>${appLanguage === "ar" ? "ابدأ من قالب:" : "Start from a template:"}</span>${Object.entries(
@@ -8414,10 +8781,11 @@
             ${toolButton("removeFormat", appLanguage === "ar" ? "مسح التنسيق" : "Clear formatting", "⌫")}
           </div>
         </div>
-        <div class="rt-editor" id="note-editor" contenteditable="true" dir="auto" lang="${appLanguage === "ar" ? "ar-EG" : "en"}" data-sz-no-translate role="textbox" aria-multiline="true" aria-label="${appLanguage === "ar" ? "محتوى الملاحظة" : "Note content"}" spellcheck="true">${content}</div>
+        <div class="rt-editor" id="note-editor" contenteditable="true" dir="auto" lang="${appLanguage === "ar" ? "ar-EG" : "en"}" data-sz-no-translate data-placeholder="${appLanguage === "ar" ? "اكتب ملاحظتك هنا…" : "Write your note here…"}" role="textbox" aria-multiline="true" aria-label="${appLanguage === "ar" ? "محتوى الملاحظة" : "Note content"}" spellcheck="true">${content}</div>
         <footer class="note-editor-foot">
           <span id="note-word-count"></span>
           <div class="note-editor-actions">
+            ${isNew ? "" : `<button type="button" class="button button-quiet button-small" data-action="note-restore-previous" id="note-restore-previous" hidden>${appLanguage === "ar" ? "استرجاع السابق" : "Restore previous"}</button>`}
             ${isNew ? "" : `<button type="button" class="button button-quiet button-small danger-text" data-action="note-delete-editor">${appLanguage === "ar" ? "حذف" : "Delete"}</button>`}
             <button type="button" class="button button-secondary button-small" data-action="note-save-now">${appLanguage === "ar" ? "حفظ الآن" : "Save now"}</button>
             <button type="button" class="button button-primary button-small" data-action="note-close">${appLanguage === "ar" ? "تم" : "Done"}</button>
@@ -8444,6 +8812,10 @@
       idle: appLanguage === "ar" ? "محفوظة" : "Saved",
       dirty: appLanguage === "ar" ? "تغييرات غير محفوظة" : "Unsaved changes",
       saving: appLanguage === "ar" ? "جارٍ الحفظ…" : "Saving…",
+      local:
+        appLanguage === "ar"
+          ? "محفوظة على الجهاز · بانتظار المزامنة"
+          : "Saved on device · sync pending",
       saved:
         appLanguage === "ar"
           ? `تم الحفظ · ${new Intl.DateTimeFormat(appLanguage === "ar" ? "ar-EG" : "en", { hour: "numeric", minute: "2-digit" }).format(new Date())}`
@@ -8480,6 +8852,42 @@
     return true;
   }
 
+  function noteRemotePayload(payload, includeId) {
+    const row = {
+      title: payload.title,
+      content: payload.content,
+      subject_id: payload.subject_id || null,
+      is_favorite: Boolean(payload.is_favorite),
+    };
+    if (notesColorSupported) row.color = payload.color || "";
+    if (includeId) row.id = payload.id;
+    return row;
+  }
+
+  function persistNoteLocal(state, payload, { pending = false } = {}) {
+    const now = new Date().toISOString();
+    const id = state.id || payload.id || newNoteId();
+    const existing = notes.find((note) => String(note.id) === String(id));
+    const saved = {
+      ...(existing || {}),
+      ...payload,
+      id,
+      ownerId: session?.user?.id || existing?.ownerId || null,
+      localPending: Boolean(pending),
+      subject: subjectName(payload.subject_id),
+      created_at: existing?.created_at || now,
+      updated_at: now,
+    };
+    if (existing)
+      notes = notes.map((note) =>
+        String(note.id) === String(id) ? saved : note,
+      );
+    else notes = [saved, ...notes];
+    state.id = id;
+    saveLocalNotes();
+    return saved;
+  }
+
   async function saveNoteNow({ silent = false } = {}) {
     const state = noteEditorState;
     if (!state) return;
@@ -8506,109 +8914,148 @@
       return;
     }
     const payload = {
+      id: state.id || newNoteId(),
       title:
         title || (appLanguage === "ar" ? "ملاحظة بدون عنوان" : "Untitled note"),
       content,
       subject_id: document.getElementById("note-editor-subject")?.value || null,
       is_favorite: Boolean(document.getElementById("note-editor-pin")?.checked),
+      color: state.color || "",
     };
-    if (notesColorSupported) payload.color = state.color || "";
+    if (!notesColorSupported) delete payload.color;
 
-    // Writes to the local list + localStorage. Used on its own when signed out
-    // and as the fallback whenever the network write fails, so an offline or
-    // failed save never loses the note the user just typed.
-    const persistLocally = () => {
-      const now = new Date().toISOString();
-      const id = state.id || `local-note-${Date.now()}`;
-      const existing = notes.find((note) => String(note.id) === String(id));
-      const saved = {
-        ...(existing || {}),
-        ...payload,
-        id,
-        ownerId: session?.user?.id || existing?.ownerId || null,
-        localPending: Boolean(session),
-        subject: subjectName(payload.subject_id),
-        created_at: existing?.created_at || now,
-        updated_at: now,
-      };
-      if (existing)
-        notes = notes.map((note) =>
-          String(note.id) === String(id) ? saved : note,
+    // Serialise saves so two quick autosave ticks can never insert the same
+    // note twice. Each queued run reads the latest editor DOM.
+    const run = async () => {
+      // Local-first: the note is durable before any network request starts.
+      let localSaved = persistNoteLocal(state, payload, {
+        pending: Boolean(supabase && session),
+      });
+      setNoteSaveStatus("saving");
+      const canRemote = Boolean(supabase && session);
+      if (!canRemote) {
+        state.synced = false;
+        setNoteSaveStatus("local");
+        updateNoteWordCount();
+        return localSaved;
+      }
+
+      const targetId = String(payload.id);
+      const legacyLocal = targetId.startsWith("local-");
+      const insertId = legacyLocal ? newNoteId() : targetId;
+      const includeId = !state.synced || legacyLocal;
+      const saveRemote = async (withColor) => {
+        const row = noteRemotePayload(
+          { ...payload, id: insertId, color: withColor ? payload.color : "" },
+          includeId,
         );
-      else notes.unshift(saved);
-      state.id = id;
-      saveLocalNotes();
-      return saved;
-    };
+        if (!withColor) delete row.color;
+        if (includeId) {
+          return supabase
+            .from("notes")
+            .insert(row)
+            .select(
+              "id,title,content,subject_id,is_favorite,created_at,updated_at",
+            )
+            .maybeSingle();
+        }
+        const update = await supabase
+          .from("notes")
+          .update(row)
+          .eq("id", targetId)
+          .select(
+            "id,title,content,subject_id,is_favorite,created_at,updated_at",
+          )
+          .maybeSingle();
+        if (!update.error && update.data) return update;
+        // The row disappeared on the server (or was never uploaded): create it
+        // again with the same client id instead of silently losing the note.
+        return supabase
+          .from("notes")
+          .insert({ ...row, id: targetId })
+          .select(
+            "id,title,content,subject_id,is_favorite,created_at,updated_at",
+          )
+          .maybeSingle();
+      };
 
-    setNoteSaveStatus("saving");
-    try {
-      if (supabase && session && navigator.onLine !== false) {
-        let result;
-        if (state.id && !String(state.id).startsWith("local-")) {
+      try {
+        let result = await saveRemote(notesColorSupported);
+        if (
+          result.error &&
+          /color/i.test(result.error.message || "") &&
+          notesColorSupported
+        ) {
+          notesColorSupported = false;
+          result = await saveRemote(false);
+        }
+        if (
+          result.error &&
+          (result.error.code === "23505" ||
+            /duplicate key|already exists/i.test(result.error.message || ""))
+        ) {
           result = await supabase
             .from("notes")
-            .update(payload)
-            .eq("id", state.id)
+            .update(noteRemotePayload(payload, false))
+            .eq("id", insertId)
             .select(
               "id,title,content,subject_id,is_favorite,created_at,updated_at",
             )
-            .single();
-        } else {
-          result = await supabase
-            .from("notes")
-            .insert(payload)
-            .select(
-              "id,title,content,subject_id,is_favorite,created_at,updated_at",
-            )
-            .single();
+            .maybeSingle();
         }
         if (result.error) throw result.error;
-        const saved = result.data;
+        const saved = result.data || {
+          ...noteRemotePayload(payload, true),
+          id: insertId,
+          updated_at: new Date().toISOString(),
+        };
         if (notesColorSupported) saved.color = payload.color;
-        const index = notes.findIndex(
-          (note) => String(note.id) === String(saved.id),
-        );
         const normalized = {
           ...saved,
           ownerId: session.user.id,
           localPending: false,
+          synced: true,
           subject: subjectName(saved.subject_id),
         };
-        if (index >= 0) notes[index] = normalized;
-        else notes.unshift(normalized);
+        // Remove a legacy local placeholder and any duplicate with the new id.
+        notes = notes.filter(
+          (note) =>
+            String(note.id) !== String(targetId) &&
+            String(note.id) !== String(saved.id),
+        );
+        notes.unshift(normalized);
         state.id = saved.id;
+        state.synced = true;
         saveLocalNotes();
-      } else {
-        persistLocally();
-      }
-      state.savedTitle = payload.title;
-      setNoteSaveStatus("saved");
-      updateNoteWordCount();
-    } catch (error) {
-      console.error("Could not save the note remotely.", error);
-      // Keep the user's text on this device instead of failing the save.
-      try {
-        persistLocally();
-        state.savedTitle = payload.title;
-        setNoteSaveStatus("saved");
+        clearNoteTombstone(saved.id);
+        clearNoteDraft(targetId);
+        clearNoteDraft(saved.id);
+        clearNoteDraft(null);
+        setNoteSaveStatus(navigator.onLine === false ? "local" : "saved");
         updateNoteWordCount();
-        if (!silent)
+        return normalized;
+      } catch (error) {
+        // The note is already saved locally. A queued/failed upload must never
+        // erase or blank it, and the next sync retries from the durable queue.
+        localSaved = persistNoteLocal(state, payload, { pending: true });
+        state.synced = false;
+        setNoteSaveStatus("local");
+        updateNoteWordCount();
+        if (!silent) {
+          console.warn("Note kept locally; remote sync is pending.");
           showToast(
             appLanguage === "ar"
-              ? "تعذر الاتصال بالخادم. تم حفظ الملاحظة على هذا الجهاز وستُزامن تلقائيًا."
-              : "Could not reach the server. The note was saved on this device and will sync automatically.",
+              ? "تم حفظ الملاحظة على هذا الجهاز. ستُزامن تلقائيًا عند عودة الاتصال."
+              : "The note is saved on this device and will sync automatically when online.",
           );
-      } catch (fallbackError) {
-        console.error("Could not save the note locally.", fallbackError);
-        setNoteSaveStatus("error");
-        if (!silent)
-          showToast(
-            `${appLanguage === "ar" ? "تعذر حفظ الملاحظة:" : "Could not save the note:"} ${error.message}`,
-          );
-        throw error;
+        }
+        return localSaved;
       }
-    }
+    };
+
+    const queued = noteSaveChain.then(run, run);
+    noteSaveChain = queued.catch(() => {});
+    return queued;
   }
 
   function closeNoteEditor() {
@@ -8619,13 +9066,27 @@
     // Committing an in-flight mobile IME composition before persisting keeps
     // the Arabic buffer and the saved content consistent.
     flushNoteEditorComposition();
+    stopNoteSpeech({ keepText: true, silent: true });
+    if (noteSelectionHandler) {
+      document.removeEventListener("selectionchange", noteSelectionHandler);
+      noteSelectionHandler = null;
+    }
+    noteSavedRange = null;
     const modal = document.getElementById("note-modal");
     if (!modal) return;
+    const state = noteEditorState;
     const hasContent =
       document.getElementById("note-editor-title")?.value.trim() ||
       (document.getElementById("note-editor")?.textContent || "").trim();
-    if (hasContent && noteSaveStatus !== "saved" && noteSaveStatus !== "idle") {
+    if (hasContent) {
+      // Synchronous local durability first, then a best-effort remote save.
+      persistEditorLocally(state);
+      persistNoteDraftFromEditor(state);
+      if (state?.id) clearNoteDraft(state.id);
+      clearNoteDraft(null);
       void saveNoteNow({ silent: true }).catch(() => {});
+    } else if (state) {
+      clearNoteDraft(state.id || null);
     }
     closeModal(modal);
     noteEditorState = null;
@@ -8651,14 +9112,56 @@
     }
     const existing = document.getElementById("note-modal");
     if (existing) existing.remove();
+    // Recover an unsaved draft (app killed, screen changed, battery died)
+    // before rendering the stored note.
+    const draft = readNoteDraft(note?.id || null);
+    const draftIsNewer =
+      draft &&
+      (draft.title || draft.content) &&
+      (!note ||
+        !draft.updatedAt ||
+        Number(draft.updatedAt) > noteTime(note.updated_at) + 1000);
+    const draftNote =
+      draftIsNewer && note
+        ? {
+            ...note,
+            title: draft.title || note.title,
+            content: draft.content || note.content,
+            subject_id:
+              draft.subject_id === undefined ? note.subject_id : draft.subject_id,
+            is_favorite:
+              draft.is_favorite === undefined
+                ? note.is_favorite
+                : draft.is_favorite,
+            color: draft.color || note.color,
+          }
+        : draftIsNewer
+          ? {
+              title: draft.title || "",
+              content: draft.content || "",
+              subject_id: draft.subject_id || null,
+              is_favorite: Boolean(draft.is_favorite),
+              color: draft.color || "",
+              type: "text",
+              attachments: [],
+            }
+          : note;
     document.body.insertAdjacentHTML(
       "beforeend",
-      noteEditorMarkup(note, templateKey),
+      noteEditorMarkup(draftNote || note, templateKey),
     );
     noteEditorState = {
       id: note?.id || null,
-      color: note?.color || "",
+      color: (draftIsNewer ? draft.color : note?.color) || "",
       savedTitle: note?.title || "",
+      synced: Boolean(
+        note?.id &&
+          note?.ownerId &&
+          !note?.localPending &&
+          !String(note.id).startsWith("local-"),
+      ),
+      previous: null,
+      speechLang: noteSpeech.lang,
     };
     noteEditorComposing = false;
     noteSaveDeferred = false;
@@ -8666,14 +9169,59 @@
     openModal(document.getElementById("note-modal"));
     updateNoteWordCount();
     translateInterface();
+    if (draftIsNewer) {
+      showToast(
+        appLanguage === "ar"
+          ? "تم استرجاع مسودة غير محفوظة."
+          : "An unsaved draft was restored.",
+      );
+      setNoteSaveStatus("dirty");
+    } else if (note?.localPending) {
+      setNoteSaveStatus("local");
+    }
     if (!note) document.getElementById("note-editor-title").focus();
     else document.getElementById("note-editor").focus();
+  }
+
+  let noteSavedRange = null;
+  let noteSelectionHandler = null;
+
+  function captureNoteSelection() {
+    const editor = document.getElementById("note-editor");
+    const selection = window.getSelection();
+    if (!editor || !selection || !selection.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    if (editor.contains(range.commonAncestorContainer)) {
+      noteSavedRange = range.cloneRange();
+    }
+  }
+
+  function restoreNoteSelection() {
+    const editor = document.getElementById("note-editor");
+    if (!editor) return;
+    editor.focus();
+    const selection = window.getSelection();
+    if (!selection) return;
+    if (noteSavedRange && editor.contains(noteSavedRange.commonAncestorContainer)) {
+      selection.removeAllRanges();
+      selection.addRange(noteSavedRange);
+      return;
+    }
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    noteSavedRange = range.cloneRange();
   }
 
   function attachNoteEditorListeners() {
     const modal = document.getElementById("note-modal");
     const editor = document.getElementById("note-editor");
     const title = document.getElementById("note-editor-title");
+    noteSavedRange = null;
+    noteSelectionHandler = () => captureNoteSelection();
+    document.addEventListener("selectionchange", noteSelectionHandler);
     modal.addEventListener("click", (event) => {
       if (event.target === modal) closeNoteEditor();
       const templateButton = event.target.closest("[data-note-template]");
@@ -8692,6 +9240,7 @@
         editor.innerHTML = sanitizeRichText(template.content);
         if (!title.value.trim()) title.value = template.title;
         updateNoteWordCount();
+        persistNoteDraftFromEditor(noteEditorState);
         scheduleNoteSave();
         editor.focus();
         return;
@@ -8707,9 +9256,34 @@
         scheduleNoteSave();
         return;
       }
+      const action = event.target.closest("[data-action]");
+      if (action) {
+        const name = action.dataset.action;
+        if (name === "note-smart-format") {
+          event.preventDefault();
+          openSmartFormatPreview();
+          return;
+        }
+        if (name === "note-voice-toggle") {
+          event.preventDefault();
+          void toggleNoteSpeech();
+          return;
+        }
+        if (name === "note-voice-stop") {
+          event.preventDefault();
+          stopNoteSpeech({ keepText: true });
+          return;
+        }
+        if (name === "note-restore-previous") {
+          event.preventDefault();
+          restorePreviousNoteVersion();
+          return;
+        }
+      }
       const commandButton = event.target.closest("[data-rt]");
       if (commandButton) {
         event.preventDefault();
+        restoreNoteSelection();
         runRichTextCommand(commandButton.dataset.rt);
         return;
       }
@@ -8717,19 +9291,22 @@
       if (highlightButton) {
         if (noteEditorComposing) return;
         event.preventDefault();
-        editor.focus();
+        restoreNoteSelection();
         document.execCommand("styleWithCSS", false, true);
         document.execCommand(
           "hiliteColor",
           false,
           highlightButton.dataset.rtHighlight,
         );
+        captureNoteSelection();
         scheduleNoteSave();
       }
     });
     modal.addEventListener("mousedown", (event) => {
-      if (event.target.closest(".rt-button, .rt-swatch"))
+      if (event.target.closest(".rt-button, .rt-swatch, .rt-color, .note-voice-btn"))
         event.preventDefault();
+      // Capture the selection before a <select>/<input type=color> takes focus.
+      captureNoteSelection();
     });
     editor.addEventListener("input", (event) => {
       updateNoteWordCount();
@@ -8739,6 +9316,10 @@
         noteSaveDeferred = true;
         return;
       }
+      // Immediate durable draft on every change; the full note is then written
+      // locally + remotely by the debounced autosave.
+      persistNoteDraftFromEditor(noteEditorState);
+      setNoteSaveStatus("dirty");
       scheduleNoteSave();
     });
     editor.addEventListener("compositionstart", () => {
@@ -8747,16 +9328,21 @@
     editor.addEventListener("compositionend", () => {
       noteEditorComposing = false;
       updateNoteWordCount();
+      persistNoteDraftFromEditor(noteEditorState);
       if (noteSaveDeferred) {
         noteSaveDeferred = false;
         scheduleNoteSave();
       }
+    });
+    editor.addEventListener("blur", () => {
+      persistNoteDraftFromEditor(noteEditorState);
     });
     title.addEventListener("compositionstart", () => {
       noteEditorComposing = true;
     });
     title.addEventListener("compositionend", () => {
       noteEditorComposing = false;
+      persistNoteDraftFromEditor(noteEditorState);
       scheduleNoteSave();
     });
     title.addEventListener("input", (event) => {
@@ -8764,22 +9350,31 @@
         noteSaveDeferred = true;
         return;
       }
+      persistNoteDraftFromEditor(noteEditorState);
+      setNoteSaveStatus("dirty");
       scheduleNoteSave();
     });
     document
       .getElementById("note-editor-subject")
-      .addEventListener("change", scheduleNoteSave);
+      .addEventListener("change", () => {
+        persistNoteDraftFromEditor(noteEditorState);
+        scheduleNoteSave();
+      });
     document
       .getElementById("note-editor-pin")
-      .addEventListener("change", scheduleNoteSave);
+      .addEventListener("change", () => {
+        persistNoteDraftFromEditor(noteEditorState);
+        scheduleNoteSave();
+      });
     document.getElementById("rt-block").addEventListener("change", (event) => {
-      editor.focus();
+      restoreNoteSelection();
       document.execCommand("formatBlock", false, event.target.value);
+      captureNoteSelection();
       scheduleNoteSave();
     });
     document.getElementById("rt-size").addEventListener("change", (event) => {
       if (!event.target.value) return;
-      editor.focus();
+      restoreNoteSelection();
       document.execCommand("styleWithCSS", false, true);
       document.execCommand("fontSize", false, "7");
       const fontElements = editor.querySelectorAll('font[size="7"]');
@@ -8792,17 +9387,35 @@
       editor.querySelectorAll('span[style*="xxx-large"]').forEach((span) => {
         span.style.fontSize = event.target.value;
       });
+      captureNoteSelection();
       event.target.value = "";
       scheduleNoteSave();
     });
     document
       .getElementById("rt-fore-color")
       .addEventListener("input", (event) => {
-        editor.focus();
+        restoreNoteSelection();
         document.execCommand("styleWithCSS", false, true);
         document.execCommand("foreColor", false, event.target.value);
+        captureNoteSelection();
         scheduleNoteSave();
       });
+    const voiceLang = document.getElementById("note-voice-lang");
+    if (voiceLang) {
+      voiceLang.value = noteSpeech.lang;
+      voiceLang.addEventListener("change", (event) => {
+        const next = String(event.target.value || "ar-EG");
+        noteSpeech.lang = next;
+        if (noteEditorState) noteEditorState.speechLang = next;
+        if (noteSpeech.listening) {
+          // Restart in the newly selected language while keeping every word
+          // already inserted in the note.
+          stopNoteSpeech({ keepText: true, silent: true });
+          window.setTimeout(() => void startNoteSpeech(), 120);
+        }
+      });
+    }
+    updateNoteVoiceUi();
     editor.addEventListener("click", (event) => {
       const item = event.target.closest("li");
       const list = item?.closest("ul.rt-checklist");
@@ -8815,10 +9428,24 @@
     editor.addEventListener("paste", (event) => {
       if (noteEditorComposing) return;
       const html = event.clipboardData?.getData("text/html");
-      if (!html) return;
+      const text = event.clipboardData?.getData("text/plain");
+      if (!html) {
+        if (text) {
+          event.preventDefault();
+          document.execCommand("insertText", false, text);
+          scheduleNoteSave();
+        }
+        return;
+      }
       event.preventDefault();
       document.execCommand("insertHTML", false, sanitizeRichText(html));
       scheduleNoteSave();
+    });
+    editor.addEventListener("keydown", (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        void saveNoteNow();
+      }
     });
   }
 
@@ -8865,36 +9492,619 @@
     scheduleNoteSave();
   }
 
+  // ------------------------------------------------------------------ voice
+  // Uses the browser/OS SpeechRecognition engine when it exists. No audio is
+  // recorded or uploaded by StudyZone itself. On devices without the API
+  // (notably many Android WebViews) the button reports that clearly instead of
+  // pretending to listen.
+
+  function noteSpeechSupported() {
+    return Boolean(
+      window.SpeechRecognition || window.webkitSpeechRecognition,
+    );
+  }
+
+  function noteSpeechLangLabel(lang) {
+    if (lang === "en-US") return appLanguage === "ar" ? "الإنجليزية" : "English";
+    if (lang === "ar-SA")
+      return appLanguage === "ar" ? "العربية الفصحى" : "Standard Arabic";
+    return appLanguage === "ar" ? "العربية (مصري)" : "Arabic (Egyptian)";
+  }
+
+  function updateNoteVoiceUi(message) {
+    const button = document.getElementById("note-voice-btn");
+    const status = document.getElementById("note-voice-status");
+    const statusText = document.getElementById("note-voice-status-text");
+    if (!button) return;
+    const supported = noteSpeechSupported();
+    button.classList.toggle("is-listening", noteSpeech.listening);
+    button.classList.toggle("is-unsupported", !supported);
+    button.setAttribute("aria-pressed", noteSpeech.listening ? "true" : "false");
+    const label = button.querySelector(".note-voice-label");
+    if (label)
+      label.textContent = noteSpeech.listening
+        ? appLanguage === "ar"
+          ? "إيقاف"
+          : "Stop"
+        : appLanguage === "ar"
+          ? "إملاء"
+          : "Dictate";
+    if (!supported) {
+      button.setAttribute(
+        "title",
+        appLanguage === "ar"
+          ? "التعرف الصوتي غير مدعوم في هذا المتصفح/WebView"
+          : "Speech recognition is not supported in this browser/WebView",
+      );
+    }
+    if (status && statusText) {
+      const text =
+        message ||
+        (noteSpeech.listening
+          ? appLanguage === "ar"
+            ? `يستمع… (${noteSpeechLangLabel(noteSpeech.lang)}) — انقر إيقاف عند الانتهاء`
+            : `Listening… (${noteSpeechLangLabel(noteSpeech.lang)}) — tap Stop when done`
+          : noteSpeech.error);
+      if (text) {
+        status.hidden = false;
+        statusText.textContent = text;
+        status.dataset.state = noteSpeech.error
+          ? "error"
+          : noteSpeech.listening
+            ? "listening"
+            : "idle";
+      } else {
+        status.hidden = true;
+      }
+    }
+  }
+
+  function ensureSpeechConsent() {
+    try {
+      if (localStorage.getItem(noteSpeechConsentKey) === "1") return true;
+    } catch {
+      /* storage unavailable: ask every time */
+    }
+    const message =
+      appLanguage === "ar"
+        ? "الإملاء الصوتي يستخدم خدمة التعرف على الكلام في المتصفح أو النظام، وقد تُعالج بعض الأصوات بواسطة تلك الخدمة. لا يرفع Study Zone تسجيلات صوتية إلى خوادمه. هل تريد المتابعة؟"
+        : "Voice dictation uses your browser/OS speech recognition service, which may process some audio. StudyZone does not upload recordings to its servers. Continue?";
+    if (!window.confirm(message)) return false;
+    try {
+      localStorage.setItem(noteSpeechConsentKey, "1");
+    } catch {
+      /* ignore */
+    }
+    return true;
+  }
+
+  function ensureSpeechAnchor() {
+    const editor = document.getElementById("note-editor");
+    if (!editor) return null;
+    let anchor = noteSpeech.anchor;
+    let end = noteSpeech.endMarker;
+    if (anchor?.isConnected && end?.isConnected) return { anchor, end };
+    // Remove stale markers then place a fresh pair at the caret (or end).
+    editor
+      .querySelectorAll("[data-sz-voice-anchor], [data-sz-voice-end]")
+      .forEach((node) => node.remove());
+    const selection = window.getSelection();
+    let range = null;
+    if (selection && selection.rangeCount) {
+      const candidate = selection.getRangeAt(0);
+      if (editor.contains(candidate.commonAncestorContainer)) range = candidate;
+    }
+    if (!range) {
+      range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+    }
+    const collapsed = range.cloneRange();
+    collapsed.collapse(false);
+    anchor = document.createElement("span");
+    anchor.setAttribute("data-sz-voice-anchor", "1");
+    end = document.createElement("span");
+    end.setAttribute("data-sz-voice-end", "1");
+    anchor.appendChild(document.createTextNode(""));
+    end.appendChild(document.createTextNode(""));
+    collapsed.insertNode(end);
+    end.parentNode.insertBefore(anchor, end);
+    const caret = document.createRange();
+    caret.setStartAfter(anchor);
+    caret.setEndBefore(end);
+    if (selection) {
+      selection.removeAllRanges();
+      selection.addRange(caret);
+    }
+    noteSpeech.anchor = anchor;
+    noteSpeech.endMarker = end;
+    return { anchor, end };
+  }
+
+  function speechPunctuate(text, lang, final) {
+    let value = String(text || "").replace(/\s+/g, " ").trim();
+    if (!value) return "";
+    // Capitalise the first English letter of a dictated sentence.
+    if (lang === "en-US" && /^[a-z]/.test(value))
+      value = value.charAt(0).toUpperCase() + value.slice(1);
+    if (final && !/[.!?؟…،,:;]$/.test(value)) value += ".";
+    return value;
+  }
+
+  function renderSpeechText() {
+    const anchor = noteSpeech.anchor;
+    const end = noteSpeech.endMarker;
+    const editor = document.getElementById("note-editor");
+    if (!anchor?.isConnected || !end?.isConnected || !editor) {
+      ensureSpeechAnchor();
+      return;
+    }
+    const range = document.createRange();
+    range.setStartAfter(anchor);
+    range.setEndBefore(end);
+    range.deleteContents();
+    const finalText = speechPunctuate(
+      noteSpeech.finalText,
+      noteSpeech.lang,
+      false,
+    );
+    if (finalText) {
+      range.insertNode(document.createTextNode(`${finalText} `));
+    }
+    if (noteSpeech.interimText) {
+      const interim = document.createElement("span");
+      interim.className = "note-voice-interim";
+      interim.textContent = noteSpeech.interimText;
+      range.insertNode(interim);
+    }
+    const caret = document.createRange();
+    caret.setStartBefore(end);
+    caret.collapse(true);
+    const selection = window.getSelection();
+    if (selection) {
+      selection.removeAllRanges();
+      selection.addRange(caret);
+    }
+    persistNoteDraftFromEditor(noteEditorState);
+    scheduleNoteSave();
+  }
+
+  function finalizeSpeechText() {
+    const anchor = noteSpeech.anchor;
+    const end = noteSpeech.endMarker;
+    if (!anchor?.isConnected || !end?.isConnected) return;
+    const range = document.createRange();
+    range.setStartAfter(anchor);
+    range.setEndBefore(end);
+    range.deleteContents();
+    const finalText = speechPunctuate(noteSpeech.finalText, noteSpeech.lang, true);
+    if (finalText) {
+      const node = document.createTextNode(`${finalText} `);
+      range.insertNode(node);
+      const caret = document.createRange();
+      caret.setStartAfter(node);
+      caret.collapse(true);
+      const selection = window.getSelection();
+      if (selection) {
+        selection.removeAllRanges();
+        selection.addRange(caret);
+      }
+    }
+    anchor.remove();
+    end.remove();
+    noteSpeech.anchor = null;
+    noteSpeech.endMarker = null;
+  }
+
+  async function startNoteSpeech() {
+    if (noteSpeech.listening) return;
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) {
+      noteSpeech.error =
+        appLanguage === "ar"
+          ? "التعرف الصوتي غير مدعوم في هذا المتصفح أو WebView. جرّب Chrome على أندرويد أو اكتب النص."
+          : "Speech recognition is not supported in this browser/WebView. Try Chrome on Android or type instead.";
+      updateNoteVoiceUi();
+      showToast(noteSpeech.error);
+      return;
+    }
+    if (!ensureSpeechConsent()) return;
+    const editor = document.getElementById("note-editor");
+    if (!editor) return;
+    // Ask for microphone permission first so a denial is reported clearly and
+    // never leaves a "listening" UI that is not actually recording.
+    if (navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+      } catch (error) {
+        noteSpeech.error =
+          appLanguage === "ar"
+            ? "تم رفض إذن الميكروفون أو لا يوجد جهاز تسجيل. اسمح بالوصول للميكروفون من إعدادات المتصفح/التطبيق."
+            : "Microphone permission was denied or no recorder was found. Allow microphone access in browser/app settings.";
+        updateNoteVoiceUi();
+        showToast(noteSpeech.error);
+        return;
+      }
+    }
+    const langSelect = document.getElementById("note-voice-lang");
+    noteSpeech.lang = langSelect?.value || noteSpeech.lang || "ar-EG";
+    noteSpeech.error = "";
+    noteSpeech.finalText = "";
+    noteSpeech.interimText = "";
+    noteSpeech.lastFinalIndex = -1;
+    noteSpeech.manualStop = false;
+    noteSpeech.restartCount = 0;
+    ensureSpeechAnchor();
+    let recognition;
+    try {
+      recognition = new Recognition();
+    } catch (error) {
+      noteSpeech.error =
+        appLanguage === "ar"
+          ? "تعذر تشغيل خدمة التعرف الصوتي على هذا الجهاز."
+          : "Could not start the speech recognition service on this device.";
+      updateNoteVoiceUi();
+      showToast(noteSpeech.error);
+      return;
+    }
+    recognition.lang = noteSpeech.lang;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => {
+      noteSpeech.listening = true;
+      noteSpeech.error = "";
+      updateNoteVoiceUi();
+    };
+    recognition.onresult = (event) => {
+      if (!noteSpeech.listening || noteSpeech.manualStop) return;
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const result = event.results[i];
+        const transcript = result[0]?.transcript || "";
+        if (result.isFinal) {
+          if (i > noteSpeech.lastFinalIndex) {
+            noteSpeech.finalText = `${noteSpeech.finalText} ${transcript}`.trim();
+            noteSpeech.lastFinalIndex = i;
+          }
+        } else {
+          interim += transcript;
+        }
+      }
+      noteSpeech.interimText = interim.trim();
+      renderSpeechText();
+      updateNoteVoiceUi();
+    };
+    recognition.onerror = (event) => {
+      const code = event?.error || "unknown";
+      if (code === "aborted" && noteSpeech.manualStop) return;
+      if (code === "no-speech") {
+        noteSpeech.error =
+          appLanguage === "ar"
+            ? "لم يُسمع صوت. ما زال الاستماع متاحًا…"
+            : "No speech detected. Still listening…";
+        updateNoteVoiceUi();
+        return;
+      }
+      noteSpeech.error =
+        code === "not-allowed" || code === "service-not-allowed"
+          ? appLanguage === "ar"
+            ? "إذن الميكروفون مرفوض. اسمح به من إعدادات المتصفح/التطبيق."
+            : "Microphone permission is blocked. Allow it in browser/app settings."
+          : code === "audio-capture"
+            ? appLanguage === "ar"
+              ? "لا يوجد ميكروفون متاح على هذا الجهاز."
+              : "No microphone is available on this device."
+            : code === "network"
+              ? appLanguage === "ar"
+                ? "خدمة التعرف الصوتي غير متاحة الآن. النص المكتوب محفوظ ولم يُفقد."
+                : "The speech service is unavailable right now. Your typed text is safe."
+              : appLanguage === "ar"
+                ? `توقف التعرف الصوتي (${code}). النص السابق محفوظ.`
+                : `Speech recognition stopped (${code}). Previous text is safe.`;
+      noteSpeech.listening = false;
+      noteSpeech.manualStop = true;
+      try {
+        recognition.stop();
+      } catch {
+        /* ignore */
+      }
+      finalizeSpeechText();
+      updateNoteVoiceUi();
+      showToast(noteSpeech.error);
+    };
+    recognition.onend = () => {
+      if (noteSpeech.manualStop) {
+        noteSpeech.listening = false;
+        updateNoteVoiceUi();
+        return;
+      }
+      // Android often ends a continuous session after a short silence. Restart
+      // transparently, keeping every word already inserted, with a hard cap.
+      if (noteSpeech.restartCount >= 12) {
+        noteSpeech.listening = false;
+        noteSpeech.error =
+          appLanguage === "ar"
+            ? "انتهت جلسة الإملاء. النص محفوظ ويمكنك بدء الإملاء مرة أخرى."
+            : "The dictation session ended. Your text is saved; start again when ready.";
+        finalizeSpeechText();
+        updateNoteVoiceUi();
+        return;
+      }
+      noteSpeech.restartCount += 1;
+      noteSpeech.restartTimer = window.setTimeout(() => {
+        noteSpeech.restartTimer = null;
+        if (noteSpeech.manualStop || !noteSpeech.listening) return;
+        try {
+          recognition.start();
+        } catch {
+          noteSpeech.listening = false;
+          noteSpeech.error =
+            appLanguage === "ar"
+              ? "تعذر استئناف الإملاء. النص محفوظ."
+              : "Could not resume dictation. Your text is saved.";
+          finalizeSpeechText();
+          updateNoteVoiceUi();
+        }
+      }, 320);
+    };
+    noteSpeech.recognition = recognition;
+    noteSpeech.listening = true;
+    updateNoteVoiceUi();
+    try {
+      recognition.start();
+    } catch (error) {
+      noteSpeech.listening = false;
+      noteSpeech.error =
+        appLanguage === "ar"
+          ? "تعذر بدء الإملاء. قد تكون الخدمة قيد الاستخدام. النص المكتوب محفوظ."
+          : "Could not start dictation. The service may be busy. Your typed text is safe.";
+      updateNoteVoiceUi();
+      showToast(noteSpeech.error);
+    }
+  }
+
+  function stopNoteSpeech({ keepText = true, silent = false } = {}) {
+    const wasListening = noteSpeech.listening;
+    noteSpeech.manualStop = true;
+    noteSpeech.listening = false;
+    if (noteSpeech.restartTimer) {
+      window.clearTimeout(noteSpeech.restartTimer);
+      noteSpeech.restartTimer = null;
+    }
+    const recognition = noteSpeech.recognition;
+    noteSpeech.recognition = null;
+    if (recognition) {
+      try {
+        recognition.onend = null;
+        recognition.onresult = null;
+        recognition.onerror = null;
+        recognition.stop();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (keepText) finalizeSpeechText();
+    else {
+      noteSpeech.anchor?.remove();
+      noteSpeech.endMarker?.remove();
+      noteSpeech.anchor = null;
+      noteSpeech.endMarker = null;
+    }
+    noteSpeech.interimText = "";
+    if (wasListening) {
+      persistNoteDraftFromEditor(noteEditorState);
+      scheduleNoteSave();
+    }
+    updateNoteVoiceUi();
+    if (wasListening && !silent) {
+      showToast(
+        appLanguage === "ar"
+          ? "تم إيقاف الإملاء. النص محفوظ في الملاحظة."
+          : "Dictation stopped. The text is saved in the note.",
+      );
+    }
+  }
+
+  async function toggleNoteSpeech() {
+    if (noteSpeech.listening) {
+      stopNoteSpeech({ keepText: true });
+      return;
+    }
+    await startNoteSpeech();
+  }
+
+  // ------------------------------------------------------- smart formatting
+
+  function closeSmartFormatPreview() {
+    const modal = document.getElementById("note-smart-modal");
+    if (modal) closeModal(modal);
+    noteSmartPreview = null;
+  }
+
+  function openSmartFormatPreview() {
+    const editor = document.getElementById("note-editor");
+    const titleInput = document.getElementById("note-editor-title");
+    if (!editor) return;
+    const text = (editor.innerText || editor.textContent || "").trim();
+    if (!text) {
+      showToast(
+        appLanguage === "ar"
+          ? "اكتب بعض النص أولًا ثم استخدم التنظيم الذكي."
+          : "Write some text first, then use Smart organize.",
+      );
+      return;
+    }
+    const api = window.StudyZoneSmartNotes;
+    if (!api?.organize) {
+      showToast(
+        appLanguage === "ar"
+          ? "وحدة التنظيم المحلي غير متاحة."
+          : "The local organizer is unavailable.",
+      );
+      return;
+    }
+    const result = api.organize(text, {
+      title: titleInput?.value || "",
+      lang: appLanguage === "ar" ? "ar" : "en",
+    });
+    const afterHtml = sanitizeRichText(result.html);
+    const beforeHtml = sanitizeRichText(editor.innerHTML);
+    noteSmartPreview = {
+      beforeHtml,
+      beforeTitle: titleInput?.value || "",
+      afterHtml,
+      afterTitle:
+        titleInput?.value?.trim() || result.title || "",
+      result,
+    };
+    const ar = appLanguage === "ar";
+    const counts = result.counts || {};
+    const countChips = [
+      [ar ? "مواعيد" : "Dates", counts.dates || 0],
+      [ar ? "مهام" : "Tasks", counts.tasks || 0],
+      [ar ? "أولويات" : "Priorities", counts.priorities || 0],
+      [ar ? "تحذيرات" : "Warnings", counts.warnings || 0],
+    ]
+      .map(
+        ([label, value]) =>
+          `<span class="smart-count"><strong>${escapeHtml(String(value))}</strong> ${escapeHtml(label)}</span>`,
+      )
+      .join("");
+    const markup = `<div class="modal-backdrop note-smart-backdrop" id="note-smart-modal" hidden>
+      <section class="modal note-smart-modal" role="dialog" aria-modal="true" aria-labelledby="note-smart-title">
+        <header class="note-smart-head">
+          <div>
+            <p class="eyebrow">${ar ? "معاينة قبل التطبيق" : "PREVIEW BEFORE APPLYING"}</p>
+            <h2 id="note-smart-title">${ar ? "تنظيم ذكي" : "Smart organize"}</h2>
+            <p class="note-smart-sub">${ar ? "تنظيم محلي بقواعد واضحة — لا يخترع معلومات ولا يرسل ملاحظتك إلى أي خدمة خارجية." : "Local rule-based organization — it never invents facts and never sends your note to an external service."}</p>
+          </div>
+          <button type="button" class="modal-close" data-smart-action="cancel" aria-label="${ar ? "إغلاق" : "Close"}">×</button>
+        </header>
+        <div class="note-smart-badges">
+          <span class="smart-badge smart-badge-local">${ar ? "تنظيم محلي" : "Local organizer"}</span>
+          <span class="smart-badge smart-badge-ai">${ar ? "AI غير مهيأ — لم يُستخدم" : "AI not configured — not used"}</span>
+          ${countChips}
+        </div>
+        <div class="note-smart-grid">
+          <section class="note-smart-pane">
+            <h3>${ar ? "قبل" : "Before"}</h3>
+            <div class="note-smart-preview" dir="auto">${beforeHtml}</div>
+          </section>
+          <section class="note-smart-pane note-smart-after">
+            <h3>${ar ? "بعد" : "After"}</h3>
+            <div class="note-smart-preview" dir="auto">${afterHtml}</div>
+          </section>
+        </div>
+        <footer class="note-smart-foot">
+          <span class="note-smart-note">${ar ? "لن يتغير المحتوى الأصلي قبل موافقتك. يمكنك استرجاع النسخة السابقة بعد التطبيق." : "Your original stays untouched until you apply. You can restore the previous version afterwards."}</span>
+          <div class="note-smart-actions">
+            <button type="button" class="button button-secondary button-small" data-smart-action="cancel">${ar ? "إلغاء" : "Cancel"}</button>
+            <button type="button" class="button button-primary button-small" data-smart-action="apply">${ar ? "تطبيق التنظيم" : "Apply"}</button>
+          </div>
+        </footer>
+      </section>
+    </div>`;
+    document.getElementById("note-smart-modal")?.remove();
+    document.body.insertAdjacentHTML("beforeend", markup);
+    const modal = document.getElementById("note-smart-modal");
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal) {
+        closeSmartFormatPreview();
+        return;
+      }
+      const button = event.target.closest("[data-smart-action]");
+      if (!button) return;
+      event.preventDefault();
+      if (button.dataset.smartAction === "apply") applySmartFormat();
+      else closeSmartFormatPreview();
+    });
+    openModal(modal);
+  }
+
+  function applySmartFormat() {
+    const preview = noteSmartPreview;
+    const editor = document.getElementById("note-editor");
+    const titleInput = document.getElementById("note-editor-title");
+    if (!preview || !editor || !titleInput) return;
+    noteEditorState.previous = {
+      title: preview.beforeTitle,
+      content: preview.beforeHtml,
+      at: Date.now(),
+    };
+    editor.innerHTML = preview.afterHtml;
+    if (!titleInput.value.trim() && preview.afterTitle)
+      titleInput.value = preview.afterTitle;
+    const restore = document.getElementById("note-restore-previous");
+    if (restore) restore.hidden = false;
+    closeSmartFormatPreview();
+    persistNoteDraftFromEditor(noteEditorState);
+    void saveNoteNow({ silent: true });
+    updateNoteWordCount();
+    showToast(
+      appLanguage === "ar"
+        ? "تم تطبيق التنظيم. يمكنك التراجع من زر استرجاع السابق."
+        : "Organization applied. Use Restore previous to undo.",
+    );
+  }
+
+  function restorePreviousNoteVersion() {
+    const state = noteEditorState;
+    if (!state?.previous) return;
+    const editor = document.getElementById("note-editor");
+    const titleInput = document.getElementById("note-editor-title");
+    if (!editor || !titleInput) return;
+    editor.innerHTML = state.previous.content || "";
+    titleInput.value = state.previous.title || "";
+    state.previous = null;
+    const restore = document.getElementById("note-restore-previous");
+    if (restore) restore.hidden = true;
+    persistNoteDraftFromEditor(state);
+    void saveNoteNow({ silent: true });
+    updateNoteWordCount();
+    showToast(
+      appLanguage === "ar"
+        ? "تم استرجاع النسخة السابقة."
+        : "Previous version restored.",
+    );
+  }
+
   async function toggleNotePin(id) {
     const note = notes.find((item) => String(item.id) === String(id));
     if (!note) return;
     const nextValue = !note.is_favorite;
+    // Local-first: pin state is durable immediately, even when offline.
+    note.is_favorite = nextValue;
+    note.localPending = Boolean(session) || Boolean(note.localPending);
+    note.updated_at = new Date().toISOString();
+    saveLocalNotes();
+    render();
     try {
-      if (supabase && session && !String(id).startsWith("local-")) {
+      if (supabase && session && navigator.onLine !== false) {
         const { error } = await supabase
           .from("notes")
           .update({ is_favorite: nextValue })
           .eq("id", id);
         if (error) throw error;
+        note.localPending = false;
+        note.updated_at = new Date().toISOString();
+        saveLocalNotes();
       }
-      note.is_favorite = nextValue;
-      if (!supabase || !session) saveLocalNotes();
-      render();
-      showToast(
-        nextValue
-          ? appLanguage === "ar"
-            ? "تم تثبيت الملاحظة."
-            : "Note pinned."
-          : appLanguage === "ar"
-            ? "تم إلغاء تثبيت الملاحظة."
-            : "Note unpinned.",
-      );
     } catch (error) {
-      showToast(
-        `${appLanguage === "ar" ? "تعذر تحديث الملاحظة:" : "Could not update the note:"} ${error.message}`,
-      );
-      console.error("Could not pin the note.", error);
+      note.localPending = true;
+      saveLocalNotes();
+      console.warn("Note pin kept locally; remote sync pending.");
     }
+    showToast(
+      nextValue
+        ? appLanguage === "ar"
+          ? "تم تثبيت الملاحظة."
+          : "Note pinned."
+        : appLanguage === "ar"
+          ? "تم إلغاء تثبيت الملاحظة."
+          : "Note unpinned.",
+    );
   }
 
   async function deleteNote(id, { closeEditor = false } = {}) {
@@ -8908,36 +10118,55 @@
       )
     )
       return;
-    try {
-      if (isMediaNote(note)) {
+    if (isMediaNote(note)) {
+      try {
         // Media Notes deletion is local-only: drop the IndexedDB blob and the
         // local media metadata entry. No remote delete is ever performed.
         for (const att of noteAttachments(note)) {
           if (att?.localKey) await deleteMediaBlob(att.localKey);
         }
         await deleteMediaMeta(String(id), null);
-        mediaNotesList = mediaNotesList.filter((item) => String(item.id) !== String(id));
-      } else {
-        if (supabase && session && !String(id).startsWith("local-")) {
-          const { error } = await supabase.from("notes").delete().eq("id", id);
-          if (error) throw error;
+        mediaNotesList = mediaNotesList.filter(
+          (item) => String(item.id) !== String(id),
+        );
+        if (closeEditor) {
+          const modal = document.getElementById("note-modal");
+          if (modal) closeModal(modal);
+          noteEditorState = null;
+          noteSaveStatus = "idle";
         }
-        notes = notes.filter((item) => String(item.id) !== String(id));
-        if (!supabase || !session || String(id).startsWith("local-")) saveLocalNotes();
+        render();
+        showToast(appLanguage === "ar" ? "تم حذف الملاحظة." : "Note deleted.");
+      } catch (error) {
+        showToast(
+          `${appLanguage === "ar" ? "تعذر حذف الملاحظة:" : "Could not delete the note:"} ${error.message}`,
+        );
       }
-      if (closeEditor) {
-        const modal = document.getElementById("note-modal");
-        if (modal) closeModal(modal);
-        noteEditorState = null;
-        noteSaveStatus = "idle";
+      return;
+    }
+
+    // Local-first delete: remove the note and keep a tombstone so a later
+    // server refresh cannot resurrect it while the delete is still queued.
+    notes = notes.filter((item) => String(item.id) !== String(id));
+    markNoteDeleted(id);
+    saveLocalNotes();
+    if (closeEditor) {
+      const modal = document.getElementById("note-modal");
+      if (modal) closeModal(modal);
+      noteEditorState = null;
+      noteSaveStatus = "idle";
+    }
+    render();
+    showToast(appLanguage === "ar" ? "تم حذف الملاحظة." : "Note deleted.");
+    try {
+      if (supabase && session && navigator.onLine !== false) {
+        const { error } = await supabase.from("notes").delete().eq("id", id);
+        if (error) throw error;
       }
-      render();
-      showToast(appLanguage === "ar" ? "تم حذف الملاحظة." : "Note deleted.");
     } catch (error) {
-      showToast(
-        `${appLanguage === "ar" ? "تعذر حذف الملاحظة:" : "Could not delete the note:"} ${error.message}`,
-      );
-      console.error("Could not delete the note.", error);
+      // The offline layer queues network failures. A permission/RLS failure
+      // leaves the tombstone in place so the note stays deleted on this device.
+      console.warn("Note deleted locally; remote delete is pending.");
     }
   }
 
@@ -15004,7 +16233,7 @@
         : users
           ? `<div class="admin-users-scroll"><table class="admin-users-table"><thead><tr><th>${translateUiText("User")}</th><th>${translateUiText("Role")}</th><th>${translateUiText("Joined")}</th><th>${translateUiText("Last sign-in")}</th><th>${translateUiText("Email status")}</th></tr></thead><tbody>${users}</tbody></table></div>`
           : `<div class="empty-state">${translateUiText("No users found.")}</div>`;
-    return `${pageHeading("ADMINISTRATION", "Admin dashboard", "Review registered accounts and their sign-in status.", "")}<div class="admin-warning">${translateUiText("Administrator access verified.")} ${translateUiText("This private list is visible only to authorized administrators.")}</div><section class="panel">${panelHeading("Registered users", `${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(adminUsersTotal)} total`)}<form class="admin-user-search" id="admin-users-search"><label class="search-box"><span>⌕</span><input name="search" type="search" value="${escapeHtml(adminUsersSearch)}" placeholder="${translateUiText("Search by name or email")}" aria-label="${translateUiText("Search by name or email")}"></label><button class="button button-secondary button-small" type="submit">${translateUiText("Search")}</button><button class="button button-secondary button-small" type="button" data-action="admin-users-refresh">${translateUiText("Refresh")}</button></form>${content}<div class="admin-pagination"><span>${from}–${to} ${translateUiText("of")} ${adminUsersTotal}</span><div><button class="button button-secondary button-small" type="button" data-action="admin-users-prev" ${adminUsersPage === 0 || adminUsersLoading ? "disabled" : ""}>${translateUiText("Previous")}</button><button class="button button-secondary button-small" type="button" data-action="admin-users-next" ${to >= adminUsersTotal || adminUsersLoading ? "disabled" : ""}>${translateUiText("Next")}</button></div></div></section>`;
+    return `${pageHeading("ADMINISTRATION", "Admin dashboard", "Review registered accounts and their sign-in status.", "")}<div class="admin-warning">${translateUiText("Administrator access verified.")} ${translateUiText("This private list is visible only to authorized administrators.")}</div><div class="grid admin-grid">${statCard(translateUiText("REGISTERED USERS"), "—", translateUiText(" Configure a protected server query"), "◉")}${statCard(translateUiText("ACTIVE SESSIONS"), "—", translateUiText(" Admin-only metric unavailable"), "⌁")}${statCard(translateUiText("SYSTEM STATUS"), "Protected", translateUiText(" No admin endpoint configured"), "⬡")}</div><section class="panel">${panelHeading("Registered users", `${new Intl.NumberFormat(appLanguage === "ar" ? "ar-EG" : "en").format(adminUsersTotal)} total`)}<form class="admin-user-search" id="admin-users-search"><label class="search-box"><span>⌕</span><input name="search" type="search" value="${escapeHtml(adminUsersSearch)}" placeholder="${translateUiText("Search by name or email")}" aria-label="${translateUiText("Search by name or email")}"></label><button class="button button-secondary button-small" type="submit">${translateUiText("Search")}</button><button class="button button-secondary button-small" type="button" data-action="admin-users-refresh">${translateUiText("Refresh")}</button></form>${content}<div class="admin-pagination"><span>${from}–${to} ${translateUiText("of")} ${adminUsersTotal}</span><div><button class="button button-secondary button-small" type="button" data-action="admin-users-prev" ${adminUsersPage === 0 || adminUsersLoading ? "disabled" : ""}>${translateUiText("Previous")}</button><button class="button button-secondary button-small" type="button" data-action="admin-users-next" ${to >= adminUsersTotal || adminUsersLoading ? "disabled" : ""}>${translateUiText("Next")}</button></div></div></section><section class="panel"><div class="panel-heading"><div><h2>${translateUiText("Access control")}</h2><p>${translateUiText("The admin role is verified by Supabase for your signed-in account.")}</p></div></div><p class="panel-copy">${translateUiText("No administrative services are connected yet.")}</p></section>`;
   }
 
   function adminAccessPage() {
@@ -16647,6 +17876,10 @@
   async function loadAccountWorkspace() {
     if (!supabase || !session) return;
     const userId = session.user.id;
+    if (!notesIdbHydrated.has(userId)) {
+      notesIdbHydrated.add(userId);
+      await hydrateNotesFromIdb();
+    }
     const loadNoteRows = async () => {
       const withColor = await supabase
         .from("notes")
@@ -16752,20 +17985,14 @@
           dateStyle: "medium",
         }).format(new Date(note.updated_at)),
       }));
-      const remoteIds = new Set(remote.map((note) => String(note.id)));
-      // Notes written while offline (or whose upload failed) exist only on this
-      // device. They must survive this remote refresh instead of disappearing.
       const pendingIds = await pendingNoteIds();
-      const localOnly = notes.filter((note) => {
-        if (!note?.id || remoteIds.has(String(note.id))) return false;
-        if (note.ownerId && note.ownerId !== userId) return false;
-        return (
-          note.localPending ||
-          pendingIds.has(String(note.id)) ||
-          String(note.id).startsWith("local-")
-        );
-      });
-      notes = [...localOnly, ...remote];
+      // Merge instead of replacing. A stale server row can never overwrite a
+      // newer local edit, and a queued local note is never dropped.
+      notes = mergeNoteCollections(
+        notes.filter((note) => !note.ownerId || note.ownerId === userId),
+        remote,
+        { pendingIds },
+      );
       saveLocalNotes();
     }
 
@@ -16874,6 +18101,8 @@
     if (!journalLoaded) await loadJournalEntries();
     await loadFocusDistractions();
     scheduleRender();
+    // Push any note that was written locally while offline/closed.
+    void flushPendingNotes();
   }
 
   const avatarBlobCacheKey = (userId, path) => `avatar:${userId}:${path}`;
@@ -17065,12 +18294,13 @@
           String(note.id || "").startsWith("local-"),
       )
       .map((note) => ({ ...note, ownerId: userId }));
-    const seenNoteIds = new Set();
-    const mergedNotes = [...storedLocal, ...cachedNotes].filter((note) => {
-      if (!note?.id || seenNoteIds.has(String(note.id))) return false;
-      seenNoteIds.add(String(note.id));
-      return true;
-    });
+    // Merge cached server rows with local + pending rows, keeping the newest
+    // version of every id and hiding locally deleted notes.
+    const mergedNotes = mergeNoteCollections(
+      [...notes, ...storedLocal],
+      cachedNotes,
+      { pendingIds },
+    );
     if (mergedNotes.length) notes = mergedNotes;
     if (goalRows.length) {
       goals = goalRows.map((goal) => ({
@@ -17146,11 +18376,86 @@
         if (entry.table !== "notes") return;
         const body = Array.isArray(entry.body) ? entry.body[0] : entry.body;
         if (body?.id) ids.add(String(body.id));
+        if (entry.entity_id) ids.add(String(entry.entity_id));
+        // Updates/deletes carry the id in the PostgREST URL, not in the body.
+        try {
+          const url = new URL(entry.url || "");
+          const id = url.searchParams.get("id");
+          if (id?.startsWith("eq.")) ids.add(decodeURIComponent(id.slice(3)));
+        } catch {
+          /* ignore malformed queue rows */
+        }
       });
     } catch {
       /* queue unavailable */
     }
     return ids;
+  }
+
+  /**
+   * Upload notes that were persisted locally while the app was closed or
+   * offline. Runs on startup and reconnect. It never clears localPending for a
+   * note that changed while the upload was in flight.
+   */
+  async function flushPendingNotes() {
+    if (!supabase || !session || navigator.onLine === false) return;
+    if (pendingNoteFlushPromise) return pendingNoteFlushPromise;
+    const userId = session.user.id;
+    pendingNoteFlushPromise = (async () => {
+      const queued = await pendingNoteIds();
+      const candidates = notes.filter(
+        (note) =>
+          note?.id &&
+          note.localPending &&
+          !String(note.id).startsWith("local-") &&
+          !queued.has(String(note.id)) &&
+          (!note.ownerId || note.ownerId === userId),
+      );
+      let changed = false;
+      for (const note of candidates) {
+        const snapshotUpdatedAt = note.updated_at;
+        const row = noteRemotePayload(
+          { ...note, color: notesColorSupported ? note.color : "" },
+          false,
+        );
+        if (!notesColorSupported) delete row.color;
+        try {
+          let result = await supabase
+            .from("notes")
+            .update(row)
+            .eq("id", note.id)
+            .select("id,updated_at")
+            .maybeSingle();
+          if (!result.error && !result.data) {
+            result = await supabase
+              .from("notes")
+              .insert({ ...row, id: note.id })
+              .select("id,updated_at")
+              .maybeSingle();
+          }
+          if (result.error) throw result.error;
+          const current = notes.find(
+            (item) => String(item.id) === String(note.id),
+          );
+          if (current && current.updated_at === snapshotUpdatedAt) {
+            current.localPending = false;
+            current.synced = true;
+            changed = true;
+          }
+        } catch {
+          // Keep localPending so the next reconnect retries the upload.
+        }
+      }
+      if (changed) {
+        saveLocalNotes();
+        if (currentPage === "notes") scheduleRender();
+      }
+    })();
+    try {
+      await pendingNoteFlushPromise;
+    } finally {
+      pendingNoteFlushPromise = null;
+    }
   }
 
   function clearAccountWorkspace() {
@@ -21867,6 +23172,29 @@
   const storedTheme = localStorage.getItem("studyflow.theme");
   if (storedTheme === "light") document.documentElement.dataset.theme = "light";
   applyThemePreset(currentThemePreset(), { persist: false });
+  void hydrateNotesFromIdb();
+
+  function persistOpenNoteOnExit() {
+    if (!noteEditorState) return;
+    try {
+      stopNoteSpeech({ keepText: true, silent: true });
+    } catch {
+      /* ignore */
+    }
+    persistEditorLocally(noteEditorState);
+    persistNoteDraftFromEditor(noteEditorState);
+  }
+
+  window.addEventListener("pagehide", persistOpenNoteOnExit);
+  window.addEventListener("beforeunload", persistOpenNoteOnExit);
+  window.addEventListener("online", () => {
+    void flushPendingNotes();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") persistOpenNoteOnExit();
+    else void flushPendingNotes();
+  });
+
   window.StudyZoneApp = {
     get tasks() {
       return tasks;

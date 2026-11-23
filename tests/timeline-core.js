@@ -308,6 +308,102 @@ equal("daily recurring task does NOT belong", timeline.isMultiDayItem({ id: "t9"
 equal("recurring routine does NOT belong", timeline.isMultiDayItem({ id: "routine:t10", routine_id: "routine-1", starts_at: "2026-06-10T09:00:00", due_at: "2026-06-20T09:00:00" }), false);
 equal("two weeks, one iso boundary both produce the same span", timeline.isMultiDayItem({ id: "t11", starts_at: "2026-12-05T00:00:00", due_at: "2026-12-19T00:00:00" }), true);
 
+/* ------------------------------------------------------------------ *
+ * Calendar exact-date matching (YYYY-MM-DD, never day-of-month only)
+ * ------------------------------------------------------------------ */
+const nov7 = { id: "nov7", title: "November task", due_at: "2026-11-07T23:59:00" };
+const dec7 = { id: "dec7", title: "December task", due_at: "2026-12-07T23:59:00" };
+const nov21 = { id: "nov21", title: "Nov 21", starts_at: "2026-11-21T09:00:00", due_at: "2026-11-21T18:00:00" };
+const oct21 = { id: "oct21", title: "Oct 21", due_at: "2026-10-21T18:00:00" };
+
+check("Nov 7 task appears on 2026-11-07", timeline.taskOccursOnDay(nov7, "2026-11-07"));
+check("Nov 7 task does NOT appear on 2026-12-07", !timeline.taskOccursOnDay(nov7, "2026-12-07"));
+check("Dec 7 task does NOT appear on 2026-11-07", !timeline.taskOccursOnDay(dec7, "2026-11-07"));
+check("Nov 21 task appears on 2026-11-21", timeline.taskOccursOnDay(nov21, "2026-11-21"));
+check("Nov 21 task does NOT appear on 2026-10-21", !timeline.taskOccursOnDay(nov21, "2026-10-21"));
+check("Oct 21 task does NOT appear on 2026-11-21", !timeline.taskOccursOnDay(oct21, "2026-11-21"));
+
+/* Same day-of-month in two months: each stays on its own date. */
+const sameDayPairs = [nov7, dec7];
+equal(
+  "same day-of-month: Nov 7 only matches the November task",
+  sameDayPairs.filter((task) => timeline.taskOccursOnDay(task, "2026-11-07")).map((task) => task.id).join(","),
+  "nov7",
+);
+equal(
+  "same day-of-month: Dec 7 only matches the December task",
+  sameDayPairs.filter((task) => timeline.taskOccursOnDay(task, "2026-12-07")).map((task) => task.id).join(","),
+  "dec7",
+);
+
+/* Same month, different weeks. */
+const week1 = { id: "w1", due_at: "2026-11-03T12:00:00" };
+const week3 = { id: "w3", due_at: "2026-11-17T12:00:00" };
+check("week 1 task appears in its own week", timeline.taskOccursOnDay(week1, "2026-11-03"));
+check("week 1 task does not leak into week 3", !timeline.taskOccursOnDay(week1, "2026-11-17"));
+check("week 3 task does not leak into week 1", !timeline.taskOccursOnDay(week3, "2026-11-03"));
+
+/* Same-day start + end, multi-day spans and all-day tasks. */
+const sameDaySpan = {
+  id: "same",
+  starts_at: "2026-11-07T08:00:00",
+  due_at: "2026-11-07T22:00:00",
+};
+check("task that starts and ends on one day appears that day", timeline.taskOccursOnDay(sameDaySpan, "2026-11-07"));
+check("same-day task does not appear the day after", !timeline.taskOccursOnDay(sameDaySpan, "2026-11-08"));
+
+const multiDay = {
+  id: "multi",
+  starts_at: "2026-11-05T09:00:00",
+  due_at: "2026-11-09T18:00:00",
+};
+["2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08", "2026-11-09"].forEach((key) => {
+  check(`multi-day task covers ${key}`, timeline.taskOccursOnDay(multiDay, key));
+});
+check("multi-day task does not appear before its start", !timeline.taskOccursOnDay(multiDay, "2026-11-04"));
+check("multi-day task does not appear after its end", !timeline.taskOccursOnDay(multiDay, "2026-11-10"));
+
+const allDay = { id: "all-day", is_all_day: true, due_at: "2026-11-07T23:59:00" };
+check("all-day task appears on its own date", timeline.taskOccursOnDay(allDay, "2026-11-07"));
+check("all-day task does not shift to the previous date", !timeline.taskOccursOnDay(allDay, "2026-11-06"));
+check("all-day task does not shift to the next date", !timeline.taskOccursOnDay(allDay, "2026-11-08"));
+
+/* Every stored occurrence of a recurring series is on its own date only. */
+const series = [
+  { id: "r1", recurrence_group_id: "g", due_at: "2026-11-01T23:59:00" },
+  { id: "r2", recurrence_group_id: "g", due_at: "2026-11-02T23:59:00" },
+  { id: "r3", recurrence_group_id: "g", due_at: "2026-11-03T23:59:00" },
+];
+equal(
+  "recurring series shows one occurrence per applicable date",
+  series.filter((task) => timeline.taskOccursOnDay(task, "2026-11-02")).map((task) => task.id).join(","),
+  "r2",
+);
+check("recurring series does not repeat on an unrelated date", timeline.taskOccursOnDay({ due_at: "2026-11-09T23:59:00", recurrence_group_id: "g", recurrence_type: "weekly" }, "2026-11-10") === false);
+
+/* Date-only and wall-clock values must never move a day because of UTC. */
+equal("date-only parsing stays on the same local day", timeline.keyOf(timeline.localInstant("2026-11-07")), "2026-11-07");
+equal("wall-clock parsing stays on the same local day", timeline.keyOf(timeline.localInstant("2026-11-07T23:59")), "2026-11-07");
+equal("invalid calendar dates are rejected, never rolled over", timeline.localInstant("2026-02-31"), null);
+equal(
+  "taskDayKeys returns the real local start and end",
+  JSON.stringify(timeline.taskDayKeys({ starts_at: "2026-11-05T01:00:00", due_at: "2026-11-09T23:00:00" })),
+  JSON.stringify({ startKey: "2026-11-05", endKey: "2026-11-09" }),
+);
+
+/* Online and offline datasets (same rows, different array instances) agree. */
+const onlineRows = [
+  { id: "a", due_at: "2026-11-07T10:00:00" },
+  { id: "b", due_at: "2026-12-07T10:00:00" },
+];
+const offlineRows = JSON.parse(JSON.stringify(onlineRows));
+const keys = ["2026-11-07", "2026-12-07", "2026-11-21"];
+equal(
+  "online and offline filtering produce identical days",
+  keys.map((key) => onlineRows.filter((task) => timeline.taskOccursOnDay(task, key)).map((task) => task.id).join(",")).join("|"),
+  keys.map((key) => offlineRows.filter((task) => timeline.taskOccursOnDay(task, key)).map((task) => task.id).join(",")).join("|"),
+);
+
 if (failures.length) {
   console.error(`Timeline core tests failed (${failures.length}):`);
   for (const failure of failures) console.error(` - ${failure}`);

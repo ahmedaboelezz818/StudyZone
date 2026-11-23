@@ -1,0 +1,14 @@
+const fs = require("fs");
+const src = fs.readFileSync("supabase/migrations/011_fix_team_live_start_call_ambiguous.sql", "utf8");
+const stripped = src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ");
+const parens = (stripped.match(/\(/g) || []).length - (stripped.match(/\)/g) || []).length;
+const dollarQuotes = (stripped.match(/\$\$/g) || []).length;
+const singleQuotes = (stripped.match(/'/g) || []).length % 2;
+console.log("parens balance:", parens);
+console.log("dollar-quote pairs:", dollarQuotes, "(even = ok)");
+console.log("single quotes balanced:", singleQuotes === 0);
+console.log("drops:", (stripped.match(/drop function/gi) || []).length);
+console.log("create/replace:", (stripped.match(/create or replace function/gi) || []).length);
+console.log("alter table:", (stripped.match(/alter table/gi) || []).length);
+console.log("task_id present:", stripped.includes("task_id"));
+console.log("status NOT present in member checks:", !/tm[0-9]*\.status/.test(stripped) && !/tm2\.status/.test(stripped) && !/tm3\.status/.test(stripped));

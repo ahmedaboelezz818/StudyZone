@@ -1,0 +1,12 @@
+const fs = require("fs");
+const en = fs.readFileSync("locales/en.json", "utf8");
+const ar = fs.readFileSync("locales/ar.json", "utf8");
+const app = fs.readFileSync("app.js", "utf8");
+console.log("en Original identity:", (en.match(/"Original[^"]*"?[^,]*/g) || ["none"])[0]);
+console.log("en tagline key present:", en.includes("YOUR MIND. ORGANIZED."));
+console.log("ar welcome line:", (ar.match(/"Welcome to Second Brain"[^,]*/g) || ["none"])[0]);
+console.log("app has new title:", app.includes("Second Brain — Your Mind. Organized."));
+console.log("app old title gone:", !app.includes("Your Study Life"));
+console.log("en old tagline gone:", !en.includes("YOUR STUDY LIFE"));
+console.log("ar old tagline gone:", !ar.includes("حياتك الدراسية"));
+console.log("Android manifest/splash replaced:", fs.readdirSync("android/app/src/main/res").filter(d => d.startsWith("drawable")).length, "drawable dirs");

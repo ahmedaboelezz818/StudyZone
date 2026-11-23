@@ -2,6 +2,27 @@
 
 Package: `com.studyzone.app` · Target: Android Debug APK · Java: **JDK 17 (Temurin 17.0.21+9)**
 
+## Update 2 (2026-11-18, second build) — all latest changes included
+
+This build syncs the newest web assets (Calendar redesign, the mandatory two-day Deadlines
+filter, Deadlines **priority colour coding + subtle soft styling** (bars/markers/dots/chips,
+completed-mint, overdue dark-red badge), flashcards premium redesign, offline/auth restore
+hardening, SW `v40`) and bumps:
+
+- `versionCode` 11 → **12**
+- `versionName` 2.0.9 → **2.1.0**
+- Installed-signing compatibility: unchanged Android debug certificate (same as previously
+  installed debug builds) → installs **as an update without data loss**.
+- APK: `android/app/build/outputs/apk/debug/app-debug.apk`
+  - size **10,181,601 bytes**
+  - `application-debuggable` yes · minSdk 23 · targetSdk 35 · compileSdk 35
+  - `aapt badging`: package `com.studyzone.app` versionCode 12 versionName 2.1.0
+  - `apksigner`: Signer #1 `CN=Android Debug` SHA-256
+    `0aa60474f008f69373df41fb1f6fdaae59f188c77d1ab6ba538ddb8a69c06572`
+  - Gradle: `BUILD SUCCESSFUL in 21s (incremental)`
+  - Build command: `.\gradlew.bat assembleDebug` with
+    `JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-17.0.21.9-hotspot`
+
 ## 1. What was applied in this update
 
 - **Calendar** (`app.js` + new `sz-calendar.css` + `timeline-core.js`): redesigned grid,

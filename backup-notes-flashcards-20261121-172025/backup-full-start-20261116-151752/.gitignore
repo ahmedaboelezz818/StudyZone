@@ -1,0 +1,10 @@
+.vercel
+.env*
+node_modules/
+www/
+android/keystore.properties
+# Firebase configuration for the Android app. It contains no private keys and
+# is intentionally commit-safe; the APK cannot call Firebase without it.
+!android/app/google-services.json
+*.jks
+*.keystore
